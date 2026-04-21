@@ -75,7 +75,8 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(failure_response.status_code, 400)
         self.assertEqual(failure_response.data["message"], "paper task only accepts paper resource files")
 
-    def test_create_review_resource_task_requires_both_review_paper_and_linked_review_file(self):
+    @patch("core.tasks.run_review_detection.delay")
+    def test_create_review_resource_task_requires_both_review_paper_and_linked_review_file(self, mock_delay):
         review_paper = self.create_file("review-paper.pdf", "review_paper")
         unrelated_review_paper = self.create_file("other-paper.pdf", "review_paper")
         linked_review_file = self.create_file("review.txt", "review_file", linked_file=review_paper)
@@ -97,6 +98,7 @@ class ResourceTaskFlowTests(TestCase):
             list(review_task.resource_files.values_list("id", flat=True)),
             [review_paper.id, linked_review_file.id],
         )
+        mock_delay.assert_called_once_with(review_task.id, None)
 
         missing_pair_response = self.client.post(
             "/api/resource-task/create/",
@@ -144,3 +146,32 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(response.data["task_id"], task.id)
         self.assertEqual(response.data["status"], "completed")
         self.assertEqual(response.data["results"]["paragraph_results"], task.text_detection_results["paragraph_results"])
+
+    def test_review_task_status_exposes_relevance_results(self):
+        review_task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="review",
+            task_name="Review Closed Loop",
+            status="completed",
+            text_detection_results={
+                "document": {"review_segment_count": 1},
+                "paragraph_results": [{"paragraph_index": 0, "label": "clean", "probability": 0.12}],
+                "suspicious_paragraphs": [],
+                "relevance_results": [
+                    {
+                        "review_paragraph_index": 0,
+                        "paper_paragraph_index": 1,
+                        "relevance_score": 0.5,
+                        "label": "relevant",
+                    }
+                ],
+            },
+        )
+
+        response = self.client.get(f"/api/detection-task/{review_task.id}/status/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["task_type"], "review")
+        self.assertEqual(response.data["results"]["relevance_results"][0]["paper_paragraph_index"], 1)
+        self.assertIn("匹配 1 段", response.data["result_summary"])

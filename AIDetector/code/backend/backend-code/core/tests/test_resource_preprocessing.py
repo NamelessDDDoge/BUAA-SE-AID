@@ -3,10 +3,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
-from django.utils import timezone
 
 from core.models import DetectionTask, FileManagement, Organization, User
-from core.tasks import run_paper_detection
+from core.tasks import run_paper_detection, run_review_detection
 
 
 @override_settings(ENABLE_FANYI=False)
@@ -43,6 +42,22 @@ class ResourcePreprocessingTests(TestCase):
             file_type="text/plain",
             resource_type="paper",
             stored_path=f"uploads/{file_name}",
+        )
+
+    def create_review_file(self, file_name, content, *, resource_type, linked_file=None):
+        uploads_dir = self.temp_media / "uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        file_path = uploads_dir / file_name
+        file_path.write_text(content, encoding="utf-8")
+        return FileManagement.objects.create(
+            user=self.user,
+            organization=self.organization,
+            file_name=file_name,
+            file_size=file_path.stat().st_size,
+            file_type="text/plain",
+            resource_type=resource_type,
+            stored_path=f"uploads/{file_name}",
+            linked_file=linked_file,
         )
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
@@ -117,3 +132,36 @@ class ResourcePreprocessingTests(TestCase):
         self.assertTrue(task.text_detection_results["paragraph_results"][0]["text"])
         self.assertEqual(task.text_detection_results["reference_results"], [])
         mock_image_detection.assert_not_called()
+
+    @patch("core.services.integrations.fastdetect_client.requests.post")
+    def test_run_review_detection_returns_relevance_matches(self, mock_post):
+        mock_post.return_value.json.return_value = {"data": {"prob": 0.34, "details": {"source": "mock"}}}
+        mock_post.return_value.raise_for_status.return_value = None
+        paper_file = self.create_review_file(
+            "review-paper.txt",
+            "Alpha beta gamma findings.\nReferences\n[1] Alpha beta source.",
+            resource_type="review_paper",
+        )
+        review_file = self.create_review_file(
+            "review-comment.txt",
+            "Alpha beta needs more evidence.",
+            resource_type="review_file",
+            linked_file=paper_file,
+        )
+        task = DetectionTask.objects.create(
+            user=self.user,
+            organization=self.organization,
+            task_type="review",
+            task_name="Review Detection",
+            status="pending",
+        )
+        task.resource_files.add(paper_file, review_file)
+
+        result = run_review_detection(task.id)
+
+        task.refresh_from_db()
+        self.assertEqual(result, "Review detection finished")
+        self.assertEqual(task.status, "completed")
+        self.assertEqual(len(task.text_detection_results["paragraph_results"]), 1)
+        self.assertEqual(len(task.text_detection_results["relevance_results"]), 1)
+        self.assertEqual(task.text_detection_results["relevance_results"][0]["paper_paragraph_index"], 0)
