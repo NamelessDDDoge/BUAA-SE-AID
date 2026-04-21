@@ -1,6 +1,11 @@
-持续运行直到 `prd.json` 里的任务全部完成。
+Keep running until every item in `prd.json` is completed.
 
-- 2026-04-21 14:39 +08:00 `slice-00-tracking-bootstrap` 已完成：根目录 `plan.md`、`prd.json`、`progress.md` 已切换到三路检测重构跟踪，并写入“每次验证成功后自动 commit 并尝试 push”的执行约束；验证通过 `Get-Content plan.md`、`Get-Content progress.md`、`Get-Content prd.json | ConvertFrom-Json`。
-- 2026-04-21 15:00 +08:00 计划文档已细化并显式吸收 `架构共识.md`：补充固定前提、模型调用入口长期约束、三类任务共享五层架构与统一事件日志等约束；验证通过 `rg` 命中检查与 `Get-Content plan.md`。
-- 2026-04-21 15:24 +08:00 `slice-01-regression-baseline` 已完成：删除单体 `core/tests.py`，拆分为 `test_image_upload_flow.py`、`test_image_detection_flow.py`、`test_resource_task_flow.py` 三组回归测试，并修正本地 fake AI fixture 与当前解析器键名一致；验证通过 `DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests`。
-- 2026-04-21 15:46 +08:00 `slice-02-backend-skeleton` 已完成：新增 `core/services/` 五层骨架、统一事件日志入口 `event_logger.py`，并把 `upload_file`、`create_resource_task`、`create_resource_review_task_placeholder` 三个新入口切到 service/orchestrator 调用，后续迁移不必继续把业务逻辑塞回 `views_*`；验证通过 `DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py check` 与 `DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests.test_image_upload_flow core.tests.test_resource_task_flow`。
+- 2026-04-21 14:39 +08:00 `slice-00-tracking-bootstrap` completed: reset `plan.md`, `prd.json`, and `progress.md` for the three-lane detection refactor and recorded the verify-then-commit workflow.
+- 2026-04-21 15:00 +08:00 planning notes absorbed `架构共识.md`: fixed local-first assumptions, shared five-layer backend structure, and unified event logging constraints.
+- 2026-04-21 15:24 +08:00 `slice-01-regression-baseline` completed: split backend regression coverage into `test_image_upload_flow.py`, `test_image_detection_flow.py`, and `test_resource_task_flow.py`, and aligned the local fake-AI fixtures with the current parser contract.
+- 2026-04-21 15:46 +08:00 `slice-02-backend-skeleton` completed: created the `core/services/` layer skeleton, added `event_logger.py`, and routed upload/resource-task entry points through services and orchestrators instead of growing `views_*`.
+- 2026-04-21 16:28 +08:00 `slice-03-resource-layer` completed: added `core/services/resources/image_extraction_service.py` and `document_preprocessor.py`, routed upload extraction and paper text preprocessing through those services, slimmed `core/views/views_imageupload.py`, and added regression coverage for zip image uploads plus document segmentation fallback.
+
+Verification:
+- `DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py check`
+- `DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests.test_image_upload_flow core.tests.test_resource_task_flow core.tests.test_resource_preprocessing`
