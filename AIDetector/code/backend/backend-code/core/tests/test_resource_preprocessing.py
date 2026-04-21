@@ -99,6 +99,41 @@ class ResourcePreprocessingTests(TestCase):
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
     @patch("core.services.integrations.fastdetect_client.requests.post")
+    def test_run_paper_detection_skips_image_detection_when_extract_images_disabled(self, mock_post, mock_image_detection):
+        mock_post.return_value.json.return_value = {"data": {"prob": 0.42, "details": {"source": "mock"}}}
+        mock_post.return_value.raise_for_status.return_value = None
+        file_record = self.create_text_file("paper.pdf", "Paragraph one.\nParagraph two.")
+        task = DetectionTask.objects.create(
+            user=self.user,
+            organization=self.organization,
+            task_type="paper",
+            task_name="Paper Without Images",
+            status="pending",
+            method_switches={
+                "__paper_extract_images__": False,
+                "llm": False,
+                "ela": False,
+                "exif": False,
+                "cmd": False,
+                "urn_coarse_v2": False,
+                "urn_blurring": False,
+                "urn_brute_force": False,
+                "urn_contrast": False,
+                "urn_inpainting": False,
+            },
+        )
+        task.resource_files.add(file_record)
+
+        run_paper_detection(task.id)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "completed")
+        self.assertEqual(task.text_detection_results["image_results"], [])
+        self.assertEqual(task.text_detection_results["document"]["image_detection_enabled"], False)
+        mock_image_detection.assert_not_called()
+
+    @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
+    @patch("core.services.integrations.fastdetect_client.requests.post")
     def test_run_paper_detection_handles_missing_decodable_text(self, mock_post, mock_image_detection):
         mock_post.return_value.json.return_value = {"data": {"prob": 0.1, "details": {}}}
         mock_post.return_value.raise_for_status.return_value = None

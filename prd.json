@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-21T16:58:00+08:00",
+  "updated_at": "2026-04-21T22:05:00+08:00",
   "items": [
     {
       "id": "slice-00-tracking-bootstrap",
@@ -51,9 +51,9 @@
       "title": "Replace placeholder paper detection with orchestrated text, image, and reference analysis",
       "status": "done",
       "slice": "slice-05-paper-closed-loop",
-      "verification": "DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py check; DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests",
-      "attempts": 1,
-      "fallback": ""
+      "verification": "DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py check; DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests; cd AIDetector/code/frontend/frontend-user && npm run type-check && npm run build-only",
+      "attempts": 3,
+      "fallback": "历史bug已修复：此前 /api/resource-task/create/ 依赖 Celery broker，broker 不可达时 paper 任务会卡在排队中；现已改为本地异步线程启动并支持论文图像检测开关/子任务勾选"
     },
     {
       "id": "slice-06-review-closed-loop",

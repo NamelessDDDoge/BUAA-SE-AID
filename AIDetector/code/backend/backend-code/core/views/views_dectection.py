@@ -57,6 +57,7 @@ from ..services.orchestrators import (
     create_resource_detection_task,
     run_image_detection_task_async,
     start_image_detection_task_thread,
+    start_resource_detection_task_thread,
 )
 
 
@@ -654,25 +655,22 @@ def create_resource_task(request):
     file_ids = request.data.get('file_ids', [])
     task_name = request.data.get('task_name', '').strip()
     api_key = request.data.get('api_key')
+    extract_images = request.data.get('extract_images', None)
+    if_use_llm = request.data.get('if_use_llm', False)
+    method_switches = request.data.get('method_switches')
 
     try:
-        paper_scheduler = None
-        review_scheduler = None
-        if task_type == 'paper':
-            from ..tasks import run_paper_detection
-            paper_scheduler = run_paper_detection.delay
-        elif task_type == 'review':
-            from ..tasks import run_review_detection
-            review_scheduler = run_review_detection.delay
-
         detection_task, file_list = create_resource_detection_task(
             user=user,
             task_type=task_type,
             file_ids=file_ids,
             task_name=task_name,
             api_key=api_key,
-            paper_scheduler=paper_scheduler,
-            review_scheduler=review_scheduler,
+            if_use_llm=if_use_llm,
+            method_switches=method_switches,
+            extract_images=extract_images,
+            on_commit=transaction.on_commit,
+            async_task_starter=start_resource_detection_task_thread,
         )
     except ValueError as exc:
         return Response({'message': str(exc)}, status=400)
@@ -684,6 +682,8 @@ def create_resource_task(request):
         'task_id': detection_task.id,
         'task_name': detection_task.task_name,
         'task_type': task_type,
+        'status': detection_task.status,
+        'execution_mode': 'local_async',
         'file_ids': [f.id for f in file_list],
     })
 

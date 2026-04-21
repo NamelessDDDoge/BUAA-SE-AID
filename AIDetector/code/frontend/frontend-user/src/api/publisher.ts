@@ -44,6 +44,9 @@ export default {
     task_type: 'paper' | 'review'
     task_name?: string
     file_ids: number[]
+    extract_images?: boolean
+    if_use_llm?: boolean
+    method_switches?: Record<string, boolean>
   }) {
     return http.post('/resource-task/create/', data)
   },

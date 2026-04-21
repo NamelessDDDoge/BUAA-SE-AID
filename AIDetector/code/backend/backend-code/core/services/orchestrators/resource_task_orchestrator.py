@@ -1,7 +1,20 @@
+import threading
+
+from django.db import close_old_connections, transaction
 from django.utils import timezone
 
 from ..event_logger import log_user_event
 from ...models import DetectionTask, FileManagement
+from .paper_task_orchestrator import run_paper_detection_task
+from .review_task_orchestrator import run_review_detection_task
+
+
+def _normalize_resource_method_switches(method_switches):
+    if method_switches is None:
+        return None
+    if not isinstance(method_switches, dict):
+        raise ValueError("method_switches must be an object")
+    return {str(key): bool(value) for key, value in method_switches.items()}
 
 
 def create_resource_detection_task(
@@ -11,6 +24,11 @@ def create_resource_detection_task(
     file_ids,
     task_name="",
     api_key=None,
+    if_use_llm=False,
+    method_switches=None,
+    extract_images=None,
+    on_commit=None,
+    async_task_starter=None,
     paper_scheduler=None,
     review_scheduler=None,
 ):
@@ -43,12 +61,25 @@ def create_resource_detection_task(
         if not any(rv.linked_file and rv.linked_file.id in review_paper_ids for rv in review_files):
             raise ValueError("review_file is not correctly linked to review_paper")
 
+    normalized_switches = _normalize_resource_method_switches(method_switches)
+    if task_type == "paper" and extract_images is not None:
+        normalized_switches = normalized_switches or {}
+        normalized_switches["__paper_extract_images__"] = bool(extract_images)
+
+    effective_if_use_llm = bool(if_use_llm)
+    if normalized_switches:
+        effective_if_use_llm = effective_if_use_llm or bool(normalized_switches.get("llm"))
+
+    task_status = "in_progress" if async_task_starter is not None else "pending"
+
     detection_task = DetectionTask.objects.create(
         organization=user.organization,
         user=user,
         task_type=task_type,
         task_name=task_name,
-        status="pending",
+        status=task_status,
+        if_use_llm=effective_if_use_llm,
+        method_switches=normalized_switches,
     )
     detection_task.resource_files.add(*file_list)
 
@@ -59,9 +90,48 @@ def create_resource_detection_task(
         related_id=detection_task.id,
     )
 
+    commit_hook = on_commit or transaction.on_commit
+    if async_task_starter is not None:
+        commit_hook(lambda: async_task_starter(task_type, detection_task.id, api_key))
+        return detection_task, file_list
+
     if task_type == "paper" and paper_scheduler is not None:
         paper_scheduler(detection_task.id, api_key)
     if task_type == "review" and review_scheduler is not None:
         review_scheduler(detection_task.id, api_key)
 
     return detection_task, file_list
+
+
+def run_resource_detection_task_async(task_type, task_id, api_key=None):
+    close_old_connections()
+    try:
+        task_runner = _get_resource_task_runner(task_type)
+        task_runner(task_id, api_key=api_key)
+    except Exception as exc:
+        detection_task = DetectionTask.objects.filter(pk=task_id).first()
+        if detection_task is not None:
+            detection_task.status = "failed"
+            detection_task.error_message = str(exc)[:2000]
+            detection_task.completion_time = timezone.now()
+            detection_task.save(update_fields=["status", "error_message", "completion_time"])
+    finally:
+        close_old_connections()
+
+
+def start_resource_detection_task_thread(task_type, task_id, api_key=None):
+    thread = threading.Thread(
+        target=run_resource_detection_task_async,
+        args=(task_type, task_id, api_key),
+        daemon=True,
+        name=f"{task_type}-task-{task_id}",
+    )
+    thread.start()
+
+
+def _get_resource_task_runner(task_type):
+    if task_type == "paper":
+        return run_paper_detection_task
+    if task_type == "review":
+        return run_review_detection_task
+    raise ValueError(f"Unsupported resource task type: {task_type}")
