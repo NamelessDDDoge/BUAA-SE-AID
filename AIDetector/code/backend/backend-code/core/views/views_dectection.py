@@ -1,68 +1,19 @@
 ﻿import json
 import os
 import shutil
-import threading
 
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.utils import timezone
 from django.conf import settings
-from django.db import close_old_connections, transaction
+from django.db import transaction
 from django.db.models import Q
 from django.db.models.fields.files import FieldFile
-from ..models import DetectionResult, ImageUpload, Log, User, DetectionTask, FileManagement
+from ..models import DetectionResult, ImageUpload, User, DetectionTask, FileManagement
 from datetime import datetime, timedelta
 from django.core.paginator import Paginator
 
-
-def _refund_detection_usage(organization, if_use_llm, num_images):
-    if organization is None or num_images <= 0:
-        return
-    if if_use_llm:
-        organization.add_llm_uses(num_images)
-    else:
-        organization.add_non_llm_uses(num_images)
-
-
-def _mark_detection_task_failed(detection_task, error_message):
-    DetectionResult.objects.filter(
-        detection_task=detection_task,
-        status='in_progress',
-    ).update(status='failed')
-    detection_task.status = 'failed'
-    detection_task.error_message = error_message[:2000]
-    detection_task.completion_time = timezone.now()
-    detection_task.save(update_fields=['status', 'error_message', 'completion_time'])
-
-
-def _run_detection_task_async(task_id, image_ids, if_use_llm, num_images):
-    close_old_connections()
-    try:
-        detection_task = DetectionTask.objects.select_related('organization').get(pk=task_id)
-        image_uploads = list(
-            ImageUpload.objects.filter(id__in=image_ids, file_management__user=detection_task.user).order_by('id')
-        )
-        if not image_uploads:
-            raise RuntimeError('No valid images found')
-        execute_detection_task(detection_task, image_uploads)
-    except Exception as exc:
-        detection_task = DetectionTask.objects.select_related('organization').filter(pk=task_id).first()
-        if detection_task is not None:
-            _refund_detection_usage(detection_task.organization, if_use_llm, num_images)
-            _mark_detection_task_failed(detection_task, str(exc))
-    finally:
-        close_old_connections()
-
-
-def _start_detection_task_thread(task_id, image_ids, if_use_llm, num_images):
-    thread = threading.Thread(
-        target=_run_detection_task_async,
-        args=(task_id, image_ids, if_use_llm, num_images),
-        daemon=True,
-        name=f'detection-task-{task_id}',
-    )
-    thread.start()
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -100,8 +51,37 @@ def get_detection_result(request, image_id):
         return Response({"message": "Detection result not found"}, status=404)
 
 
-from ..local_detection import execute_detection_task
-from ..services.orchestrators import create_resource_detection_task
+from ..services.capabilities import run_image_detection_task
+from ..services.orchestrators import (
+    create_image_detection_task,
+    create_resource_detection_task,
+    run_image_detection_task_async,
+    start_image_detection_task_thread,
+)
+
+
+def execute_detection_task(detection_task, image_uploads):
+    return run_image_detection_task(detection_task=detection_task, image_uploads=image_uploads)
+
+
+def _run_detection_task_async(task_id, image_ids, if_use_llm, num_images):
+    return run_image_detection_task_async(
+        task_id,
+        image_ids,
+        if_use_llm,
+        num_images,
+        detection_executor=execute_detection_task,
+    )
+
+
+def _start_detection_task_thread(task_id, image_ids, if_use_llm, num_images):
+    return start_image_detection_task_thread(
+        task_id,
+        image_ids,
+        if_use_llm,
+        num_images,
+        task_runner=_run_detection_task_async,
+    )
 
 
 # @api_view(['POST'])
@@ -178,90 +158,25 @@ def submit_detection2(request):
     user_id = request.user.id
     mode = int(request.data['mode'])
     user = User.objects.get(id=user_id)
-    organization = user.organization  # 鑾峰彇鐢ㄦ埛鎵€灞炵粍缁?
-    organization.reset_usage()  # 閲嶇疆缁勭粐鍐呮墍鏈夌敤鎴风殑鍏变韩娆℃暟
     if not user.has_permission('submit'):
         return Response({"閿欒": "璇ョ敤鎴锋病鏈夋彁浜ゆ娴嬬殑鏉冮檺"}, status=403)
-
-    # 鑾峰彇鐢ㄦ埛鎻愪氦鐨勫浘鍍廔D鍒楄〃
-    image_ids = request.data.get('image_ids', [])
-    image_ids.sort()
-    task_name = request.data.get('task_name', 'New Detection Task')  # 浠庤姹備腑鑾峰彇浠诲姟鍚嶇О锛岄粯璁や负 "New Detection Task"
-
-    # 鑾峰彇棰濆鐨勫弬鏁?
-    cmd_block_size = request.data.get('cmd_block_size', 64)  # 榛樿涓?4
-    urn_k = request.data.get('urn_k', 0.3)  # 榛樿涓?.3
-    if_use_llm = request.data.get('if_use_llm', False)  # 榛樿涓篎alse
-    method_switches = request.data.get('method_switches')
-    if method_switches is not None:
-        if not isinstance(method_switches, dict):
-            return Response({"message": "method_switches must be an object"}, status=400)
-        method_switches = {str(key): bool(value) for key, value in method_switches.items()}
-    if mode == 3:
-        if_use_llm = True
-
-    if not image_ids:
-        return Response({"message": "No image IDs provided"}, status=400)
-
-    # 鏌ユ壘鐢ㄦ埛涓婁紶鐨勬墍鏈夊浘鍍?
-    image_uploads = ImageUpload.objects.filter(id__in=image_ids, file_management__user=request.user)
-
-    # 妫€楠屼笉涓虹┖
-    if not image_uploads.exists():
-        return Response({"message": "No valid images found"}, status=404)
-
-    num_images = len(image_uploads)
-    # 妫€鏌ュ墿浣欐鏁版槸鍚﹁冻澶?
-    if if_use_llm:
-        if not organization.can_use_llm(num_images):
-            return Response({
-                                "message": f"You have exceeded your LLM method usage limit for this week. Your organization can only submit {organization.remaining_llm_uses} more images."},
-                            status=400)
-        # 浣跨敤 LLM 鏂规硶鏃讹紝鍑忓皯缁勭粐鐨?LLM 鏂规硶鍓╀綑娆℃暟
-        organization.decrement_llm_uses(num_images)
-    else:
-        if not organization.can_use_non_llm(num_images):
-            return Response({
-                                "message": f"You have exceeded your non-LLM method usage limit for this week. Your organization can only submit {organization.remaining_non_llm_uses} more images."},
-                            status=400)
-        # 浣跨敤闈?LLM 鏂规硶鏃讹紝鍑忓皯缁勭粐鐨勯潪 LLM 鏂规硶鍓╀綑娆℃暟
-        organization.decrement_non_llm_uses(num_images)
-
-    image_upload_list = list(image_uploads.order_by('id'))
-
-    with transaction.atomic():
-        detection_task = DetectionTask.objects.create(
-            organization=user.organization,
-            user=request.user,
-            task_type='image',
-            task_name=task_name,
-            status='in_progress',
-            cmd_block_size=cmd_block_size,
-            urn_k=urn_k,
-            if_use_llm=if_use_llm,
-            method_switches=method_switches,
+    try:
+        detection_task, _image_uploads = create_image_detection_task(
+            user=user,
+            image_ids=request.data.get('image_ids', []),
+            task_name=request.data.get('task_name', 'New Detection Task'),
+            mode=mode,
+            cmd_block_size=request.data.get('cmd_block_size', 64),
+            urn_k=request.data.get('urn_k', 0.3),
+            if_use_llm=request.data.get('if_use_llm', False),
+            method_switches=request.data.get('method_switches'),
+            on_commit=transaction.on_commit,
+            async_task_starter=_start_detection_task_thread,
         )
-        detection_task.resource_files.add(*list({img.file_management for img in image_upload_list}))
-
-        DetectionResult.objects.bulk_create([
-            DetectionResult(
-                image_upload=image_upload,
-                detection_task=detection_task,
-                status='in_progress',
-            )
-            for image_upload in image_upload_list
-        ])
-
-        Log.objects.create(
-            user=request.user,
-            operation_type='detection',
-            related_model='DetectionTask',
-            related_id=detection_task.id
-        )
-
-        transaction.on_commit(
-            lambda: _start_detection_task_thread(detection_task.id, image_ids, if_use_llm, num_images)
-        )
+    except ValueError as exc:
+        return Response({"message": str(exc)}, status=400)
+    except FileNotFoundError as exc:
+        return Response({"message": str(exc)}, status=404)
 
     return Response({
         "message": "Detection request submitted successfully",
