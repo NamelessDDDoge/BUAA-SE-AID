@@ -4,7 +4,16 @@ from ..event_logger import log_user_event
 from ...models import DetectionTask, FileManagement
 
 
-def create_resource_detection_task(*, user, task_type, file_ids, task_name="", api_key=None, paper_scheduler=None):
+def create_resource_detection_task(
+    *,
+    user,
+    task_type,
+    file_ids,
+    task_name="",
+    api_key=None,
+    paper_scheduler=None,
+    review_scheduler=None,
+):
     if task_type not in {"paper", "review"}:
         raise ValueError("task_type must be paper or review")
 
@@ -52,5 +61,7 @@ def create_resource_detection_task(*, user, task_type, file_ids, task_name="", a
 
     if task_type == "paper" and paper_scheduler is not None:
         paper_scheduler(detection_task.id, api_key)
+    if task_type == "review" and review_scheduler is not None:
+        review_scheduler(detection_task.id, api_key)
 
     return detection_task, file_list

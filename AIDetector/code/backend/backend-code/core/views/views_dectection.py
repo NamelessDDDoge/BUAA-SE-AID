@@ -519,7 +519,8 @@ def get_detection_task_status_normal(request, task_id):
             elif detection_task.task_type == 'paper':
                 result_summary = '论文检测已完成'
             elif detection_task.task_type == 'review':
-                result_summary = 'Review 检测已完成'
+                relevance_count = len((detection_task.text_detection_results or {}).get('relevance_results', []))
+                result_summary = f'Review 检测已完成，匹配 {relevance_count} 段'
 
         fake_resource_files = []
         normal_resource_files = []
@@ -591,7 +592,8 @@ def get_detection_task_status_normal(request, task_id):
             "normal_resource_files": normal_resource_files,
             "pending_resource_files": pending_resource_files,
             "resource_split_note": split_note,
-            "detection_results": []
+            "detection_results": [],
+            "results": detection_task.text_detection_results if detection_task.task_type in {'paper', 'review'} else None,
         }
 
         for result in detection_results:
@@ -655,9 +657,13 @@ def create_resource_task(request):
 
     try:
         paper_scheduler = None
+        review_scheduler = None
         if task_type == 'paper':
             from ..tasks import run_paper_detection
             paper_scheduler = run_paper_detection.delay
+        elif task_type == 'review':
+            from ..tasks import run_review_detection
+            review_scheduler = run_review_detection.delay
 
         detection_task, file_list = create_resource_detection_task(
             user=user,
@@ -666,6 +672,7 @@ def create_resource_task(request):
             task_name=task_name,
             api_key=api_key,
             paper_scheduler=paper_scheduler,
+            review_scheduler=review_scheduler,
         )
     except ValueError as exc:
         return Response({'message': str(exc)}, status=400)
@@ -764,7 +771,8 @@ def get_user_tasks(request):
             elif task.task_type == 'paper':
                 result_summary = '论文检测已完成'
             elif task.task_type == 'review':
-                result_summary = 'Review 检测已完成'
+                relevance_count = len((task.text_detection_results or {}).get('relevance_results', []))
+                result_summary = f'Review 检测已完成，匹配 {relevance_count} 段'
 
         task_data.append({
             'task_id': task.id,

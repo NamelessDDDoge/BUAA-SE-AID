@@ -58,16 +58,16 @@
     {
       "id": "slice-06-review-closed-loop",
       "title": "Run review detection through shared preprocessing, text detection, and relevance analysis",
-      "status": "in_progress",
+      "status": "done",
       "slice": "slice-06-review-closed-loop",
-      "verification": "Review upload, task creation, status polling, and paragraph relevance query",
-      "attempts": 0,
+      "verification": "DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py check; DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests",
+      "attempts": 1,
       "fallback": ""
     },
     {
       "id": "slice-07-persistence-split",
       "title": "Persist paper and review results in dedicated tables while keeping compatibility",
-      "status": "pending",
+      "status": "in_progress",
       "slice": "slice-07-persistence-split",
       "verification": "conda run -n detect python manage.py migrate; conda run -n detect python manage.py test core.tests",
       "attempts": 0,
