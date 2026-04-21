@@ -1,7 +1,15 @@
+from .image_task_orchestrator import (
+    create_image_detection_task,
+    run_image_detection_task_async,
+    start_image_detection_task_thread,
+)
 from .resource_task_orchestrator import create_resource_detection_task
 from .review_task_orchestrator import build_resource_review_placeholder
 
 __all__ = [
+    "create_image_detection_task",
     "build_resource_review_placeholder",
     "create_resource_detection_task",
+    "run_image_detection_task_async",
+    "start_image_detection_task_thread",
 ]
