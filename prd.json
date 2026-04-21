@@ -1,0 +1,122 @@
+{
+  "updated_at": "2026-04-21T14:39:00+08:00",
+  "items": [
+    {
+      "id": "slice-00-tracking-bootstrap",
+      "title": "Reset tracking files for the three-lane detection refactor",
+      "status": "done",
+      "slice": "slice-00-tracking-bootstrap",
+      "verification": "Get-Content plan.md; Get-Content progress.md; Get-Content prd.json | ConvertFrom-Json",
+      "attempts": 1,
+      "fallback": ""
+    },
+    {
+      "id": "slice-01-regression-baseline",
+      "title": "Split and extend regression tests for image, paper, and review entry flows",
+      "status": "pending",
+      "slice": "slice-01-regression-baseline",
+      "verification": "conda run -n detect python manage.py test core.tests",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-02-backend-skeleton",
+      "title": "Create service-layer skeleton and slim backend views",
+      "status": "pending",
+      "slice": "slice-02-backend-skeleton",
+      "verification": "conda run -n detect python manage.py check",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-03-resource-layer",
+      "title": "Extract upload, extraction, and document preprocessing services",
+      "status": "pending",
+      "slice": "slice-03-resource-layer",
+      "verification": "Targeted upload API tests for image, paper, and review flows",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-04-image-detection-adapter",
+      "title": "Wrap existing image detection into reusable capability and orchestrator layers",
+      "status": "pending",
+      "slice": "slice-04-image-detection-adapter",
+      "verification": "Image upload -> submit -> status -> result regression chain",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-05-paper-closed-loop",
+      "title": "Replace placeholder paper detection with orchestrated text, image, and reference analysis",
+      "status": "pending",
+      "slice": "slice-05-paper-closed-loop",
+      "verification": "Paper resource task returns paragraph, explanation, and reference results",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-06-review-closed-loop",
+      "title": "Run review detection through shared preprocessing, text detection, and relevance analysis",
+      "status": "pending",
+      "slice": "slice-06-review-closed-loop",
+      "verification": "Review upload, task creation, status polling, and paragraph relevance query",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-07-persistence-split",
+      "title": "Persist paper and review results in dedicated tables while keeping compatibility",
+      "status": "pending",
+      "slice": "slice-07-persistence-split",
+      "verification": "conda run -n detect python manage.py migrate; conda run -n detect python manage.py test core.tests",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-08-report-and-status-contract",
+      "title": "Normalize status payloads and report generation across image, paper, and review tasks",
+      "status": "pending",
+      "slice": "slice-08-report-and-status-contract",
+      "verification": "Three task status endpoints and report download endpoints return normalized payloads",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-09-user-frontend-structure",
+      "title": "Split user frontend upload/history pages into task-specific features and API modules",
+      "status": "pending",
+      "slice": "slice-09-user-frontend-structure",
+      "verification": "npm run type-check; npm run build-only",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-10-admin-frontend-structure",
+      "title": "Make admin pages task-type aware with feature modules and split API files",
+      "status": "pending",
+      "slice": "slice-10-admin-frontend-structure",
+      "verification": "npm run type-check; npm run build-only",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-11-ai-service-minimal-guardrail",
+      "title": "Only add a thin AI-service adapter if paper/review local entry is unavoidable",
+      "status": "pending",
+      "slice": "slice-11-ai-service-minimal-guardrail",
+      "verification": "Mark no_change_needed or run local adapter smoke test",
+      "attempts": 0,
+      "fallback": ""
+    },
+    {
+      "id": "slice-12-final-cleanup",
+      "title": "Remove deprecated direct logic after all flows are verified",
+      "status": "pending",
+      "slice": "slice-12-final-cleanup",
+      "verification": "Full tests, frontend builds, and end-to-end smoke checks across all three task types",
+      "attempts": 0,
+      "fallback": ""
+    }
+  ]
+}
