@@ -213,6 +213,29 @@
             maxlength="64"
             counter
           />
+          <template v-if="progressTaskType === 'paper'">
+            <v-divider class="my-4" />
+            <v-switch
+              v-model="paperEnableImageDetection"
+              :disabled="!paperImageDetectionSupported"
+              color="primary"
+              inset
+              label="提取论文中的图像并执行图像检测"
+              hide-details
+              class="mb-3"
+            />
+            <div class="text-caption text-medium-emphasis mb-3">
+              {{ paperImageDetectionHint }}
+            </div>
+            <div v-if="paperEnableImageDetection && paperImageDetectionSupported" class="d-flex flex-wrap align-center ga-3">
+              <v-btn variant="outlined" color="primary" @click="openPaperMethodSelection">
+                选择论文图像检测子任务
+              </v-btn>
+              <v-chip color="primary" variant="tonal">
+                已选 {{ selectedPaperMethodCount }}/9 项
+              </v-chip>
+            </div>
+          </template>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -268,6 +291,20 @@ interface PendingDetectionPayload {
   mode: number
 }
 
+type TaskSelectionContext = 'image' | 'paper-image'
+
+const createDefaultMethodSwitches = (): MethodSwitches => ({
+  llm: true,
+  ela: true,
+  exif: true,
+  cmd: true,
+  urn_coarse_v2: true,
+  urn_blurring: true,
+  urn_brute_force: true,
+  urn_contrast: true,
+  urn_inpainting: true,
+})
+
 const router = useRouter()
 const snackbar = useSnackbarStore()
 
@@ -294,6 +331,9 @@ const uploadedResourceFiles = ref<Array<{ file_id: number; name: string; resourc
 const resourceDomainTag = ref('')
 const taskSelectionDialog = ref(false)
 const pendingDetectionPayload = ref<PendingDetectionPayload | null>(null)
+const taskSelectionContext = ref<TaskSelectionContext>('image')
+const paperEnableImageDetection = ref(true)
+const paperMethodSwitches = ref<MethodSwitches>(createDefaultMethodSwitches())
 
 const MAX_SIZE = 100 * 1024 * 1024
 const imageExt = new Set(['png', 'jpg', 'jpeg', 'pdf', 'zip'])
@@ -305,6 +345,8 @@ watch(detectionType, () => {
   reviewPaperFile.value = null
   reviewFile.value = null
   uploadProgress.value = 0
+  paperEnableImageDetection.value = true
+  paperMethodSwitches.value = createDefaultMethodSwitches()
 })
 
 const uploadCardTitle = computed(() => {
@@ -341,6 +383,21 @@ const resourceDomainOptions = [
   { title: '图形学', value: 'Graphics' },
   { title: '其他', value: 'Other' },
 ]
+
+const paperImageDetectionSupported = computed(() => {
+  if (progressTaskType.value !== 'paper') return false
+  const fileName = uploadedResourceFiles.value[0]?.name?.toLowerCase() || ''
+  return fileName.endsWith('.pdf') || fileName.endsWith('.zip')
+})
+
+const paperImageDetectionHint = computed(() => {
+  if (!paperImageDetectionSupported.value) {
+    return '当前仅 PDF / ZIP 论文支持抽取论文中的图像并执行图像检测。'
+  }
+  return '开启后会像图像检测一样，只执行你勾选的图像子任务；关闭后只做论文文本检测。'
+})
+
+const selectedPaperMethodCount = computed(() => Object.values(paperMethodSwitches.value).filter(Boolean).length)
 
 const triggerMainInput = () => mainInputRef.value?.click()
 const triggerReviewPaperInput = () => reviewPaperInputRef.value?.click()
@@ -475,7 +532,13 @@ const uploadSingleFile = async (
 }
 
 const openTaskSelection = (payload: PendingDetectionPayload) => {
+  taskSelectionContext.value = 'image'
   pendingDetectionPayload.value = payload
+  taskSelectionDialog.value = true
+}
+
+const openPaperMethodSelection = () => {
+  taskSelectionContext.value = 'paper-image'
   taskSelectionDialog.value = true
 }
 
@@ -500,6 +563,10 @@ const submitDetectionWithSelection = async (methodSwitches: MethodSwitches) => {
 }
 
 const confirmTaskSelection = async (methodSwitches: MethodSwitches) => {
+  if (taskSelectionContext.value === 'paper-image') {
+    paperMethodSwitches.value = { ...methodSwitches }
+    return
+  }
   await submitDetectionWithSelection(methodSwitches)
 }
 
@@ -653,11 +720,28 @@ const handleResourceTaskNext = async () => {
     await Promise.all(
       uploadedResourceFiles.value.map(file => uploadApi.addTag({ fileId: file.file_id, tag: resourceDomainTag.value })),
     )
-    await publisher.createResourceTask({
+    const payload: {
+      task_type: 'paper' | 'review'
+      task_name: string
+      file_ids: number[]
+      extract_images?: boolean
+      if_use_llm?: boolean
+      method_switches?: Record<string, boolean>
+    } = {
       task_type: taskType,
       task_name: resourceTaskName.value,
       file_ids: uploadedResourceFiles.value.map(file => file.file_id),
-    })
+    }
+
+    if (taskType === 'paper') {
+      payload.extract_images = paperImageDetectionSupported.value ? paperEnableImageDetection.value : false
+      payload.method_switches = paperEnableImageDetection.value && paperImageDetectionSupported.value
+        ? { ...paperMethodSwitches.value }
+        : Object.fromEntries(Object.keys(createDefaultMethodSwitches()).map(key => [key, false]))
+      payload.if_use_llm = Boolean(payload.method_switches.llm)
+    }
+
+    await publisher.createResourceTask(payload)
     snackbar.showMessage('任务创建成功', 'success')
     await navigateToHistorySafely()
   } catch (error: any) {
@@ -722,6 +806,9 @@ const returnToUpload = () => {
   uploadedResourceFiles.value = []
   pendingDetectionPayload.value = null
   taskSelectionDialog.value = false
+  taskSelectionContext.value = 'image'
+  paperEnableImageDetection.value = true
+  paperMethodSwitches.value = createDefaultMethodSwitches()
   mainFiles.value = []
   reviewPaperFile.value = null
   reviewFile.value = null

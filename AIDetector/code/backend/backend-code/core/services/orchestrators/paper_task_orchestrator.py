@@ -12,6 +12,18 @@ from ..capabilities.text_detection_service import analyze_text_segments
 from ..resources.document_preprocessor import preprocess_document
 from ..resources.image_extraction_service import create_image_uploads_for_resource
 
+IMAGE_METHOD_KEYS = {
+    "llm",
+    "ela",
+    "exif",
+    "cmd",
+    "urn_coarse_v2",
+    "urn_blurring",
+    "urn_brute_force",
+    "urn_contrast",
+    "urn_inpainting",
+}
+
 
 def run_paper_detection_task(task_id, api_key=None):
     detection_task = DetectionTask.objects.get(id=task_id)
@@ -43,6 +55,7 @@ def run_paper_detection_task(task_id, api_key=None):
             "paragraph_count": len(processed_document["paragraphs"]),
             "segment_count": len(processed_document["segments"]),
             "reference_count": len(processed_document["references"]),
+            "image_detection_enabled": _paper_image_detection_enabled(detection_task),
         },
         "paragraph_results": paragraph_results,
         "suspicious_paragraphs": explanations,
@@ -61,6 +74,8 @@ def run_paper_detection_task(task_id, api_key=None):
 
 
 def _run_paper_image_detection(detection_task, file_management):
+    if not _paper_image_detection_enabled(detection_task):
+        return []
     if Path(file_management.file_name or "").suffix.lower() not in {".pdf", ".zip"}:
         return []
 
@@ -88,6 +103,16 @@ def _run_paper_image_detection(detection_task, file_management):
         }
         for image in image_uploads
     ]
+
+
+def _paper_image_detection_enabled(detection_task):
+    method_switches = detection_task.method_switches or {}
+    if "__paper_extract_images__" in method_switches:
+        return bool(method_switches["__paper_extract_images__"]) and any(
+            bool(method_switches.get(method_name))
+            for method_name in IMAGE_METHOD_KEYS
+        )
+    return True
 
 
 def _mark_task_failed(detection_task, message):

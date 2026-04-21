@@ -43,8 +43,9 @@ class ResourceTaskFlowTests(TestCase):
             linked_file=linked_file,
         )
 
-    @patch("core.tasks.run_paper_detection.delay")
-    def test_create_paper_resource_task_accepts_only_paper_files(self, mock_delay):
+    @patch("core.views.views_dectection.start_resource_detection_task_thread")
+    @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
+    def test_create_paper_resource_task_accepts_only_paper_files(self, _mock_on_commit, mock_starter):
         paper_file = self.create_file("paper.pdf", "paper")
         image_file = self.create_file("image.png", "image")
 
@@ -60,8 +61,9 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(success_response.status_code, 200)
         task = DetectionTask.objects.get(pk=success_response.data["task_id"])
         self.assertEqual(task.task_type, "paper")
+        self.assertEqual(task.status, "in_progress")
         self.assertEqual(list(task.resource_files.values_list("id", flat=True)), [paper_file.id])
-        mock_delay.assert_called_once_with(task.id, None)
+        mock_starter.assert_called_once_with("paper", task.id, None)
 
         failure_response = self.client.post(
             "/api/resource-task/create/",
@@ -75,8 +77,9 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(failure_response.status_code, 400)
         self.assertEqual(failure_response.data["message"], "paper task only accepts paper resource files")
 
-    @patch("core.tasks.run_review_detection.delay")
-    def test_create_review_resource_task_requires_both_review_paper_and_linked_review_file(self, mock_delay):
+    @patch("core.views.views_dectection.start_resource_detection_task_thread")
+    @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
+    def test_create_review_resource_task_requires_both_review_paper_and_linked_review_file(self, _mock_on_commit, mock_starter):
         review_paper = self.create_file("review-paper.pdf", "review_paper")
         unrelated_review_paper = self.create_file("other-paper.pdf", "review_paper")
         linked_review_file = self.create_file("review.txt", "review_file", linked_file=review_paper)
@@ -94,11 +97,12 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(success_response.status_code, 200)
         review_task = DetectionTask.objects.get(pk=success_response.data["task_id"])
         self.assertEqual(review_task.task_type, "review")
+        self.assertEqual(review_task.status, "in_progress")
         self.assertCountEqual(
             list(review_task.resource_files.values_list("id", flat=True)),
             [review_paper.id, linked_review_file.id],
         )
-        mock_delay.assert_called_once_with(review_task.id, None)
+        mock_starter.assert_called_once_with("review", review_task.id, None)
 
         missing_pair_response = self.client.post(
             "/api/resource-task/create/",
@@ -175,3 +179,39 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(response.data["task_type"], "review")
         self.assertEqual(response.data["results"]["relevance_results"][0]["paper_paragraph_index"], 1)
         self.assertIn("匹配 1 段", response.data["result_summary"])
+
+    @patch("core.views.views_dectection.start_resource_detection_task_thread")
+    @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
+    def test_create_paper_resource_task_uses_local_async_and_accepts_image_options(self, _mock_on_commit, mock_starter):
+        paper_file = self.create_file("paper.pdf", "paper")
+
+        response = self.client.post(
+            "/api/resource-task/create/",
+            {
+                "task_type": "paper",
+                "task_name": "Paper Async Task",
+                "file_ids": [paper_file.id],
+                "extract_images": False,
+                "if_use_llm": False,
+                "method_switches": {
+                    "llm": False,
+                    "ela": False,
+                    "exif": False,
+                    "cmd": False,
+                    "urn_coarse_v2": False,
+                    "urn_blurring": False,
+                    "urn_brute_force": False,
+                    "urn_contrast": False,
+                    "urn_inpainting": False,
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["execution_mode"], "local_async")
+        self.assertEqual(response.data["status"], "in_progress")
+        task = DetectionTask.objects.get(pk=response.data["task_id"])
+        self.assertFalse(task.if_use_llm)
+        self.assertEqual(task.method_switches["__paper_extract_images__"], False)
+        mock_starter.assert_called_once_with("paper", task.id, None)
