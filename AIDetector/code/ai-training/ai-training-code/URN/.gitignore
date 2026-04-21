@@ -1,0 +1,12 @@
+.idea
+*.svg
+**/__pycache__/*
+logs/
+**/.ipynb_checkpoints/
+*.png
+*.jpg
+*.log
+data/*
+
+!data/*.py
+!data/

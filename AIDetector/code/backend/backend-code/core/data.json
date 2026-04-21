@@ -1,0 +1,5 @@
+{
+    "cmd_block_size": 64,
+    "urn_k": 0.3,
+    "if_use_llm": false
+}
