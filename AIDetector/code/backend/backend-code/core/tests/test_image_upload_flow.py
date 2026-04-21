@@ -2,6 +2,7 @@ import shutil
 import zipfile
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -27,6 +28,10 @@ def build_zip_uploaded_file(name="bundle.zip"):
         archive.writestr("folder/inside.png", image_buffer.getvalue())
         archive.writestr("notes.txt", b"ignore me")
     return SimpleUploadedFile(name, zip_buffer.getvalue(), content_type="application/zip")
+
+
+def build_pdf_uploaded_file(name="paper-images.pdf", payload=b"%PDF-1.4 fake image bundle"):
+    return SimpleUploadedFile(name, payload, content_type="application/pdf")
 
 
 @override_settings(ENABLE_FANYI=False)
@@ -97,6 +102,22 @@ class UploadFileFlowTests(TestCase):
         extracted_images = ImageUpload.objects.filter(file_management=file_record)
         self.assertEqual(extracted_images.count(), 1)
         self.assertFalse(extracted_images.get().extracted_from_pdf)
+
+    @patch("core.services.resources.upload_service.create_image_uploads_for_resource")
+    def test_upload_image_pdf_is_accepted_and_delegates_to_extraction_service(self, mock_extract):
+        response = self.client.post(
+            "/api/upload/",
+            {
+                "detection_type": "image",
+                "file": build_pdf_uploaded_file(),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        file_record = FileManagement.objects.get(pk=response.data["file_id"])
+        self.assertEqual(file_record.resource_type, "image")
+        mock_extract.assert_called_once_with(file_record)
 
     def test_upload_review_paper_sets_review_paper_resource_type(self):
         response = self.client.post(

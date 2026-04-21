@@ -20,7 +20,7 @@ def save_uploaded_resource(*, user, uploaded_file, detection_type, review_role="
     if uploaded_file.size > max_size:
         raise ValueError("File size exceeds 100MB limit")
 
-    allowed_image_ext = {".png", ".jpg", ".jpeg", ".zip"}
+    allowed_image_ext = {".png", ".jpg", ".jpeg", ".pdf", ".zip"}
     allowed_paper_ext = {".docx", ".pdf", ".zip"}
     allowed_review_ext = {".docx", ".pdf", ".txt", ".zip"}
 
