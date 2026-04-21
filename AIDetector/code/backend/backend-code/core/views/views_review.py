@@ -13,6 +13,7 @@ from ..models import ReviewRequest, DetectionTask, ImageUpload, User, Log
 from core.util import send_notification
 from core.models import Notification
 import uuid
+from ..services.orchestrators import build_resource_review_placeholder
 
 
 @api_view(['GET'])
@@ -179,79 +180,18 @@ def create_resource_review_task_placeholder(request):
     if user.role != 'publisher':
         return Response({'error': 'Only publishers can create review tasks'}, status=403)
 
-    task_id = request.data.get('task_id')
-    reviewers = request.data.get('reviewers', [])
-    reason = request.data.get('reason', '').strip() or 'No reason provided'
-    selected_file_ids = request.data.get('selected_file_ids', [])
-
-    if not task_id:
-        return Response({'error': 'task_id is required'}, status=400)
-    if not isinstance(reviewers, list) or not reviewers:
-        return Response({'error': 'reviewers is required and must be a non-empty list'}, status=400)
-    if selected_file_ids and not isinstance(selected_file_ids, list):
-        return Response({'error': 'selected_file_ids must be a list'}, status=400)
-
     try:
-        detection_task = DetectionTask.objects.get(id=task_id, user=user)
-    except DetectionTask.DoesNotExist:
-        return Response({'error': 'Detection task not found or permission denied'}, status=404)
-
-    if detection_task.task_type not in ('paper', 'review'):
-        return Response({'error': 'This endpoint only supports paper/review tasks'}, status=400)
-
-    if detection_task.status != 'completed':
-        return Response({'error': 'Task is not completed yet'}, status=400)
-
-    reviewer_users = User.objects.filter(organization=user.organization, id__in=reviewers, role='reviewer')
-    if reviewer_users.count() != len(set(reviewers)):
-        return Response({'error': 'Some reviewer IDs do not exist or are not reviewers'}, status=404)
-
-    task_files = detection_task.resource_files.all()
-    if selected_file_ids:
-        selected_files = task_files.filter(id__in=selected_file_ids)
-        if selected_files.count() != len(set(selected_file_ids)):
-            return Response({'error': 'Some selected_file_ids do not belong to current task'}, status=400)
-    else:
-        selected_files = task_files
-
-    payload = {
-        'placeholder_request_id': f'RR-{uuid.uuid4().hex[:10]}',
-        'task_id': detection_task.id,
-        'task_type': detection_task.task_type,
-        'task_name': detection_task.task_name,
-        'reason': reason,
-        'reviewers': [
-            {
-                'id': u.id,
-                'username': u.username,
-            }
-            for u in reviewer_users
-        ],
-        'selected_files': [
-            {
-                'file_id': f.id,
-                'file_name': f.file_name,
-                'resource_type': f.resource_type,
-            }
-            for f in selected_files
-        ],
-        'ai_snapshot': {
-            'status': detection_task.status,
-            'generated_at': timezone.localtime().strftime('%Y-%m-%d %H:%M:%S'),
-        },
-        'todo': {
-            'persistence': 'ReviewRequest/ManualReview resource schema pending',
-            'assignment': 'admin approval + reviewer assignment pending',
-            'report': 'resource manual review report pipeline pending',
-        },
-    }
-
-    Log.objects.create(
-        user=user,
-        operation_type='review_request',
-        related_model='DetectionTask',
-        related_id=detection_task.id,
-    )
+        payload = build_resource_review_placeholder(
+            user=user,
+            task_id=request.data.get('task_id'),
+            reviewers=request.data.get('reviewers', []),
+            reason=request.data.get('reason', ''),
+            selected_file_ids=request.data.get('selected_file_ids', []),
+        )
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=400)
+    except FileNotFoundError as exc:
+        return Response({'error': str(exc)}, status=404)
 
     return Response({
         'message': 'Resource review request placeholder submitted',

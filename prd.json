@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-21T15:24:00+08:00",
+  "updated_at": "2026-04-21T15:46:00+08:00",
   "items": [
     {
       "id": "slice-00-tracking-bootstrap",
@@ -22,10 +22,10 @@
     {
       "id": "slice-02-backend-skeleton",
       "title": "Create service-layer skeleton and slim backend views",
-      "status": "pending",
+      "status": "done",
       "slice": "slice-02-backend-skeleton",
-      "verification": "conda run -n detect python manage.py check",
-      "attempts": 0,
+      "verification": "DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py check; DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests.test_image_upload_flow core.tests.test_resource_task_flow",
+      "attempts": 1,
       "fallback": ""
     },
     {
