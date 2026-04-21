@@ -72,6 +72,22 @@ class UploadFileFlowTests(TestCase):
         self.assertEqual(file_record.resource_type, "image")
         self.assertEqual(ImageUpload.objects.filter(file_management=file_record).count(), 1)
 
+    def test_upload_image_with_long_filename_keeps_image_path_within_model_limit(self):
+        long_name = f"{'a' * 70}.png"
+        response = self.client.post(
+            "/api/upload/",
+            {
+                "detection_type": "image",
+                "file": build_uploaded_file(long_name),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        image_upload = ImageUpload.objects.get(file_management_id=response.data["file_id"])
+        max_length = ImageUpload._meta.get_field("image").max_length
+        self.assertLessEqual(len(image_upload.image.name), max_length)
+
     def test_upload_paper_file_creates_paper_resource_without_extracting_images(self):
         response = self.client.post(
             "/api/upload/",

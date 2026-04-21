@@ -11,6 +11,9 @@ from django.conf import settings
 from ...models import ImageUpload
 
 
+EXTRACTED_IMAGE_DIR = "extracted_images"
+
+
 def create_image_uploads_for_resource(file_management):
     stored_path = (file_management.stored_path or "").strip()
     if not stored_path:
@@ -93,8 +96,12 @@ def extract_images_from_zip(file_management, relative_file_path):
 
 def store_uploaded_image(file_management, relative_file_path):
     source_path = _media_path(relative_file_path)
-    unique_filename = f"{file_management.id}_{uuid.uuid4().hex}_{Path(relative_file_path).name}"
-    relative_image_path = os.path.join("extracted_images", unique_filename).replace("\\", "/")
+    suffix = Path(relative_file_path).suffix or ".bin"
+    relative_image_path = _build_image_relative_path(
+        file_management_id=file_management.id,
+        suffix=suffix,
+        hint="upload",
+    )
     target_path = _media_path(relative_image_path)
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
     shutil.copyfile(source_path, target_path)
@@ -113,8 +120,11 @@ def _save_image_bytes(image_data, image_name):
 
 
 def _save_pillow_image(image, image_name):
-    unique_image_name = f"{uuid.uuid4().hex}_{image_name}"
-    relative_path = os.path.join("extracted_images", unique_image_name).replace("\\", "/")
+    relative_path = _build_image_relative_path(
+        file_management_id=_extract_file_management_id(image_name),
+        suffix=Path(image_name).suffix or ".png",
+        hint=Path(image_name).stem,
+    )
     full_path = _media_path(relative_path)
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
     image.save(full_path)
@@ -134,6 +144,45 @@ def _remove_media_file(relative_path):
     full_path = _media_path(relative_path)
     if os.path.exists(full_path):
         os.remove(full_path)
+
+
+def _build_image_relative_path(*, file_management_id, suffix, hint):
+    max_length = ImageUpload._meta.get_field("image").max_length
+    normalized_suffix = _normalize_suffix(suffix)
+    normalized_hint = _sanitize_hint(hint)
+    unique_name = f"{file_management_id}_{normalized_hint}_{uuid.uuid4().hex}{normalized_suffix}"
+    relative_path = os.path.join(EXTRACTED_IMAGE_DIR, unique_name).replace("\\", "/")
+
+    if len(relative_path) <= max_length:
+        return relative_path
+
+    available_hint_length = max_length - len(os.path.join(EXTRACTED_IMAGE_DIR, "").replace("\\", "/")) - len(
+        f"{file_management_id}__{uuid.uuid4().hex}{normalized_suffix}"
+    )
+    trimmed_hint = normalized_hint[: max(available_hint_length, 0)]
+    fallback_name = f"{file_management_id}_{trimmed_hint}_{uuid.uuid4().hex}{normalized_suffix}".replace("__", "_")
+    return os.path.join(EXTRACTED_IMAGE_DIR, fallback_name).replace("\\", "/")
+
+
+def _extract_file_management_id(image_name):
+    stem_prefix = Path(image_name).stem.split("_", 1)[0]
+    try:
+        return int(stem_prefix)
+    except ValueError:
+        return 0
+
+
+def _normalize_suffix(suffix):
+    normalized = (suffix or ".png").strip()
+    if not normalized.startswith("."):
+        normalized = f".{normalized}"
+    return normalized[:10]
+
+
+def _sanitize_hint(hint):
+    raw_hint = "".join(char if char.isalnum() else "_" for char in (hint or "image"))
+    compact_hint = "_".join(part for part in raw_hint.split("_") if part)
+    return compact_hint[:24] or "image"
 
 
 def _media_path(relative_path):
