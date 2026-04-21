@@ -13,11 +13,28 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
-from . import call_figure_detection
-from .call_figure_detection import _run_local_inference
-from .local_detection import _create_batch_inputs, _extract_single_result, _persist_detection_result, _run_local_detection_batch
-from .models import DetectionResult, DetectionTask, FileManagement, ImageUpload, Organization, SubDetectionResult, User
-from .views.views_dectection import _run_detection_task_async, get_detection_task_status_normal, submit_detection2
+from core import call_figure_detection
+from core.call_figure_detection import _run_local_inference
+from core.local_detection import (
+    _create_batch_inputs,
+    _extract_single_result,
+    _persist_detection_result,
+    _run_local_detection_batch,
+)
+from core.models import (
+    DetectionResult,
+    DetectionTask,
+    FileManagement,
+    ImageUpload,
+    Organization,
+    SubDetectionResult,
+    User,
+)
+from core.views.views_dectection import (
+    _run_detection_task_async,
+    get_detection_task_status_normal,
+    submit_detection2,
+)
 
 
 def build_test_image(name="test.png", color=(255, 0, 0)):
@@ -32,11 +49,11 @@ def fake_detection_payload():
         ("ela", [("image_0.png", np.full((12, 12), 10, dtype=np.uint8))]),
         ("exif", [("image_0.png", ("exif", ["Edited by Photoshop"]))]),
         ("cmd", []),
-        ("splicing", [np.ones((12, 12), dtype=np.float32), 0.85]),
-        ("blurring", [np.zeros((12, 12), dtype=np.float32), 0.10]),
-        ("bruteforce", [np.zeros((12, 12), dtype=np.float32), 0.05]),
-        ("contrast", [np.zeros((12, 12), dtype=np.float32), 0.20]),
-        ("inpainting", [np.zeros((12, 12), dtype=np.float32), 0.30]),
+        ("urn_coarse_v2", [np.ones((12, 12), dtype=np.float32), 0.85]),
+        ("urn_blurring", [np.zeros((12, 12), dtype=np.float32), 0.10]),
+        ("urn_brute_force", [np.zeros((12, 12), dtype=np.float32), 0.05]),
+        ("urn_contrast", [np.zeros((12, 12), dtype=np.float32), 0.20]),
+        ("urn_inpainting", [np.zeros((12, 12), dtype=np.float32), 0.30]),
     ]
 
 
@@ -52,11 +69,11 @@ def fake_detection_payload_for_two_images():
         ),
         ("exif", [("image_1.png", None), ("image_2.png", None)]),
         ("cmd", []),
-        ("splicing", [np.zeros((12, 12), dtype=np.float32), 0.10, np.ones((12, 12), dtype=np.float32), 0.95]),
-        ("blurring", [np.zeros((12, 12), dtype=np.float32), 0.10, np.zeros((12, 12), dtype=np.float32), 0.10]),
-        ("bruteforce", [np.zeros((12, 12), dtype=np.float32), 0.10, np.zeros((12, 12), dtype=np.float32), 0.10]),
-        ("contrast", [np.zeros((12, 12), dtype=np.float32), 0.10, np.zeros((12, 12), dtype=np.float32), 0.10]),
-        ("inpainting", [np.zeros((12, 12), dtype=np.float32), 0.10, np.zeros((12, 12), dtype=np.float32), 0.10]),
+        ("urn_coarse_v2", [np.zeros((12, 12), dtype=np.float32), 0.10, np.ones((12, 12), dtype=np.float32), 0.95]),
+        ("urn_blurring", [np.zeros((12, 12), dtype=np.float32), 0.10, np.zeros((12, 12), dtype=np.float32), 0.10]),
+        ("urn_brute_force", [np.zeros((12, 12), dtype=np.float32), 0.10, np.zeros((12, 12), dtype=np.float32), 0.10]),
+        ("urn_contrast", [np.zeros((12, 12), dtype=np.float32), 0.10, np.zeros((12, 12), dtype=np.float32), 0.10]),
+        ("urn_inpainting", [np.zeros((12, 12), dtype=np.float32), 0.10, np.zeros((12, 12), dtype=np.float32), 0.10]),
     ]
 
 
@@ -386,7 +403,7 @@ class LocalBridgeTests(TestCase):
         batch_dir = _create_batch_inputs(task, 0, [detection_result_for_image2, detection_result_for_image1])
         self.addCleanup(lambda: shutil.rmtree(batch_dir, ignore_errors=True))
 
-        fake_service_root = Path(__file__).resolve().parent / "test_fixtures"
+        fake_service_root = Path(__file__).resolve().parents[1] / "test_fixtures"
         fake_shared_root = fake_service_root / "shared"
         fake_entrypoint = fake_service_root / "fake_ai_service_entrypoint.py"
         shutil.rmtree(fake_shared_root, ignore_errors=True)
@@ -465,8 +482,6 @@ class LocalBridgeTests(TestCase):
         image1 = ImageUpload.objects.create(file_management=file_record, image=f"extracted_images/{image1_name}")
         image2 = ImageUpload.objects.create(file_management=file_record, image=f"extracted_images/{image2_name}")
 
-        # Deliberately create results in the reverse image order so detection_result.id
-        # no longer matches image_upload.id. The batch zip still follows image_upload.id.
         detection_result_for_image2 = DetectionResult.objects.create(
             image_upload=image2,
             detection_task=task,
@@ -528,9 +543,18 @@ class LocalDetectionApiCoverageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         return response.data["file_id"]
 
+    @patch(
+        "core.views.views_dectection._start_detection_task_thread",
+        side_effect=lambda task_id, image_ids, if_use_llm, num_images: _run_detection_task_async(
+            task_id, image_ids, if_use_llm, num_images
+        ),
+    )
+    @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
     @patch("core.local_detection.generate_detection_task_report", return_value="reports/task_report.pdf")
     @patch("core.local_detection.get_result", return_value=fake_detection_payload())
-    def test_upload_detect_and_read_results_through_api(self, _mock_result, _mock_report):
+    def test_upload_detect_and_read_results_through_api(
+        self, _mock_result, _mock_report, _mock_on_commit, _mock_thread
+    ):
         file_id = self.upload_image_via_api()
 
         extracted_response = self.client.get(f"/api/upload/{file_id}/extract_images/")
@@ -589,8 +613,17 @@ class LocalDetectionApiCoverageTests(TestCase):
         self.assertTrue(result_detail_response.data["overall"]["is_fake"])
         self.assertEqual(len(result_detail_response.data["sub_methods"]), 5)
 
+    @patch(
+        "core.views.views_dectection._start_detection_task_thread",
+        side_effect=lambda task_id, image_ids, if_use_llm, num_images: _run_detection_task_async(
+            task_id, image_ids, if_use_llm, num_images
+        ),
+    )
+    @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
     @patch("core.local_detection.get_result", return_value=None)
-    def test_failed_local_detection_is_reported_as_failed_everywhere_and_refunds_usage(self, _mock_result):
+    def test_failed_local_detection_is_reported_as_failed_everywhere_and_refunds_usage(
+        self, _mock_result, _mock_on_commit, _mock_thread
+    ):
         file_id = self.upload_image_via_api(name="broken.png", color=(0, 255, 0))
         image_id = self.client.get(f"/api/upload/{file_id}/extract_images/").data["images"][0]["image_id"]
         initial_remaining = self.organization.remaining_non_llm_uses
@@ -607,7 +640,7 @@ class LocalDetectionApiCoverageTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(submit_response.status_code, 500)
+        self.assertEqual(submit_response.status_code, 200)
         task_id = submit_response.data["task_id"]
 
         self.organization.refresh_from_db()

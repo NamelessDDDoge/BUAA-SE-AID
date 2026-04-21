@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-21T14:39:00+08:00",
+  "updated_at": "2026-04-21T15:24:00+08:00",
   "items": [
     {
       "id": "slice-00-tracking-bootstrap",
@@ -13,10 +13,10 @@
     {
       "id": "slice-01-regression-baseline",
       "title": "Split and extend regression tests for image, paper, and review entry flows",
-      "status": "pending",
+      "status": "done",
       "slice": "slice-01-regression-baseline",
       "verification": "conda run -n detect python manage.py test core.tests",
-      "attempts": 0,
+      "attempts": 1,
       "fallback": ""
     },
     {
