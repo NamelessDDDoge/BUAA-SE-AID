@@ -296,7 +296,7 @@ const taskSelectionDialog = ref(false)
 const pendingDetectionPayload = ref<PendingDetectionPayload | null>(null)
 
 const MAX_SIZE = 100 * 1024 * 1024
-const imageExt = new Set(['png', 'jpg', 'jpeg', 'zip'])
+const imageExt = new Set(['png', 'jpg', 'jpeg', 'pdf', 'zip'])
 const paperExt = new Set(['docx', 'pdf', 'zip'])
 const reviewExt = new Set(['docx', 'pdf', 'txt', 'zip'])
 
@@ -331,7 +331,7 @@ const formatHint = computed(() => {
 })
 
 const acceptString = computed(() => (
-  detectionType.value === 'image' ? '.png,.jpg,.jpeg,.zip' : '.docx,.pdf,.zip'
+  detectionType.value === 'image' ? '.png,.jpg,.jpeg,.pdf,.zip' : '.docx,.pdf,.zip'
 ))
 
 const resourceDomainOptions = [
