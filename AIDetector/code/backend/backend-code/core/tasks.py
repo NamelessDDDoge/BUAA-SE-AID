@@ -5,6 +5,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from .models import DetectionTask
+from .services.resources import preprocess_document
 from .utils.report_generator import generate_detection_task_report
 
 
@@ -34,44 +35,7 @@ def run_paper_detection(task_id, api_key=None):
         task.save(update_fields=["status"])
         return "File path does not exist"
 
-    text_content = ""
-    try:
-        ext = file_path.lower().split(".")[-1]
-        if ext == "pdf":
-            import fitz
-
-            with fitz.open(file_path) as document:
-                text_content = "".join(page.get_text() for page in document)
-        elif ext == "docx":
-            import docx
-
-            document = docx.Document(file_path)
-            text_content = "\n".join(paragraph.text for paragraph in document.paragraphs)
-        else:
-            with open(file_path, "r", encoding="utf-8") as handle:
-                text_content = handle.read()
-    except Exception:
-        try:
-            with open(file_path, "r", encoding="gbk") as handle:
-                text_content = handle.read()
-        except Exception:
-            text_content = "无法读取文件内容，请上传可解析的文本文件。"
-
-    paragraphs = [paragraph.strip() for paragraph in text_content.split("\n") if paragraph.strip()]
-    segments = []
-    current_segment = ""
-    for paragraph in paragraphs:
-        if len(current_segment) + len(paragraph) < 500:
-            current_segment += paragraph + " "
-        else:
-            if current_segment:
-                segments.append(current_segment.strip())
-            current_segment = paragraph + " "
-    if current_segment:
-        segments.append(current_segment.strip())
-
-    if not segments:
-        segments = [text_content[:2000]] if text_content else ["无内容"]
+    segments = preprocess_document(file_path)["segments"]
 
     api_endpoint = "https://api.fastdetect.net/api/detect"
     default_api_key = "sk-szcr9duUjGSmp6UaDQlsJku1zBG3Rr1NSjFoGLsvFb5VWVos"

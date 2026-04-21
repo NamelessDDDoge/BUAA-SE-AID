@@ -1,13 +1,10 @@
-import io
 import os
 import uuid
-import zipfile
 
-from PIL import Image
-from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 
-from ...models import FileManagement, ImageUpload
+from ...models import FileManagement
+from .image_extraction_service import create_image_uploads_for_resource
 
 
 def save_uploaded_resource(*, user, uploaded_file, detection_type, review_role="", linked_paper_file_id=None):
@@ -83,12 +80,7 @@ def save_uploaded_resource(*, user, uploaded_file, detection_type, review_role="
     file_management.save(update_fields=["stored_path"])
 
     if detection_type == "image":
-        if file_ext == ".pdf":
-            _extract_images_from_pdf(file_management, stored_path)
-        elif file_ext == ".zip":
-            _extract_images_from_zip(file_management, uploaded_file)
-        else:
-            _store_image(file_management, uploaded_file)
+        create_image_uploads_for_resource(file_management)
 
     return {
         "file_id": file_management.id,
@@ -97,114 +89,3 @@ def save_uploaded_resource(*, user, uploaded_file, detection_type, review_role="
         "resource_type": resource_type,
         "linked_paper_file_id": linked_paper_file.id if linked_paper_file else None,
     }
-
-
-def _extract_images_from_pdf(file_management, file_path):
-    import fitz
-
-    full_file_path = os.path.join(settings.MEDIA_ROOT, file_path)
-    with fitz.open(full_file_path) as pdf_document:
-        for page_number in range(pdf_document.page_count):
-            page = pdf_document.load_page(page_number)
-            try:
-                image_list = page.get_images(full=True)
-                for image_index, img in enumerate(image_list):
-                    xref = img[0]
-                    base_image = pdf_document.extract_image(xref)
-                    image_bytes = base_image["image"]
-                    image_ext = base_image["ext"]
-                    image_filename = (
-                        f"{file_management.id}_page{page_number + 1}_image{image_index + 1}.{image_ext}"
-                    )
-
-                    relative_image_path = _save_pdf_image(image_bytes, image_filename)
-                    ImageUpload.objects.create(
-                        file_management=file_management,
-                        image=relative_image_path,
-                        extracted_from_pdf=True,
-                        page_number=page_number + 1,
-                        isDetect=False,
-                        isReview=False,
-                        isFake=False,
-                    )
-            finally:
-                del page
-
-
-def _extract_images_from_zip(file_management, uploaded_file):
-    with zipfile.ZipFile(uploaded_file) as zip_file:
-        for file_name in zip_file.namelist():
-            file_info = zip_file.getinfo(file_name)
-            if file_info.is_dir():
-                continue
-
-            if file_name.lower().endswith((".png", ".jpg", ".jpeg")):
-                try:
-                    img_data = zip_file.read(file_name)
-                    image = Image.open(io.BytesIO(img_data))
-                    image_name = f"{file_management.id}_{os.path.basename(file_name)}"
-                    relative_image_path = _save_zip_image(image, image_name)
-                    ImageUpload.objects.create(
-                        file_management=file_management,
-                        image=relative_image_path,
-                        extracted_from_pdf=False,
-                        isDetect=False,
-                        isReview=False,
-                        isFake=False,
-                    )
-                except Exception:
-                    continue
-            elif file_name.lower().endswith(".pdf"):
-                temp_pdf_path = None
-                try:
-                    pdf_data = zip_file.read(file_name)
-                    temp_pdf_dir = os.path.join(settings.MEDIA_ROOT, "temp_pdfs")
-                    os.makedirs(temp_pdf_dir, exist_ok=True)
-                    temp_pdf_filename = f"{uuid.uuid4().hex}.pdf"
-                    temp_pdf_path = os.path.join(temp_pdf_dir, temp_pdf_filename)
-                    with open(temp_pdf_path, "wb") as handle:
-                        handle.write(pdf_data)
-                    relative_temp_pdf_path = os.path.join("temp_pdfs", temp_pdf_filename)
-                    _extract_images_from_pdf(file_management, relative_temp_pdf_path)
-                finally:
-                    if temp_pdf_path and os.path.exists(temp_pdf_path):
-                        try:
-                            os.remove(temp_pdf_path)
-                        except Exception:
-                            pass
-
-
-def _save_pdf_image(image_data, image_name):
-    unique_image_name = f"{uuid.uuid4().hex}_{image_name}"
-    relative_path = os.path.join("extracted_images", unique_image_name).replace("\\", "/")
-    full_path = os.path.join(settings.MEDIA_ROOT, relative_path)
-    os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-    image = Image.open(io.BytesIO(image_data))
-    image.save(full_path)
-    return relative_path
-
-
-def _save_zip_image(image, image_name):
-    unique_image_name = f"{uuid.uuid4().hex}_{image_name}"
-    relative_path = os.path.join("extracted_images", unique_image_name).replace("\\", "/")
-    full_path = os.path.join(settings.MEDIA_ROOT, relative_path)
-    os.makedirs(os.path.dirname(full_path), exist_ok=True)
-    image.save(full_path)
-    return relative_path
-
-
-def _store_image(file_management, uploaded_file):
-    unique_filename = f"{uuid.uuid4().hex}_{uploaded_file.name}"
-    relative_path = os.path.join("extracted_images", f"{file_management.id}_{unique_filename}").replace("\\", "/")
-    file_storage = FileSystemStorage()
-    file_storage.save(relative_path, uploaded_file)
-
-    ImageUpload.objects.create(
-        file_management=file_management,
-        image=relative_path,
-        extracted_from_pdf=False,
-        isDetect=False,
-        isReview=False,
-        isFake=False,
-    )
