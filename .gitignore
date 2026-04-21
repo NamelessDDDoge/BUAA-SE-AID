@@ -1,0 +1,108 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Environment / local config
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+.python-version
+
+# Python caches / test artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.ipynb_checkpoints/
+
+# Node / frontend build artifacts
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Backend runtime / local data
+*.sqlite3
+media/
+staticfiles/
+allstatic/
+uploads/
+logs/
+*.log
+
+# Local temp / scratch
+tmp/
+temp/
+*.tmp
+.tmp/
+
+# Repo-specific temp and verification output
+**/tmp-real-e2e/
+**/tmp-test-media/
+
+# AI / model artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.bin
+*.h5
+*.joblib
+*.pkl
+*.npy
+*.npz
+
+# AI training outputs / experiment state
+**/checkpoints/
+**/runs/
+**/wandb/
+**/logs/
+**/data/BioFors/
+**/data/SciSp_H/
+**/data/RSIID/
+**/URN/**/*.pt
+**/URN/**/*.pkl
+
+# Local agent / AI workflow files
+.claude/
+.omx/
+.codex-backend.err.log
+.codex-backend.log
+.codex-frontend.err.log
+.codex-frontend.log
+/AGENTS.md
+/plan.md
+/progress.md
+/prd.json
+
+# Archives / generated bundles
+*.zip
+*.tar
+*.gz
+*.7z
