@@ -40,11 +40,11 @@ payload = [
     ("ela", ela_results),
     ("exif", exif_results),
     ("cmd", []),
-    ("splicing", splicing_results),
-    ("blurring", blurring_results),
-    ("bruteforce", bruteforce_results),
-    ("contrast", contrast_results),
-    ("inpainting", inpainting_results),
+    ("urn_coarse_v2", splicing_results),
+    ("urn_blurring", blurring_results),
+    ("urn_brute_force", bruteforce_results),
+    ("urn_contrast", contrast_results),
+    ("urn_inpainting", inpainting_results),
 ]
 
 print("start results", flush=True)
