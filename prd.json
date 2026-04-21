@@ -49,16 +49,16 @@
     {
       "id": "slice-05-paper-closed-loop",
       "title": "Replace placeholder paper detection with orchestrated text, image, and reference analysis",
-      "status": "pending",
+      "status": "done",
       "slice": "slice-05-paper-closed-loop",
-      "verification": "Paper resource task returns paragraph, explanation, and reference results",
-      "attempts": 0,
+      "verification": "DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py check; DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests",
+      "attempts": 1,
       "fallback": ""
     },
     {
       "id": "slice-06-review-closed-loop",
       "title": "Run review detection through shared preprocessing, text detection, and relevance analysis",
-      "status": "pending",
+      "status": "in_progress",
       "slice": "slice-06-review-closed-loop",
       "verification": "Review upload, task creation, status polling, and paragraph relevance query",
       "attempts": 0,

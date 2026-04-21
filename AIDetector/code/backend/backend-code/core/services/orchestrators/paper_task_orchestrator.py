@@ -1,0 +1,98 @@
+import os
+from pathlib import Path
+
+from django.conf import settings
+from django.utils import timezone
+
+from ...models import DetectionResult, DetectionTask
+from ..capabilities.image_detection_service import run_image_detection_task
+from ..capabilities.llm_analysis_service import build_suspicious_paragraph_explanations
+from ..capabilities.reference_check_service import evaluate_references
+from ..capabilities.text_detection_service import analyze_text_segments
+from ..resources.document_preprocessor import preprocess_document
+from ..resources.image_extraction_service import create_image_uploads_for_resource
+
+
+def run_paper_detection_task(task_id, api_key=None):
+    detection_task = DetectionTask.objects.get(id=task_id)
+    detection_task.status = "in_progress"
+    detection_task.error_message = ""
+    detection_task.save(update_fields=["status", "error_message"])
+
+    file_management = detection_task.resource_files.filter(resource_type="paper").first()
+    if not file_management:
+        return _mark_task_failed(detection_task, "No paper resource file found")
+
+    file_path = os.path.join(settings.MEDIA_ROOT, file_management.stored_path)
+    if not os.path.exists(file_path):
+        return _mark_task_failed(detection_task, "Paper file path does not exist")
+
+    processed_document = preprocess_document(file_path)
+    paragraph_results = analyze_text_segments(processed_document["segments"], api_key=api_key)
+    explanations = build_suspicious_paragraph_explanations(paragraph_results, api_key=api_key)
+    reference_results = evaluate_references(
+        text_content=processed_document["text_content"],
+        references=processed_document["references"],
+    )
+    image_results = _run_paper_image_detection(detection_task, file_management)
+
+    results_payload = {
+        "document": {
+            "file_id": file_management.id,
+            "file_name": file_management.file_name,
+            "paragraph_count": len(processed_document["paragraphs"]),
+            "segment_count": len(processed_document["segments"]),
+            "reference_count": len(processed_document["references"]),
+        },
+        "paragraph_results": paragraph_results,
+        "suspicious_paragraphs": explanations,
+        "reference_results": reference_results,
+        "image_results": image_results,
+    }
+
+    detection_task.text_detection_results = results_payload
+    detection_task.status = "completed"
+    detection_task.completion_time = timezone.now()
+    detection_task.error_message = ""
+    detection_task.save(
+        update_fields=["text_detection_results", "status", "completion_time", "error_message"]
+    )
+    return "Paper detection finished"
+
+
+def _run_paper_image_detection(detection_task, file_management):
+    if Path(file_management.file_name or "").suffix.lower() not in {".pdf", ".zip"}:
+        return []
+
+    image_uploads = create_image_uploads_for_resource(file_management)
+    if not image_uploads:
+        return []
+
+    run_image_detection_task(detection_task=detection_task, image_uploads=image_uploads)
+    image_result_map = {
+        result.image_upload_id: result
+        for result in DetectionResult.objects.filter(
+            detection_task=detection_task,
+            image_upload_id__in=[image.id for image in image_uploads],
+        ).select_related("image_upload")
+    }
+    return [
+        {
+            "image_id": image.id,
+            "page_number": image.page_number,
+            "status": image_result_map[image.id].status if image.id in image_result_map else "pending",
+            "is_fake": image_result_map[image.id].is_fake if image.id in image_result_map else None,
+            "confidence_score": (
+                image_result_map[image.id].confidence_score if image.id in image_result_map else None
+            ),
+        }
+        for image in image_uploads
+    ]
+
+
+def _mark_task_failed(detection_task, message):
+    detection_task.status = "failed"
+    detection_task.error_message = message
+    detection_task.completion_time = timezone.now()
+    detection_task.save(update_fields=["status", "error_message", "completion_time"])
+    return message

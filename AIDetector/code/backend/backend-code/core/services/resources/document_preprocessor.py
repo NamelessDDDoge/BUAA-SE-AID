@@ -7,6 +7,7 @@ EMPTY_FILE_MESSAGE = "无内容"
 
 def preprocess_document(file_path, max_segment_length=500, fallback_segment_length=2000):
     text_content = extract_document_text(file_path)
+    paragraphs = extract_document_paragraphs(text_content)
     segments = split_text_into_segments(
         text_content,
         max_segment_length=max_segment_length,
@@ -14,6 +15,8 @@ def preprocess_document(file_path, max_segment_length=500, fallback_segment_leng
     )
     return {
         "text_content": text_content,
+        "paragraphs": paragraphs,
+        "references": extract_document_references(text_content),
         "segments": segments,
     }
 
@@ -42,7 +45,7 @@ def extract_document_text(file_path):
 
 
 def split_text_into_segments(text_content, max_segment_length=500, fallback_segment_length=2000):
-    paragraphs = [paragraph.strip() for paragraph in text_content.split("\n") if paragraph.strip()]
+    paragraphs = extract_document_paragraphs(text_content)
     segments = []
     current_segment = ""
 
@@ -63,3 +66,25 @@ def split_text_into_segments(text_content, max_segment_length=500, fallback_segm
     if text_content:
         return [text_content[:fallback_segment_length]]
     return [EMPTY_FILE_MESSAGE]
+
+
+def extract_document_paragraphs(text_content):
+    return [paragraph.strip() for paragraph in (text_content or "").split("\n") if paragraph.strip()]
+
+
+def extract_document_references(text_content):
+    paragraphs = extract_document_paragraphs(text_content)
+    reference_heading_index = None
+    for index, paragraph in enumerate(paragraphs):
+        if paragraph.lower() in {"references", "bibliography", "参考文献"}:
+            reference_heading_index = index
+            break
+
+    if reference_heading_index is not None:
+        return paragraphs[reference_heading_index + 1 :]
+
+    return [
+        paragraph
+        for paragraph in paragraphs
+        if paragraph.startswith("[") or paragraph[:2].isdigit() or "doi" in paragraph.lower()
+    ]

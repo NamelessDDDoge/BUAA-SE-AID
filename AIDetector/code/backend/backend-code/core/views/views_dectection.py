@@ -629,10 +629,13 @@ class CustomPagination(PageNumberPagination):
 def get_paper_detection_results(request, task_id):
     try:
         task = DetectionTask.objects.get(id=task_id, user=request.user)
+        results = task.text_detection_results or {}
+        if isinstance(results, list):
+            results = {"paragraph_results": results}
         return Response({
             "task_id": task.id,
             "status": task.status,
-            "results": task.text_detection_results or []
+            "results": results
         })
     except DetectionTask.DoesNotExist:
         return Response({"message": "Detection task not found"}, status=404)
