@@ -1,10 +1,12 @@
 import atexit
+import logging
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
 
 
 _DB_TUNNEL = None
+logger = logging.getLogger(__name__)
 
 
 def build_database_settings(project_dir: Path, env_get, env_bool, env_int):
@@ -21,7 +23,18 @@ def build_database_settings(project_dir: Path, env_get, env_bool, env_int):
         }
 
     if mode == "aliyun_postgres":
-        return {"default": _build_aliyun_postgres_settings(env_get, env_bool, env_int)}
+        try:
+            return {"default": _build_aliyun_postgres_settings(env_get, env_bool, env_int)}
+        except Exception as exc:
+            fallback = _build_fallback_database_settings(project_dir, env_get)
+            if fallback is None:
+                raise
+            logger.warning(
+                "Aliyun Postgres database configuration failed; falling back to %s. Error: %s",
+                fallback["ENGINE"],
+                exc,
+            )
+            return {"default": fallback}
 
     if mode == "custom":
         return {"default": _build_custom_database_settings(project_dir, env_get)}
@@ -71,6 +84,21 @@ def _build_custom_database_settings(project_dir: Path, env_get):
     return {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": project_dir / "db.sqlite3",
+    }
+
+
+def _build_fallback_database_settings(project_dir: Path, env_get):
+    if env_get("DB_ENGINE") or env_get("MYSQL_NAME"):
+        return _build_custom_database_settings(project_dir, env_get)
+
+    local_db_name = env_get("LOCAL_DB_NAME")
+    if not local_db_name:
+        return None
+
+    db_path = Path(local_db_name)
+    return {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": db_path if db_path.is_absolute() else project_dir / local_db_name,
     }
 
 

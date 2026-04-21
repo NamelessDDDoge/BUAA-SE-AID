@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase
@@ -75,3 +76,49 @@ class DatabaseConfigTests(SimpleTestCase):
         self.assertEqual(config["default"]["HOST"], "db.example.internal")
         self.assertEqual(config["default"]["PORT"], "5432")
         self.assertEqual(config["default"]["OPTIONS"], {"connect_timeout": 15})
+
+    @patch("fake_image_detector.database._start_aliyun_db_tunnel", side_effect=RuntimeError("tunnel down"))
+    def test_aliyun_mode_falls_back_to_local_sqlite_when_tunnel_start_fails(self, _mock_tunnel):
+        values = {
+            "DATABASE_MODE": "aliyun_postgres",
+            "ALIYUN_DB_USE_SSH_TUNNEL": "true",
+            "ALIYUN_DB_HOST": "db.example.internal",
+            "ALIYUN_DB_NAME": "detect",
+            "ALIYUN_DB_USER": "backend_user",
+            "ALIYUN_DB_PASSWORD": "top-secret",
+            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_NAME": "db.sqlite3",
+        }
+
+        config = build_database_settings(
+            self.project_dir,
+            lambda name, default=None: values.get(name, default),
+            lambda name, default: str(values.get(name, default)).strip().lower() in {"1", "true", "yes", "on"}
+            if name in values
+            else default,
+            lambda name, default: int(values.get(name, default)),
+        )
+
+        self.assertEqual(config["default"]["ENGINE"], "django.db.backends.sqlite3")
+        self.assertEqual(config["default"]["NAME"], self.project_dir / "db.sqlite3")
+
+    @patch("fake_image_detector.database._start_aliyun_db_tunnel", side_effect=RuntimeError("tunnel down"))
+    def test_aliyun_mode_still_raises_without_fallback_config(self, _mock_tunnel):
+        values = {
+            "DATABASE_MODE": "aliyun_postgres",
+            "ALIYUN_DB_USE_SSH_TUNNEL": "true",
+            "ALIYUN_DB_HOST": "db.example.internal",
+            "ALIYUN_DB_NAME": "detect",
+            "ALIYUN_DB_USER": "backend_user",
+            "ALIYUN_DB_PASSWORD": "top-secret",
+        }
+
+        with self.assertRaises(RuntimeError):
+            build_database_settings(
+                self.project_dir,
+                lambda name, default=None: values.get(name, default),
+                lambda name, default: str(values.get(name, default)).strip().lower() in {"1", "true", "yes", "on"}
+                if name in values
+                else default,
+                lambda name, default: int(values.get(name, default)),
+            )
