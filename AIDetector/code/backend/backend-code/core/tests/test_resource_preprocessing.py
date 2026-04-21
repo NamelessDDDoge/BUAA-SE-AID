@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from core.models import DetectionTask, FileManagement, Organization, User
 from core.tasks import run_paper_detection
@@ -44,9 +45,11 @@ class ResourcePreprocessingTests(TestCase):
             stored_path=f"uploads/{file_name}",
         )
 
-    @patch("requests.post")
-    def test_run_paper_detection_splits_text_into_500_char_segments(self, mock_post):
+    @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
+    @patch("core.services.integrations.fastdetect_client.requests.post")
+    def test_run_paper_detection_splits_text_into_500_char_segments(self, mock_post, mock_image_detection):
         mock_post.return_value.json.return_value = {"data": {"prob": 0.65, "details": {"source": "mock"}}}
+        mock_post.return_value.raise_for_status.return_value = None
         file_record = self.create_text_file(
             "paper.txt",
             "\n".join(
@@ -71,13 +74,19 @@ class ResourcePreprocessingTests(TestCase):
         task.refresh_from_db()
         self.assertEqual(result, "Paper detection finished")
         self.assertEqual(task.status, "completed")
-        self.assertEqual(len(task.text_detection_results), 3)
+        self.assertEqual(task.text_detection_results["document"]["segment_count"], 3)
+        self.assertEqual(len(task.text_detection_results["paragraph_results"]), 3)
+        self.assertEqual(len(task.text_detection_results["suspicious_paragraphs"]), 3)
+        self.assertEqual(task.completion_time is not None, True)
         self.assertEqual(mock_post.call_count, 3)
-        self.assertTrue(all(item["text"] for item in task.text_detection_results))
+        self.assertTrue(all(item["text"] for item in task.text_detection_results["paragraph_results"]))
+        mock_image_detection.assert_not_called()
 
-    @patch("requests.post")
-    def test_run_paper_detection_handles_missing_decodable_text(self, mock_post):
+    @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
+    @patch("core.services.integrations.fastdetect_client.requests.post")
+    def test_run_paper_detection_handles_missing_decodable_text(self, mock_post, mock_image_detection):
         mock_post.return_value.json.return_value = {"data": {"prob": 0.1, "details": {}}}
+        mock_post.return_value.raise_for_status.return_value = None
         uploads_dir = self.temp_media / "uploads"
         uploads_dir.mkdir(parents=True, exist_ok=True)
         file_path = uploads_dir / "paper.bin"
@@ -104,5 +113,7 @@ class ResourcePreprocessingTests(TestCase):
 
         task.refresh_from_db()
         self.assertEqual(task.status, "completed")
-        self.assertEqual(len(task.text_detection_results), 1)
-        self.assertTrue(task.text_detection_results[0]["text"])
+        self.assertEqual(len(task.text_detection_results["paragraph_results"]), 1)
+        self.assertTrue(task.text_detection_results["paragraph_results"][0]["text"])
+        self.assertEqual(task.text_detection_results["reference_results"], [])
+        mock_image_detection.assert_not_called()

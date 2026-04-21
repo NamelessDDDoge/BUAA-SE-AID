@@ -122,16 +122,20 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(broken_link_response.status_code, 400)
         self.assertEqual(broken_link_response.data["message"], "review_file is not correctly linked to review_paper")
 
-    def test_paper_results_endpoint_returns_placeholder_json_results(self):
+    def test_paper_results_endpoint_returns_structured_results(self):
         task = DetectionTask.objects.create(
             organization=self.organization,
             user=self.user,
             task_type="paper",
             task_name="Paper Result Placeholder",
             status="completed",
-            text_detection_results=[
-                {"paragraph_index": 0, "label": "suspicious", "score": 0.82},
-            ],
+            text_detection_results={
+                "document": {"segment_count": 1},
+                "paragraph_results": [{"paragraph_index": 0, "label": "suspicious", "probability": 0.82}],
+                "suspicious_paragraphs": [{"paragraph_index": 0, "explanation": "flagged"}],
+                "reference_results": [{"reference_index": 0, "exists": True, "is_relevant": True}],
+                "image_results": [],
+            },
         )
 
         response = self.client.get(f"/api/paper-results/{task.id}/")
@@ -139,4 +143,4 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["task_id"], task.id)
         self.assertEqual(response.data["status"], "completed")
-        self.assertEqual(response.data["results"], task.text_detection_results)
+        self.assertEqual(response.data["results"]["paragraph_results"], task.text_detection_results["paragraph_results"])
