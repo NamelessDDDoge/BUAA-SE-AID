@@ -8,11 +8,11 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from .call_figure_detection import get_result
-from .models import DetectionResult, DetectionTask, SubDetectionResult
-from .utils.fanyi import fanyi_text
-from .utils.image_saver import save_ndarray_as_image
-from .utils.report_generator import generate_detection_task_report
+from ....call_figure_detection import get_result
+from ....models import DetectionResult, DetectionTask, SubDetectionResult
+from ....utils.fanyi import fanyi_text
+from ....utils.image_saver import save_ndarray_as_image
+from ....utils.report_generator import generate_detection_task_report
 
 
 SUB_METHODS = (

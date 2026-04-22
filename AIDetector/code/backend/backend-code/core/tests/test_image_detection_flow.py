@@ -15,7 +15,7 @@ from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from core import call_figure_detection
 from core.call_figure_detection import _run_local_inference
-from core.local_detection import (
+from core.services.capabilities.image.local_detection import (
     _create_batch_inputs,
     _extract_single_result,
     _persist_detection_result,
@@ -141,8 +141,8 @@ class LocalDetectionFlowTests(TestCase):
         ),
     )
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
-    @patch("core.local_detection.generate_detection_task_report", return_value="reports/task_1_report.pdf")
-    @patch("core.local_detection.get_result", return_value=fake_detection_payload())
+    @patch("core.services.capabilities.image.local_detection.generate_detection_task_report", return_value="reports/task_1_report.pdf")
+    @patch("core.services.capabilities.image.local_detection.get_result", return_value=fake_detection_payload())
     def test_submit_detection_runs_local_pipeline_and_updates_results(
         self, _mock_result, _mock_report, _mock_on_commit, _mock_thread
     ):
@@ -169,8 +169,8 @@ class LocalDetectionFlowTests(TestCase):
         ),
     )
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
-    @patch("core.local_detection.generate_detection_task_report", return_value="reports/task_1_report.pdf")
-    @patch("core.local_detection.get_result", return_value=fake_detection_payload())
+    @patch("core.services.capabilities.image.local_detection.generate_detection_task_report", return_value="reports/task_1_report.pdf")
+    @patch("core.services.capabilities.image.local_detection.get_result", return_value=fake_detection_payload())
     def test_task_status_endpoint_reports_completed_task(self, _mock_result, _mock_report, _mock_on_commit, _mock_thread):
         submit_response = self.submit_detection("Status Check")
         task_id = submit_response.data["task_id"]
@@ -228,7 +228,7 @@ class LocalDetectionFlowTests(TestCase):
         self.assertTrue((batch_dir / "img.zip").exists())
         self.assertTrue((batch_dir / "data.json").exists())
 
-    @patch("core.local_detection.fanyi_text", side_effect=lambda text: text)
+    @patch("core.services.capabilities.image.local_detection.fanyi_text", side_effect=lambda text: text)
     def test_persist_detection_result_marks_upload_and_creates_sub_results(self, _mock_translate):
         task = DetectionTask.objects.create(
             organization=self.organization,
@@ -351,8 +351,8 @@ class LocalBridgeTests(TestCase):
         self.assertEqual(result[1][0], "ela")
         self.assertEqual(len(result), len(expected_payload))
 
-    @patch("core.local_detection.generate_detection_task_report", return_value="reports/task_report.pdf")
-    @patch("core.local_detection.fanyi_text", side_effect=lambda text: text)
+    @patch("core.services.capabilities.image.local_detection.generate_detection_task_report", return_value="reports/task_report.pdf")
+    @patch("core.services.capabilities.image.local_detection.fanyi_text", side_effect=lambda text: text)
     def test_run_local_detection_batch_with_fake_ai_service_process(self, _mock_translate, _mock_report):
         organization = Organization.objects.create(name="Bridge E2E Org", email="bridge-e2e@example.com")
         user = User.objects.create_user(
@@ -442,9 +442,9 @@ class LocalBridgeTests(TestCase):
         self.assertEqual(SubDetectionResult.objects.filter(detection_result=dr1).count(), 5)
         self.assertEqual(SubDetectionResult.objects.filter(detection_result=dr2).count(), 5)
 
-    @patch("core.local_detection.generate_detection_task_report", return_value="reports/task_report.pdf")
-    @patch("core.local_detection.fanyi_text", side_effect=lambda text: text)
-    @patch("core.local_detection.get_result", return_value=fake_detection_payload_for_two_images())
+    @patch("core.services.capabilities.image.local_detection.generate_detection_task_report", return_value="reports/task_report.pdf")
+    @patch("core.services.capabilities.image.local_detection.fanyi_text", side_effect=lambda text: text)
+    @patch("core.services.capabilities.image.local_detection.get_result", return_value=fake_detection_payload_for_two_images())
     def test_run_local_detection_batch_should_map_results_by_image_order(self, _mock_result, _mock_translate, _mock_report):
         organization = Organization.objects.create(name="Bridge Org", email="bridge@example.com")
         user = User.objects.create_user(
@@ -553,8 +553,8 @@ class LocalDetectionApiCoverageTests(TestCase):
         ),
     )
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
-    @patch("core.local_detection.generate_detection_task_report", return_value="reports/task_report.pdf")
-    @patch("core.local_detection.get_result", return_value=fake_detection_payload())
+    @patch("core.services.capabilities.image.local_detection.generate_detection_task_report", return_value="reports/task_report.pdf")
+    @patch("core.services.capabilities.image.local_detection.get_result", return_value=fake_detection_payload())
     def test_upload_detect_and_read_results_through_api(
         self, _mock_result, _mock_report, _mock_on_commit, _mock_thread
     ):
@@ -623,7 +623,7 @@ class LocalDetectionApiCoverageTests(TestCase):
         ),
     )
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
-    @patch("core.local_detection.get_result", return_value=None)
+    @patch("core.services.capabilities.image.local_detection.get_result", return_value=None)
     def test_failed_local_detection_is_reported_as_failed_everywhere_and_refunds_usage(
         self, _mock_result, _mock_on_commit, _mock_thread
     ):
