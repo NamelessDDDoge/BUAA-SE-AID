@@ -1187,3 +1187,16 @@ core/services/event_logger.py
 - 每个 slice 验证后立即 commit，并尝试 push
 
 如果后续执行偏离以上原则，以本计划和 `架构共识.md` 为准，旧文档不作为目标依据。
+
+## 14. paper-local-execution-hotfix
+
+这是对 `slice-05-paper-closed-loop` 的紧急运行时修复补丁，不改后续 `slice-07` 及之后的设计边界。
+
+目标：
+- 消除 `/api/resource-task/create/` 在 `paper`/`review` 类型下对 Celery broker、`.delay()`、scheduler 注入分支的残留依赖
+- 统一资源任务启动模型为“创建任务 -> 绑定资源 -> `transaction.on_commit(...)` -> `start_resource_detection_task_thread(...)`”
+- 保持当前响应契约不变：`status = "in_progress"`、`execution_mode = "local_async"`
+
+范围约束：
+- 只修改资源任务启动链路、`core/tasks.py` 兼容入口、以及直接绑定的回归测试
+- 不拆持久化结构，不新增迁移，不改前端结构，不重做报告协议

@@ -200,3 +200,7 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(len(task.text_detection_results["paragraph_results"]), 1)
         self.assertEqual(len(task.text_detection_results["relevance_results"]), 1)
         self.assertEqual(task.text_detection_results["relevance_results"][0]["paper_paragraph_index"], 0)
+
+    def test_task_compatibility_wrappers_are_plain_functions_without_celery_delay(self):
+        self.assertFalse(hasattr(run_paper_detection, "delay"))
+        self.assertFalse(hasattr(run_review_detection, "delay"))
