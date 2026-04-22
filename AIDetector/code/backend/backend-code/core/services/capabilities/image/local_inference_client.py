@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = Path(__file__).resolve().parents[6]
 DEFAULT_AI_SERVICE_DIR_CANDIDATES = [
     REPO_ROOT / "AIDetector" / "code" / "ai-service" / "ai-service-code",
     REPO_ROOT / "ai-forensics" / "code" / "ai-service" / "ai-service-code",

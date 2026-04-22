@@ -13,14 +13,14 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
-from core import call_figure_detection
-from core.call_figure_detection import _run_local_inference
 from core.services.capabilities.image.local_detection import (
     _create_batch_inputs,
     _extract_single_result,
     _persist_detection_result,
     _run_local_detection_batch,
 )
+from core.services.capabilities.image.local_inference_client import _run_local_inference
+from core.services.capabilities.image import local_inference_client
 from core.models import (
     DetectionResult,
     DetectionTask,
@@ -335,7 +335,8 @@ class LocalBridgeTests(TestCase):
         self.addCleanup(self.override.disable)
         self.addCleanup(lambda: shutil.rmtree(self.temp_media, ignore_errors=True))
 
-    @patch("core.call_figure_detection.subprocess.run")
+    @patch("core.services.capabilities.image.local_inference_client.AI_SERVICE_DIR", Path(__file__).resolve().parents[1])
+    @patch("core.services.capabilities.image.local_inference_client.subprocess.run")
     def test_run_local_inference_decodes_pickled_payload_from_stdout(self, mock_run):
         expected_payload = fake_detection_payload()
         encoded_payload = base64.b64encode(pickle.dumps(expected_payload)).decode("utf-8")
@@ -412,12 +413,12 @@ class LocalBridgeTests(TestCase):
         shutil.rmtree(fake_shared_root, ignore_errors=True)
         self.addCleanup(lambda: shutil.rmtree(fake_shared_root, ignore_errors=True))
 
-        with patch.object(call_figure_detection, "AI_SERVICE_DIR", fake_service_root), patch.object(
-            call_figure_detection, "AI_SERVICE_ENTRYPOINT", fake_entrypoint
-        ), patch.object(call_figure_detection, "AI_SERVICE_PYTHON", sys.executable), patch.object(
-            call_figure_detection, "AI_SERVICE_TEST_DIR", fake_shared_root
-        ), patch.object(call_figure_detection, "AI_SERVICE_TMP_DIR", fake_service_root / "tmp"), patch.object(
-            call_figure_detection, "AI_SERVICE_TORCH_HOME", fake_service_root / "torch"
+        with patch.object(local_inference_client, "AI_SERVICE_DIR", fake_service_root), patch.object(
+            local_inference_client, "AI_SERVICE_ENTRYPOINT", fake_entrypoint
+        ), patch.object(local_inference_client, "AI_SERVICE_PYTHON", sys.executable), patch.object(
+            local_inference_client, "AI_SERVICE_TEST_DIR", fake_shared_root
+        ), patch.object(local_inference_client, "AI_SERVICE_TMP_DIR", fake_service_root / "tmp"), patch.object(
+            local_inference_client, "AI_SERVICE_TORCH_HOME", fake_service_root / "torch"
         ):
             _run_local_detection_batch(
                 detection_result_ids=[detection_result_for_image2.id, detection_result_for_image1.id],
