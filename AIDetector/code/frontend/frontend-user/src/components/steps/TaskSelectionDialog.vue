@@ -2,12 +2,12 @@
   <v-dialog :model-value="modelValue" max-width="760" @update:model-value="emit('update:modelValue', $event)">
     <v-card rounded="lg">
       <v-card-title class="d-flex align-center justify-space-between">
-        <span class="text-h6">选择检测任务</span>
+        <span class="text-h6">选择检测方式</span>
         <v-btn icon="mdi-close" variant="text" @click="closeDialog" />
       </v-card-title>
 
       <v-card-subtitle class="pb-2">
-        选择这次图片检测要执行的方法。默认全选，未勾选的方法不会进入本次检测。
+        选择本次图像检测要执行的方法。默认全选，未勾选的方法不会进入本次检测。
       </v-card-subtitle>
 
       <v-card-text>
@@ -21,17 +21,8 @@
         </div>
 
         <v-row>
-          <v-col
-            v-for="option in METHOD_OPTIONS"
-            :key="option.key"
-            cols="12"
-            md="6"
-          >
-            <v-checkbox
-              v-model="selectedMap[option.key]"
-              color="primary"
-              hide-details
-            >
+          <v-col v-for="option in METHOD_OPTIONS" :key="option.key" cols="12" md="6">
+            <v-checkbox v-model="selectedMap[option.key]" color="primary" hide-details>
               <template #label>
                 <div>
                   <div class="text-body-1">{{ option.label }}</div>
@@ -47,7 +38,7 @@
         <v-spacer />
         <v-btn variant="text" @click="closeDialog">取消</v-btn>
         <v-btn color="primary" @click="confirmSelection">
-          确认并提交
+          {{ resolvedConfirmLabel }}
         </v-btn>
       </v-card-actions>
     </v-card>
@@ -56,6 +47,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
+import { useSnackbarStore } from '@/stores/snackbar'
 
 const METHOD_OPTIONS = [
   { key: 'llm', label: '大语言模型多模态识别', description: '结合视觉与文本推理判断是否存在学术造假痕迹。' },
@@ -74,12 +66,17 @@ type MethodSwitches = Record<MethodKey, boolean>
 
 const props = defineProps<{
   modelValue: boolean
+  minSelected?: number
+  confirmLabel?: string
+  initialSelection?: Partial<MethodSwitches>
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
   (e: 'confirm', value: MethodSwitches): void
 }>()
+
+const snackbar = useSnackbarStore()
 
 const createDefaultSelection = (): MethodSwitches => ({
   llm: true,
@@ -96,7 +93,10 @@ const createDefaultSelection = (): MethodSwitches => ({
 const selectedMap = reactive<MethodSwitches>(createDefaultSelection())
 
 const resetSelection = () => {
-  Object.assign(selectedMap, createDefaultSelection())
+  Object.assign(selectedMap, {
+    ...createDefaultSelection(),
+    ...(props.initialSelection || {}),
+  })
 }
 
 watch(
@@ -110,6 +110,8 @@ watch(
 
 const selectedCount = computed(() => Object.values(selectedMap).filter(Boolean).length)
 const allSelected = computed(() => selectedCount.value === METHOD_OPTIONS.length)
+const minSelected = computed(() => props.minSelected ?? 0)
+const resolvedConfirmLabel = computed(() => props.confirmLabel || '确认并提交')
 
 const closeDialog = () => {
   emit('update:modelValue', false)
@@ -123,6 +125,16 @@ const toggleSelectAll = () => {
 }
 
 const confirmSelection = () => {
+  if (selectedCount.value < minSelected.value) {
+    snackbar.showMessage(
+      minSelected.value <= 1
+        ? '图像检测至少需要选择一种检测方式。'
+        : `至少需要选择 ${minSelected.value} 种检测方式。`,
+      'error',
+    )
+    return
+  }
+
   emit('confirm', { ...selectedMap })
   closeDialog()
 }

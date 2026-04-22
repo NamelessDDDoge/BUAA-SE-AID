@@ -205,6 +205,37 @@ class LocalDetectionFlowTests(TestCase):
         self.assertEqual(DetectionResult.objects.filter(detection_task=task, status="in_progress").count(), 1)
         _mock_thread.assert_called_once()
 
+    def test_submit_detection_rejects_empty_method_selection(self):
+        request = self.factory.post(
+            "/api/detection/submit/",
+            {
+                "mode": 1,
+                "image_ids": [self.image_upload.id],
+                "task_name": "No Methods",
+                "cmd_block_size": 64,
+                "urn_k": 0.3,
+                "if_use_llm": False,
+                "method_switches": {
+                    "llm": False,
+                    "ela": False,
+                    "exif": False,
+                    "cmd": False,
+                    "urn_coarse_v2": False,
+                    "urn_blurring": False,
+                    "urn_brute_force": False,
+                    "urn_contrast": False,
+                    "urn_inpainting": False,
+                },
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+
+        response = submit_detection2(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["message"], "At least one image detection method must be selected")
+
     def test_create_batch_inputs_writes_zip_and_json_for_selected_images(self):
         task = DetectionTask.objects.create(
             organization=self.organization,
