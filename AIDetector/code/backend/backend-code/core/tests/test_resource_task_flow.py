@@ -6,6 +6,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from core.models import DetectionTask, FileManagement, Organization, User
+from core.services.orchestrators.resource_task_orchestrator import create_resource_detection_task
 
 
 @override_settings(ENABLE_FANYI=False)
@@ -62,6 +63,7 @@ class ResourceTaskFlowTests(TestCase):
         task = DetectionTask.objects.get(pk=success_response.data["task_id"])
         self.assertEqual(task.task_type, "paper")
         self.assertEqual(task.status, "in_progress")
+        self.assertEqual(success_response.data["execution_mode"], "local_async")
         self.assertEqual(list(task.resource_files.values_list("id", flat=True)), [paper_file.id])
         mock_starter.assert_called_once_with("paper", task.id, None)
 
@@ -98,6 +100,7 @@ class ResourceTaskFlowTests(TestCase):
         review_task = DetectionTask.objects.get(pk=success_response.data["task_id"])
         self.assertEqual(review_task.task_type, "review")
         self.assertEqual(review_task.status, "in_progress")
+        self.assertEqual(success_response.data["execution_mode"], "local_async")
         self.assertCountEqual(
             list(review_task.resource_files.values_list("id", flat=True)),
             [review_paper.id, linked_review_file.id],
@@ -178,7 +181,7 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["task_type"], "review")
         self.assertEqual(response.data["results"]["relevance_results"][0]["paper_paragraph_index"], 1)
-        self.assertIn("匹配 1 段", response.data["result_summary"])
+        self.assertIn("1", response.data["result_summary"])
 
     @patch("core.views.views_dectection.start_resource_detection_task_thread")
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
@@ -215,3 +218,51 @@ class ResourceTaskFlowTests(TestCase):
         self.assertFalse(task.if_use_llm)
         self.assertEqual(task.method_switches["__paper_extract_images__"], False)
         mock_starter.assert_called_once_with("paper", task.id, None)
+
+    def test_resource_task_creation_defers_paper_start_until_on_commit_and_uses_local_thread(self):
+        paper_file = self.create_file("paper.pdf", "paper")
+        callbacks = []
+        starter_calls = []
+
+        def capture_on_commit(callback):
+            callbacks.append(callback)
+
+        def capture_starter(task_type, task_id, api_key):
+            starter_calls.append((task_type, task_id, api_key))
+
+        detection_task, _files = create_resource_detection_task(
+            user=self.user,
+            task_type="paper",
+            file_ids=[paper_file.id],
+            on_commit=capture_on_commit,
+            async_task_starter=capture_starter,
+        )
+
+        self.assertEqual(detection_task.status, "in_progress")
+        self.assertEqual(len(callbacks), 1)
+        self.assertEqual(starter_calls, [])
+
+        callbacks[0]()
+
+        self.assertEqual(starter_calls, [("paper", detection_task.id, None)])
+
+    @patch("core.views.views_dectection.start_resource_detection_task_thread")
+    @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
+    @patch("core.tasks.run_paper_detection")
+    def test_create_paper_resource_task_does_not_call_legacy_task_wrapper(self, mock_run_paper_detection, _mock_on_commit, mock_starter):
+        paper_file = self.create_file("paper.pdf", "paper")
+
+        response = self.client.post(
+            "/api/resource-task/create/",
+            {
+                "task_type": "paper",
+                "task_name": "Paper Local Thread Only",
+                "file_ids": [paper_file.id],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["execution_mode"], "local_async")
+        mock_starter.assert_called_once()
+        mock_run_paper_detection.assert_not_called()

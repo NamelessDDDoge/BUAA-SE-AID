@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-21T22:05:00+08:00",
+  "updated_at": "2026-04-22T00:20:00+08:00",
   "items": [
     {
       "id": "slice-00-tracking-bootstrap",
@@ -117,6 +117,15 @@
       "verification": "Full tests, frontend builds, and end-to-end smoke checks across all three task types",
       "attempts": 0,
       "fallback": ""
+    },
+    {
+      "id": "paper-local-execution-hotfix",
+      "title": "Emergency runtime hotfix: remove Celery startup from paper/review resource task creation",
+      "status": "done",
+      "slice": "paper-local-execution-hotfix",
+      "verification": "DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py check; DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests.test_resource_task_flow core.tests.test_resource_preprocessing; DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests",
+      "attempts": 1,
+      "fallback": "Runtime-only patch layered onto slice-05: resource task creation now always starts paper/review via local on-commit thread execution, while schema, frontend structure, and report/status redesign remain deferred to later slices."
     }
   ]
 }

@@ -20,3 +20,6 @@ Verification:
 - `DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests`
 - `cd AIDetector/code/frontend/frontend-user && npm run type-check`
 - `cd AIDetector/code/frontend/frontend-user && npm run build-only`
+
+- 2026-04-22 00:20 +08:00 `paper-local-execution-hotfix` completed as an emergency runtime patch on top of `slice-05-paper-closed-loop`: `/api/resource-task/create/` for `paper` and `review` now only schedules local thread execution through `transaction.on_commit(...)` and `start_resource_detection_task_thread(...)`; the broker-facing scheduler branch and Celery decorators were removed from [resource_task_orchestrator.py](/C:/Users/admin/Desktop/SE/BUAA-SE-AID/AIDetector/code/backend/backend-code/core/services/orchestrators/resource_task_orchestrator.py) and [tasks.py](/C:/Users/admin/Desktop/SE/BUAA-SE-AID/AIDetector/code/backend/backend-code/core/tasks.py).
+- 2026-04-22 00:20 +08:00 `paper-local-execution-hotfix` facts recorded: the现场故障 directly hit `/api/resource-task/create/`; the root cause was a remaining paper/review startup branch that could still reach Celery-style scheduling, and this fix stayed intentionally narrow to local execution unification plus regression coverage without touching schema, frontend layout, or report/status redesign slices.
