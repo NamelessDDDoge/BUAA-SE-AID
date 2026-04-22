@@ -2,9 +2,11 @@ import shutil
 from pathlib import Path
 from unittest.mock import patch
 
+from reportlab.pdfgen import canvas
 from django.test import TestCase, override_settings
 
 from core.models import DetectionTask, FileManagement, Organization, User
+from core.services.resources.document_preprocessor import preprocess_document
 from core.tasks import run_paper_detection, run_review_detection
 
 
@@ -58,6 +60,23 @@ class ResourcePreprocessingTests(TestCase):
             resource_type=resource_type,
             stored_path=f"uploads/{file_name}",
             linked_file=linked_file,
+        )
+
+    def create_pdf_file(self, file_name, text, *, resource_type="paper"):
+        uploads_dir = self.temp_media / "uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        file_path = uploads_dir / file_name
+        pdf = canvas.Canvas(str(file_path))
+        pdf.drawString(72, 760, text)
+        pdf.save()
+        return FileManagement.objects.create(
+            user=self.user,
+            organization=self.organization,
+            file_name=file_name,
+            file_size=file_path.stat().st_size,
+            file_type="application/pdf",
+            resource_type=resource_type,
+            stored_path=f"uploads/{file_name}",
         )
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
@@ -131,6 +150,16 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(task.text_detection_results["image_results"], [])
         self.assertEqual(task.text_detection_results["document"]["image_detection_enabled"], False)
         mock_image_detection.assert_not_called()
+
+    def test_preprocess_document_extracts_text_from_pdf_when_pymupdf_is_available(self):
+        file_record = self.create_pdf_file("paper.pdf", "PDF parsing should work for task creation and execution.")
+        file_path = self.temp_media / file_record.stored_path
+
+        result = preprocess_document(str(file_path))
+
+        self.assertIn("PDF parsing should work", result["text_content"])
+        self.assertGreaterEqual(len(result["segments"]), 1)
+        self.assertGreaterEqual(len(result["paragraphs"]), 1)
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
     @patch("core.services.integrations.fastdetect_client.requests.post")
