@@ -1,4 +1,4 @@
-from ..integrations import explain_text_segment
+from .llm import explain_text_segment
 
 
 def build_suspicious_paragraph_explanations(paragraph_results, *, api_key=None, suspicious_threshold=0.5):

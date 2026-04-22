@@ -437,9 +437,9 @@ class ResourceTaskFlowTests(TestCase):
         side_effect=lambda task_type, task_id, api_key: run_resource_detection_task_async(task_type, task_id, api_key),
     )
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
-    @patch("core.services.integrations.fastdetect_client.requests.post")
-    @patch("core.local_detection.get_result", return_value=fake_detection_payload())
-    @patch("core.local_detection.fanyi_text", side_effect=lambda text: text)
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
+    @patch("core.services.capabilities.image.local_detection.get_result", return_value=fake_detection_payload())
+    @patch("core.services.capabilities.image.local_detection.fanyi_text", side_effect=lambda text: text)
     def test_paper_report_download_uses_paper_template_for_task_7_fixture(
         self,
         _mock_translate,

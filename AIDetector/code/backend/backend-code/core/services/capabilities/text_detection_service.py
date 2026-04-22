@@ -1,4 +1,4 @@
-from ..integrations import detect_text_segment
+from .llm import detect_text_segment
 
 
 def analyze_text_segments(segments, *, api_key=None, suspicious_threshold=0.5):

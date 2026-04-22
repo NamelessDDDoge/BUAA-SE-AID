@@ -88,7 +88,7 @@ class ResourcePreprocessingTests(TestCase):
         )
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
-    @patch("core.services.integrations.fastdetect_client.requests.post")
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_paper_detection_splits_text_into_500_char_segments(self, mock_post, mock_image_detection):
         mock_post.return_value.json.return_value = {"data": {"prob": 0.65, "details": {"source": "mock"}}}
         mock_post.return_value.raise_for_status.return_value = None
@@ -127,7 +127,7 @@ class ResourcePreprocessingTests(TestCase):
         mock_image_detection.assert_not_called()
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
-    @patch("core.services.integrations.fastdetect_client.requests.post")
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_paper_detection_skips_image_detection_when_extract_images_disabled(self, mock_post, mock_image_detection):
         mock_post.return_value.json.return_value = {"data": {"prob": 0.42, "details": {"source": "mock"}}}
         mock_post.return_value.raise_for_status.return_value = None
@@ -183,7 +183,7 @@ class ResourcePreprocessingTests(TestCase):
         self.assertTrue(all("\x00" not in paragraph for paragraph in result["paragraphs"]))
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
-    @patch("core.services.integrations.fastdetect_client.requests.post")
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_paper_detection_handles_missing_decodable_text(self, mock_post, mock_image_detection):
         mock_post.return_value.json.return_value = {"data": {"prob": 0.1, "details": {}}}
         mock_post.return_value.raise_for_status.return_value = None
@@ -219,7 +219,7 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(task.paper_detection_result.reference_results.count(), 0)
         mock_image_detection.assert_not_called()
 
-    @patch("core.services.integrations.fastdetect_client.requests.post")
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_review_detection_returns_relevance_matches(self, mock_post):
         mock_post.return_value.json.return_value = {"data": {"prob": 0.34, "details": {"source": "mock"}}}
         mock_post.return_value.raise_for_status.return_value = None
