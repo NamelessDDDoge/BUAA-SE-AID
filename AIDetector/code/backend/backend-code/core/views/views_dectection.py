@@ -678,23 +678,6 @@ def get_user_tasks(request):
     })
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_user_tasks_depr(request):
-    # 鑾峰彇褰撳墠鐢ㄦ埛鐨勬墍鏈夋娴嬩换鍔?
-    detection_tasks = DetectionTask.objects.filter(user=request.user)
-    task_list = []
-    for task in detection_tasks:
-        task_list.append({
-            "task_id": task.id,
-            "task_name": task.task_name,
-            "status": task.status,
-            "upload_time": timezone.localtime(task.upload_time),
-            "completion_time": timezone.localtime(task.completion_time) if task.completion_time else None,
-        })
-    return Response(task_list)
-
-
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated           # 濡傞渶閴存潈
 from rest_framework.response import Response

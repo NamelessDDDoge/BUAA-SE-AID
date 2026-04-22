@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-22T14:31:00+08:00",
+  "updated_at": "2026-04-22T15:40:00+08:00",
   "items": [
     {
       "id": "slice-00-tracking-bootstrap",
@@ -85,38 +85,38 @@
     {
       "id": "slice-09-user-frontend-structure",
       "title": "Split user frontend upload/history pages into task-specific features and API modules",
-      "status": "pending",
+      "status": "done",
       "slice": "slice-09-user-frontend-structure",
-      "verification": "npm run type-check; npm run build-only",
-      "attempts": 0,
-      "fallback": ""
+      "verification": "cd AIDetector/code/frontend/frontend-user && npm run type-check; cd AIDetector/code/frontend/frontend-user && npm run build-only",
+      "attempts": 1,
+      "fallback": "Keep existing routes and shared step widgets intact while moving task-type branching into dedicated feature components and API modules."
     },
     {
       "id": "slice-10-admin-frontend-structure",
       "title": "Make admin pages task-type aware with feature modules and split API files",
-      "status": "pending",
+      "status": "done",
       "slice": "slice-10-admin-frontend-structure",
-      "verification": "npm run type-check; npm run build-only",
-      "attempts": 0,
-      "fallback": ""
+      "verification": "conda run -n detect python manage.py migrate; conda run -n detect python manage.py check; conda run -n detect python manage.py test core.tests; cd AIDetector/code/frontend/frontend-admin && npm run type-check; cd AIDetector/code/frontend/frontend-admin && npm run build-only",
+      "attempts": 1,
+      "fallback": "Additive admin task summary/task list API fields keep old endpoints working while the new frontend reads task_type-aware data through separate tasks/logs/stats modules."
     },
     {
       "id": "slice-11-ai-service-minimal-guardrail",
       "title": "Only add a thin AI-service adapter if paper/review local entry is unavoidable",
-      "status": "pending",
+      "status": "done",
       "slice": "slice-11-ai-service-minimal-guardrail",
-      "verification": "Mark no_change_needed or run local adapter smoke test",
-      "attempts": 0,
-      "fallback": ""
+      "verification": "Repository inspection confirmed paper/review execution stays inside backend service integrations (fastdetect_client/openai_client) without requiring a new ai-service entry; conda run -n detect python manage.py migrate; conda run -n detect python manage.py check; conda run -n detect python manage.py test core.tests",
+      "attempts": 1,
+      "fallback": "No change needed: keep the existing image ai-service bridge in call_figure_detection.py for image tasks only, and avoid introducing a paper/review adapter until a real runtime gap appears."
     },
     {
       "id": "slice-12-final-cleanup",
       "title": "Remove deprecated direct logic after all flows are verified",
-      "status": "pending",
+      "status": "done",
       "slice": "slice-12-final-cleanup",
-      "verification": "Full tests, frontend builds, and end-to-end smoke checks across all three task types",
-      "attempts": 0,
-      "fallback": ""
+      "verification": "conda run -n detect python manage.py migrate; conda run -n detect python manage.py check; conda run -n detect python manage.py test core.tests; cd AIDetector/code/frontend/frontend-user && npm run type-check && npm run build-only; cd AIDetector/code/frontend/frontend-admin && npm run type-check && npm run build-only",
+      "attempts": 1,
+      "fallback": "Keep DetectionTask.text_detection_results as a compatibility mirror and keep tasks.py as a thin compatibility wrapper, while removing the unused deprecated user-task endpoint and stale legacy detection submission block remnants from the view layer."
     },
     {
       "id": "paper-local-execution-hotfix",

@@ -16,6 +16,7 @@ from core.models import Log, User
 from rest_framework.decorators import api_view, permission_classes
 from collections import defaultdict
 from core.models import FileManagement, ImageUpload, DetectionResult, SubDetectionResult
+from ..utils.task_result_serializer import build_task_result_summary
 from rest_framework.permissions import IsAdminUser
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -858,10 +859,24 @@ def get_task_summary(request):
             "organization": task.organization.name if task.organization else None,
         })
 
+    task_type_counts = {
+        "image": tasks.filter(task_type='image').count(),
+        "paper": tasks.filter(task_type='paper').count(),
+        "review": tasks.filter(task_type='review').count(),
+    }
+    status_counts = {
+        "pending": tasks.filter(status='pending').count(),
+        "in_progress": tasks.filter(status='in_progress').count(),
+        "completed": tasks.filter(status='completed').count(),
+        "failed": tasks.filter(status='failed').count(),
+    }
+
     return Response({
         "total_task_count": total_task_count,
         "completed_task_count": completed_task_count,
         "recent_task_count": recent_task_count,
+        "task_type_counts": task_type_counts,
+        "status_counts": status_counts,
         "recent_tasks": task_details,
     })
 
@@ -914,38 +929,97 @@ def get_detection_task_status(request, task_id):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def get_all_user_tasks(request):
+    def parse_datetime_param(value):
+        if not value:
+            return None
+        formats = [
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%dT%H:%M',
+            '%Y-%m-%d',
+        ]
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(value, fmt)
+                if timezone.is_naive(parsed):
+                    return timezone.make_aware(parsed, timezone.get_current_timezone())
+                return parsed
+            except ValueError:
+                continue
+        return 'invalid'
+
     user_id = request.user.id
     user = User.objects.get(id=user_id)
+    page = int(request.query_params.get('page', 1))
+    page_size = int(request.query_params.get('page_size', 10))
+    status_filter = request.query_params.get('status', '').strip()
+    task_type = request.query_params.get('task_type', '').strip()
+    keyword = request.query_params.get('keyword', '').strip()
+    organization_id = request.query_params.get('organization')
+    start_time_raw = request.query_params.get('startTime')
+    end_time_raw = request.query_params.get('endTime')
+
+    start_time = parse_datetime_param(start_time_raw)
+    end_time = parse_datetime_param(end_time_raw)
+
+    if start_time == 'invalid':
+        return Response({'error': 'Invalid startTime format'}, status=400)
+    if end_time == 'invalid':
+        return Response({'error': 'Invalid endTime format'}, status=400)
+    if start_time and end_time and start_time >= end_time:
+        return Response({'error': 'startTime must be earlier than endTime'}, status=400)
+
+    if request.user.email != 'admin@mail.com':
+        tasks = DetectionTask.objects.filter(organization=user.organization)
+    else:
+        tasks = DetectionTask.objects.all()
+        if organization_id:
+            tasks = tasks.filter(organization_id=organization_id)
+
+    tasks = tasks.order_by('-upload_time')
+
+    if status_filter:
+        tasks = tasks.filter(status=status_filter)
+    if task_type:
+        tasks = tasks.filter(task_type=task_type)
+    if keyword:
+        keyword_filter = Q(task_name__icontains=keyword)
+        if keyword.isdigit():
+            keyword_filter = keyword_filter | Q(id=int(keyword))
+        tasks = tasks.filter(keyword_filter)
+    if start_time:
+        tasks = tasks.filter(upload_time__gte=start_time)
+    if end_time:
+        tasks = tasks.filter(upload_time__lte=end_time)
+
+    paginator = Paginator(tasks, page_size)
     try:
-        # 权限控制
-        if request.user.email != 'admin@mail.com':
-            user_organization = user.organization
-            tasks = DetectionTask.objects.filter(organization=user_organization)
-        else:
-            organization_id = request.query_params.get('organization')
-            if organization_id:
-                tasks = DetectionTask.objects.filter(organization_id=organization_id)
-            else:
-                tasks = DetectionTask.objects.all()
+        page_obj = paginator.page(page)
+    except Exception:
+        return Response({'error': 'Invalid page number'}, status=400)
 
-        # 收集任务信息
-        task_data = [
-            {
-                "task_id": task.id,
-                "task_name": task.task_name,
-                "status": task.status,
-                "upload_time": timezone.localtime(task.upload_time),
-                "completion_time": timezone.localtime(task.completion_time),
-                "organization": task.organization.name if task.organization else None,
-            } for task in tasks
-        ]
+    task_data = [
+        {
+            "task_id": task.id,
+            "task_name": task.task_name,
+            "task_type": task.task_type,
+            "status": task.status,
+            "upload_time": timezone.localtime(task.upload_time).strftime('%Y-%m-%d %H:%M:%S'),
+            "completion_time": timezone.localtime(task.completion_time).strftime('%Y-%m-%d %H:%M:%S') if task.completion_time else None,
+            "organization": task.organization.name if task.organization else None,
+            "username": task.user.username,
+            "result_summary": build_task_result_summary(task),
+        } for task in page_obj.object_list
+    ]
 
-        return Response({
-            "tasks": task_data
-        })
-
-    except DetectionTask.DoesNotExist:
-        return Response({"message": "No tasks found"}, status=404)
+    return Response({
+        "tasks": task_data,
+        "current_page": page_obj.number,
+        "total_pages": paginator.num_pages,
+        "total_tasks": paginator.count,
+        "has_next": page_obj.has_next(),
+        "has_previous": page_obj.has_previous(),
+    })
 
 
 @api_view(['GET'])

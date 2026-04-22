@@ -5,13 +5,18 @@
         <v-progress-circular indeterminate color="primary" />
       </div>
 
-      <DetectionReviewStep
-        v-else-if="taskDetail?.task_type === 'image'"
-        :task_id="taskId"
+      <DetectionReviewStep v-else-if="taskDetail?.task_type === 'image'" :task_id="taskId" />
+
+      <PaperResultView
+        v-else-if="taskDetail?.task_type === 'paper'"
+        :task="taskDetail"
+        :reviewer-options="reviewerOptions"
+        @download="downloadTaskReport"
+        @request-review="handleResourceReviewRequest"
       />
 
-      <ResourceDetectionDetailStep
-        v-else-if="taskDetail && (taskDetail.task_type === 'paper' || taskDetail.task_type === 'review')"
+      <ReviewResultView
+        v-else-if="taskDetail?.task_type === 'review'"
         :task="taskDetail"
         :reviewer-options="reviewerOptions"
         @download="downloadTaskReport"
@@ -19,29 +24,31 @@
       />
 
       <v-alert v-else type="warning" variant="tonal" class="ma-4">
-        未获取到任务详情，请返回检测历史重试。
+        The task detail payload could not be loaded. Return to history and retry.
       </v-alert>
     </v-card-text>
   </v-card>
 </template>
 
 <script setup lang="ts">
-//注意鉴权！！！
 import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import type { RouteParams } from 'vue-router'
 import DetectionReviewStep from '@/components/steps/DetectionReviewStep.vue'
-import ResourceDetectionDetailStep from '@/components/steps/ResourceDetectionDetailStep.vue'
-import { useSnackbarStore } from '@/stores/snackbar';
+import PaperResultView from '@/features/results/PaperResultView.vue'
+import ReviewResultView from '@/features/results/ReviewResultView.vue'
+import { useSnackbarStore } from '@/stores/snackbar'
+import detectionApi from '@/api/detection'
+import resourceTasksApi from '@/api/resourceTasks'
+import reviewTasksApi from '@/api/reviewTasks'
 import publisher from '@/api/publisher'
 import { useUserStore } from '@/stores/user'
-const snackbar = useSnackbarStore();
-const userStore = useUserStore()
 
+const snackbar = useSnackbarStore()
+const userStore = useUserStore()
 const router = useRouter()
 const route = useRoute()
 
-// 获取任务ID
 const taskId = computed(() => (route.params as RouteParams & { id: string }).id)
 const loading = ref(false)
 const reviewerOptions = ref<Array<{ id: number; username: string; avatar?: string | null }>>([])
@@ -74,7 +81,7 @@ const taskDetail = ref<TaskDetail | null>(null)
 
 const downloadTaskReport = async () => {
   try {
-    const response = await publisher.downloadReport(taskId.value)
+    const response = await detectionApi.downloadTaskReport(taskId.value)
     const contentDisposition = response.headers['content-disposition']
 
     let fileName = `task_${taskId.value}_report.pdf`
@@ -92,31 +99,30 @@ const downloadTaskReport = async () => {
     a.click()
     document.body.removeChild(a)
     window.URL.revokeObjectURL(url)
-    snackbar.showMessage('报告下载成功', 'success')
+    snackbar.showMessage('Report downloaded successfully.', 'success')
   } catch {
-    snackbar.showMessage('报告下载失败', 'error')
+    snackbar.showMessage('Failed to download the report.', 'error')
   }
 }
 
 const handleResourceReviewRequest = async (payload: { reviewers: number[]; selected_file_ids: number[] }) => {
   try {
-    const resp = await publisher.submitResourceReviewRequest({
+    const resp = await resourceTasksApi.submitReviewRequest({
       task_id: taskId.value,
       reviewers: payload.reviewers,
       selected_file_ids: payload.selected_file_ids,
     })
     if (resp?.data?.placeholder) {
-      snackbar.showMessage('人工审核请求已提交（占位接口），后续将接入正式流程', 'success')
+      snackbar.showMessage('The placeholder review-request API accepted the submission.', 'success')
       return
     }
-    snackbar.showMessage('人工审核请求已提交', 'success')
+    snackbar.showMessage('Review request submitted.', 'success')
   } catch (error: any) {
-    const message = error?.response?.data?.error || '人工审核请求提交失败'
+    const message = error?.response?.data?.error || 'Failed to submit the review request.'
     snackbar.showMessage(message, 'error')
   }
 }
 
-// 组件挂载时获取任务数据
 onMounted(async () => {
   loading.value = true
   try {
@@ -126,15 +132,15 @@ onMounted(async () => {
       return
     }
 
-    const taskResp = await publisher.getDetectionTaskDetail({ task_id: taskId.value })
+    const taskResp = await detectionApi.getTaskDetail(taskId.value)
     taskDetail.value = taskResp.data
 
     if (taskDetail.value?.task_type === 'paper' || taskDetail.value?.task_type === 'review') {
-      const reviewersResp = await publisher.getReviewers({ publisher_id: userStore.id })
+      const reviewersResp = await reviewTasksApi.getReviewers({ publisher_id: userStore.id })
       reviewerOptions.value = Array.isArray(reviewersResp.data?.reviewers) ? reviewersResp.data.reviewers : []
     }
   } catch {
-    snackbar.showMessage('任务详情获取失败', 'error')
+    snackbar.showMessage('Failed to fetch the task detail.', 'error')
     router.push('/history')
   } finally {
     loading.value = false
