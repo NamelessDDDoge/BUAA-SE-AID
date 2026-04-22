@@ -46,7 +46,7 @@
       <v-card-actions class="px-6 pb-6">
         <v-spacer />
         <v-btn variant="text" @click="closeDialog">取消</v-btn>
-        <v-btn color="primary" :disabled="selectedCount === 0" @click="confirmSelection">
+        <v-btn color="primary" @click="confirmSelection">
           确认并提交
         </v-btn>
       </v-card-actions>
