@@ -36,6 +36,13 @@ def _normalize_method_switches(method_switches):
     return {str(key): bool(value) for key, value in method_switches.items()}
 
 
+def _validate_image_method_switches(method_switches):
+    if method_switches is None:
+        return
+    if not any(method_switches.values()):
+        raise ValueError("At least one image detection method must be selected")
+
+
 def _validate_image_uploads(user, image_ids):
     if not isinstance(image_ids, list) or not image_ids:
         raise ValueError("No image IDs provided")
@@ -85,6 +92,7 @@ def create_image_detection_task(
         task_name = "New Detection Task"
 
     normalized_switches = _normalize_method_switches(method_switches)
+    _validate_image_method_switches(normalized_switches)
     effective_if_use_llm = bool(if_use_llm) or int(mode) == 3
     image_uploads = _validate_image_uploads(user, image_ids)
     num_images = len(image_uploads)

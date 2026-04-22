@@ -1,5 +1,5 @@
 """
-Django settings for backend_project.
+Django settings loaded from backend-config.
 """
 
 import os
@@ -78,7 +78,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "backend_project.urls"
+ROOT_URLCONF = "backendconfig.urls"
 
 TEMPLATES = [
     {
@@ -97,7 +97,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "backend_project.wsgi.application"
+WSGI_APPLICATION = "backendconfig.wsgi.application"
 
 
 DATABASES = build_database_settings(PROJECT_DIR, env, env_bool, env_int)

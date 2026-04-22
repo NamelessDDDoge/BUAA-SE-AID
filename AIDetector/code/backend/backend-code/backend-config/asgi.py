@@ -1,5 +1,5 @@
 """
-ASGI config for backend_project.
+ASGI config for backend-config.
 """
 
 import os
@@ -7,6 +7,6 @@ import os
 from django.core.asgi import get_asgi_application
 
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "backend_project.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "backendconfig.settings")
 
 application = get_asgi_application()

@@ -1,4 +1,4 @@
-"""backend_project URL Configuration."""
+"""backend-config URL configuration."""
 
 from django.conf import settings
 from django.conf.urls.static import static

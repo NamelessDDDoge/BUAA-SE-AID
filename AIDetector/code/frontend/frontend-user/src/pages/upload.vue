@@ -66,7 +66,13 @@
     @submit-resource-task="handleResourceTaskNext"
   />
 
-  <TaskSelectionDialog v-model="taskSelectionDialog" @confirm="confirmTaskSelection" />
+  <TaskSelectionDialog
+    v-model="taskSelectionDialog"
+    :min-selected="taskSelectionMinSelected"
+    :confirm-label="taskSelectionConfirmLabel"
+    :initial-selection="taskSelectionInitialSelection"
+    @confirm="confirmTaskSelection"
+  />
 </template>
 
 <script setup lang="ts">
@@ -132,6 +138,13 @@ const pendingDetectionPayload = ref<PendingDetectionPayload | null>(null)
 const taskSelectionContext = ref<TaskSelectionContext>('image')
 const paperEnableImageDetection = ref(true)
 const paperMethodSwitches = ref<MethodSwitches>(createDefaultMethodSwitches())
+const taskSelectionMinSelected = computed(() => (taskSelectionContext.value === 'image' ? 1 : 0))
+const taskSelectionConfirmLabel = computed(() => (
+  taskSelectionContext.value === 'image' ? '确认并提交' : '确认'
+))
+const taskSelectionInitialSelection = computed(() => (
+  taskSelectionContext.value === 'paper-image' ? paperMethodSwitches.value : undefined
+))
 
 const MAX_SIZE = 100 * 1024 * 1024
 const imageExt = new Set(['png', 'jpg', 'jpeg', 'pdf', 'zip'])
