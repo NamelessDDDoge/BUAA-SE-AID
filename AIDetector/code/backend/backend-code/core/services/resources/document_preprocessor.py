@@ -1,12 +1,14 @@
 from pathlib import Path
 
+from .text_sanitizer import sanitize_text_content
+
 
 UNREADABLE_FILE_MESSAGE = "无法读取文件内容，请上传可解析的文本文件。"
 EMPTY_FILE_MESSAGE = "无内容"
 
 
 def preprocess_document(file_path, max_segment_length=500, fallback_segment_length=2000):
-    text_content = extract_document_text(file_path)
+    text_content = sanitize_text_content(extract_document_text(file_path))
     paragraphs = extract_document_paragraphs(text_content)
     segments = split_text_into_segments(
         text_content,
@@ -64,12 +66,16 @@ def split_text_into_segments(text_content, max_segment_length=500, fallback_segm
     if segments:
         return segments
     if text_content:
-        return [text_content[:fallback_segment_length]]
+        return [sanitize_text_content(text_content[:fallback_segment_length])]
     return [EMPTY_FILE_MESSAGE]
 
 
 def extract_document_paragraphs(text_content):
-    return [paragraph.strip() for paragraph in (text_content or "").split("\n") if paragraph.strip()]
+    return [
+        cleaned
+        for cleaned in (sanitize_text_content(paragraph.strip()) for paragraph in (text_content or "").split("\n"))
+        if cleaned
+    ]
 
 
 def extract_document_references(text_content):
