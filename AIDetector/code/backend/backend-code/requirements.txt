@@ -1,0 +1,48 @@
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# Single source of truth for backend-code.
+# Every pin below matches the current detect conda environment.
+
+# Django backend runtime.
+Django==5.2.13
+django-cors-headers==4.9.0
+djangorestframework==3.17.1
+djangorestframework_simplejwt==5.5.1
+
+# Backend API / utility clients.
+requests==2.33.1
+
+# Resource ingestion, document parsing, and report generation.
+numpy==1.26.4
+pillow==12.1.1
+PyMuPDF==1.27.2.2
+python-docx==1.2.0
+reportlab==4.4.10
+
+# Database backends supported by backend-config/core/config/database.py.
+psycopg2-binary==2.9.11
+mysqlclient==2.2.8
+
+# Aliyun SSH tunnel stack. Keep this pinned explicitly to avoid silent
+# transitive upgrades that can break sshtunnel/paramiko compatibility.
+sshtunnel==0.4.0
+paramiko==3.1.0
+cryptography==46.0.7
+bcrypt==5.0.0
+PyNaCl==1.6.2
+
+# Local image detection path invoked from backend-code via local_inference_client.
+opencv-python==4.13.0.92
+scikit-image==0.25.2
+scikit-learn==1.7.2
+scipy==1.15.3
+torch==2.5.1+cu121
+torchvision==0.20.1+cu121
+albumentations==2.0.8
+baal==2.1.0
+easydict==1.13
+einops==0.8.2
+torchmetrics==1.9.0
+TorchSnooper==0.8
+timm==1.0.26
+tqdm==4.67.3
