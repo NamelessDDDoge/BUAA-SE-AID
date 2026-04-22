@@ -7,11 +7,28 @@ import zipfile
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[6]
-DEFAULT_AI_SERVICE_DIR_CANDIDATES = [
-    REPO_ROOT / "AIDetector" / "code" / "ai-service" / "ai-service-code",
-    REPO_ROOT / "ai-forensics" / "code" / "ai-service" / "ai-service-code",
-]
+CODE_DIR = Path(__file__).resolve().parents[6]
+WORKSPACE_ROOT = CODE_DIR.parents[1]
+
+
+def _build_default_ai_service_dir_candidates():
+    candidates = [
+        CODE_DIR / "ai-service" / "ai-service-code",
+        WORKSPACE_ROOT / "AIDetector" / "code" / "ai-service" / "ai-service-code",
+        WORKSPACE_ROOT / "ai-forensics" / "code" / "ai-service" / "ai-service-code",
+    ]
+    deduped = []
+    seen = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        deduped.append(resolved)
+    return deduped
+
+
+DEFAULT_AI_SERVICE_DIR_CANDIDATES = _build_default_ai_service_dir_candidates()
 DEFAULT_SHARED_ROOT = Path.home() / ".codex" / "memories"
 AI_SERVICE_DIR = None
 AI_SERVICE_ENTRYPOINT = None
@@ -104,14 +121,22 @@ def _run_local_inference():
     stdout_text = _decode_output(process.stdout)
     stderr_text = _decode_output(process.stderr)
     if process.returncode != 0:
-        raise RuntimeError(stderr_text.strip() or stdout_text.strip() or "Local AI service failed.")
+        err = stderr_text.strip() or stdout_text.strip()
+        raise RuntimeError(
+            f"Local AI service subprocess exited with code {process.returncode}. "
+            + (f"Error output: {err}" if err else "No error output was captured.")
+        )
 
     lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
     try:
         index = next(i for i, line in enumerate(lines) if "start results" in line.lower())
         payload = lines[index + 1]
     except (StopIteration, IndexError) as exc:
-        raise RuntimeError("Local AI service did not return a serialized result payload.") from exc
+        first_line = lines[0] if lines else "(no output)"
+        raise RuntimeError(
+            f"Local AI service output did not contain the expected 'start results' marker. "
+            f"First line received: {first_line!r}"
+        ) from exc
 
     import pickle
 
@@ -120,8 +145,4 @@ def _run_local_inference():
 
 def get_result(local_path, json_path):
     _prepare_inputs(local_path, json_path)
-    try:
-        return _run_local_inference()
-    except Exception as exc:
-        print(f"Local AI inference failed: {exc}")
-        return None
+    return _run_local_inference()

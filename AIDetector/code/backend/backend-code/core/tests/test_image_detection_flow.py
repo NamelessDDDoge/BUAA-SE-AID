@@ -19,7 +19,7 @@ from core.services.capabilities.image.local_detection import (
     _persist_detection_result,
     _run_local_detection_batch,
 )
-from core.services.capabilities.image.local_inference_client import _run_local_inference
+from core.services.capabilities.image.local_inference_client import _discover_ai_service_dir, _run_local_inference
 from core.services.capabilities.image import local_inference_client
 from core.models import (
     DetectionResult,
@@ -352,6 +352,18 @@ class LocalBridgeTests(TestCase):
         self.assertEqual(result[1][0], "ela")
         self.assertEqual(len(result), len(expected_payload))
 
+    @patch.dict("os.environ", {}, clear=True)
+    @patch(
+        "core.services.capabilities.image.local_inference_client.DEFAULT_AI_SERVICE_DIR_CANDIDATES",
+        new_callable=lambda: [Path(__file__).resolve().parents[4] / "ai-service" / "ai-service-code"],
+    )
+    def test_discover_ai_service_dir_uses_existing_repo_candidate_when_env_missing(self, _mock_candidates):
+        expected = Path(__file__).resolve().parents[4] / "ai-service" / "ai-service-code"
+
+        discovered = _discover_ai_service_dir()
+
+        self.assertEqual(discovered, expected)
+
     @patch("core.services.capabilities.image.local_detection.generate_detection_task_report", return_value="reports/task_report.pdf")
     @patch("core.services.capabilities.image.local_detection.fanyi_text", side_effect=lambda text: text)
     def test_run_local_detection_batch_with_fake_ai_service_process(self, _mock_translate, _mock_report):
@@ -407,7 +419,7 @@ class LocalBridgeTests(TestCase):
         batch_dir = _create_batch_inputs(task, 0, [detection_result_for_image2, detection_result_for_image1])
         self.addCleanup(lambda: shutil.rmtree(batch_dir, ignore_errors=True))
 
-        fake_service_root = Path(__file__).resolve().parents[1] / "test_fixtures"
+        fake_service_root = Path(__file__).resolve().parents[1] / "tests" / "test_fixtures"
         fake_shared_root = fake_service_root / "shared"
         fake_entrypoint = fake_service_root / "fake_ai_service_entrypoint.py"
         shutil.rmtree(fake_shared_root, ignore_errors=True)
