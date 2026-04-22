@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 
 
-CONFIG_DIR = Path(__file__).resolve().parent.parent / "backend-config"
+CONFIG_DIR = Path(__file__).resolve().parent / "backend-config"
 
 
 def load_backend_config_module(alias: str, file_name: str):

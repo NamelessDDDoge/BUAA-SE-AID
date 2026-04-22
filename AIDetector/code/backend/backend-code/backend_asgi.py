@@ -1,7 +1,7 @@
-from . import load_backend_config_module
+from backend_config_loader import load_backend_config_module
 
 
-_module = load_backend_config_module("_backendconfig_impl.settings", "settings.py")
+_module = load_backend_config_module("_backend_config_impl.asgi", "asgi.py")
 
 for _name in dir(_module):
     if _name.startswith("__") and _name not in {"__doc__"}:
