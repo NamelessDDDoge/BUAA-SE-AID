@@ -2,11 +2,42 @@ import shutil
 from pathlib import Path
 from unittest.mock import patch
 
+import fitz
+import numpy as np
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from core.models import DetectionTask, FileManagement, Organization, User
-from core.services.orchestrators.resource_task_orchestrator import create_resource_detection_task
+from core.services.orchestrators.resource_task_orchestrator import (
+    create_resource_detection_task,
+    run_resource_detection_task_async,
+)
+
+
+REPO_TASK_7_REPORT = Path(__file__).resolve().parents[6] / "task_7_report.pdf"
+
+
+def fake_detection_payload():
+    return [
+        ("llm", [("image_0.png", None)]),
+        ("ela", [("image_0.png", np.full((12, 12), 10, dtype=np.uint8))]),
+        ("exif", [("image_0.png", ("exif", ["Edited by Photoshop"]))]),
+        ("cmd", []),
+        ("urn_coarse_v2", [np.ones((12, 12), dtype=np.float32), 0.85]),
+        ("urn_blurring", [np.zeros((12, 12), dtype=np.float32), 0.10]),
+        ("urn_brute_force", [np.zeros((12, 12), dtype=np.float32), 0.05]),
+        ("urn_contrast", [np.zeros((12, 12), dtype=np.float32), 0.20]),
+        ("urn_inpainting", [np.zeros((12, 12), dtype=np.float32), 0.30]),
+    ]
+
+
+class MockFastDetectResponse:
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"data": {"prob": 0.1, "details": {"source": "mock"}}}
 
 
 @override_settings(ENABLE_FANYI=False)
@@ -266,3 +297,79 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(response.data["execution_mode"], "local_async")
         mock_starter.assert_called_once()
         mock_run_paper_detection.assert_not_called()
+
+    @patch(
+        "core.views.views_dectection.start_resource_detection_task_thread",
+        side_effect=lambda task_type, task_id, api_key: run_resource_detection_task_async(task_type, task_id, api_key),
+    )
+    @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
+    @patch("core.services.integrations.fastdetect_client.requests.post")
+    @patch("core.local_detection.get_result", return_value=fake_detection_payload())
+    @patch("core.local_detection.fanyi_text", side_effect=lambda text: text)
+    def test_paper_report_download_uses_paper_template_for_task_7_fixture(
+        self,
+        _mock_translate,
+        _mock_get_result,
+        mock_fastdetect_post,
+        _mock_on_commit,
+        _mock_starter,
+    ):
+        self.assertTrue(REPO_TASK_7_REPORT.exists(), "task_7_report.pdf fixture is required for this regression")
+        mock_fastdetect_post.return_value = MockFastDetectResponse()
+
+        upload_response = self.client.post(
+            "/api/upload/",
+            {
+                "detection_type": "paper",
+                "file": SimpleUploadedFile(
+                    "task_7_report.pdf",
+                    REPO_TASK_7_REPORT.read_bytes(),
+                    content_type="application/pdf",
+                ),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(upload_response.status_code, 200)
+        file_id = upload_response.data["file_id"]
+
+        create_response = self.client.post(
+            "/api/resource-task/create/",
+            {
+                "task_type": "paper",
+                "task_name": "Paper Fixture Report",
+                "file_ids": [file_id],
+                "extract_images": True,
+                "if_use_llm": False,
+                "method_switches": {
+                    "llm": False,
+                    "ela": False,
+                    "exif": True,
+                    "cmd": False,
+                    "urn_coarse_v2": False,
+                    "urn_blurring": False,
+                    "urn_brute_force": False,
+                    "urn_contrast": False,
+                    "urn_inpainting": False,
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, 200)
+        task = DetectionTask.objects.get(pk=create_response.data["task_id"])
+        self.assertEqual(task.task_type, "paper")
+        self.assertEqual(task.status, "completed")
+        self.assertGreater(task.detection_results.count(), 0)
+        self.assertTrue(task.report_file)
+
+        download_response = self.client.get(f"/api/tasks/{task.id}/report/")
+        self.assertEqual(download_response.status_code, 200)
+
+        pdf_bytes = b"".join(download_response.streaming_content)
+        pdf = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text = "".join(page.get_text() for page in pdf[: min(pdf.page_count, 3)])
+
+        self.assertIn("Paper Detection Report", text)
+        self.assertIn("task_7_report.pdf", text)
+        self.assertNotIn("Image Detection Report", text)

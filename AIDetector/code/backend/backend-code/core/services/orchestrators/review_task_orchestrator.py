@@ -6,10 +6,12 @@ from django.utils import timezone
 
 from ..event_logger import log_user_event
 from ...models import DetectionTask, User
+from ...utils.report_generator import generate_task_report
 from ..capabilities.llm_analysis_service import build_suspicious_paragraph_explanations
 from ..capabilities.review_relevance_service import analyze_review_relevance
 from ..capabilities.text_detection_service import analyze_text_segments
 from ..resources.document_preprocessor import preprocess_document
+from ..resources.text_sanitizer import sanitize_json_like
 
 
 def build_resource_review_placeholder(*, user, task_id, reviewers, reason="", selected_file_ids=None):
@@ -106,7 +108,7 @@ def run_review_detection_task(task_id, api_key=None):
         paper_segments=paper_document["segments"],
     )
 
-    detection_task.text_detection_results = {
+    detection_task.text_detection_results = sanitize_json_like({
         "document": {
             "paper_file_id": paper_file.id,
             "paper_file_name": paper_file.file_name,
@@ -118,13 +120,14 @@ def run_review_detection_task(task_id, api_key=None):
         "paragraph_results": paragraph_results,
         "suspicious_paragraphs": suspicious_paragraphs,
         "relevance_results": relevance_results,
-    }
+    })
     detection_task.status = "completed"
     detection_task.completion_time = timezone.now()
     detection_task.error_message = ""
     detection_task.save(
         update_fields=["text_detection_results", "status", "completion_time", "error_message"]
     )
+    generate_task_report(detection_task)
     return "Review detection finished"
 
 

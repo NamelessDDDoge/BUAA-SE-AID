@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-22T00:20:00+08:00",
+  "updated_at": "2026-04-22T13:35:00+08:00",
   "items": [
     {
       "id": "slice-00-tracking-bootstrap",
@@ -126,6 +126,15 @@
       "verification": "DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py check; DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests.test_resource_task_flow core.tests.test_resource_preprocessing; DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 conda run -n detect python manage.py test core.tests",
       "attempts": 1,
       "fallback": "Runtime-only patch layered onto slice-05: resource task creation now always starts paper/review via local on-commit thread execution, while schema, frontend structure, and report/status redesign remain deferred to later slices."
+    },
+    {
+      "id": "paper-report-hotfix",
+      "title": "Emergency runtime hotfix: replace image-report reuse with dedicated paper task reports",
+      "status": "done",
+      "slice": "paper-report-hotfix",
+      "verification": "DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 C:\\Users\\admin\\anaconda3\\envs\\detect\\python.exe manage.py migrate; DATABASE_MODE=local LOCAL_DB_NAME=db.sqlite3 C:\\Users\\admin\\anaconda3\\envs\\detect\\python.exe manage.py test core.tests",
+      "attempts": 1,
+      "fallback": "Keep the hotfix narrow: block non-image subflows from writing DetectionTask.report_file, generate paper/review PDFs from text_detection_results, and let /api/tasks/<id>/report/ regenerate paper/review reports to heal stale broken files."
     }
   ]
 }
