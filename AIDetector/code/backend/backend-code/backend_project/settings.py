@@ -1,12 +1,12 @@
-﻿"""
-Django settings for fake_image_detector project.
+"""
+Django settings for backend_project.
 """
 
 import os
 from datetime import timedelta
 from pathlib import Path
 
-from .database import build_database_settings
+from core.config.database import build_database_settings
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -78,7 +78,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "fake_image_detector.urls"
+ROOT_URLCONF = "backend_project.urls"
 
 TEMPLATES = [
     {
@@ -97,7 +97,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "fake_image_detector.wsgi.application"
+WSGI_APPLICATION = "backend_project.wsgi.application"
 
 
 DATABASES = build_database_settings(PROJECT_DIR, env, env_bool, env_int)

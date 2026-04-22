@@ -51,7 +51,7 @@ def _build_custom_database_settings(project_dir: Path, env_get):
     if database_engine:
         config = {
             "ENGINE": database_engine,
-            "NAME": database_name or "fake_image_detector",
+            "NAME": database_name or "backend_project",
         }
         if database_engine == "django.db.backends.sqlite3":
             db_name = database_name or "db.sqlite3"

@@ -4,7 +4,7 @@ from unittest.mock import patch
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase
 
-from fake_image_detector.database import build_database_settings
+from core.config.database import build_database_settings
 
 
 class DatabaseConfigTests(SimpleTestCase):
@@ -77,7 +77,7 @@ class DatabaseConfigTests(SimpleTestCase):
         self.assertEqual(config["default"]["PORT"], "5432")
         self.assertEqual(config["default"]["OPTIONS"], {"connect_timeout": 15})
 
-    @patch("fake_image_detector.database._start_aliyun_db_tunnel", side_effect=RuntimeError("tunnel down"))
+    @patch("core.config.database._start_aliyun_db_tunnel", side_effect=RuntimeError("tunnel down"))
     def test_aliyun_mode_falls_back_to_local_sqlite_when_tunnel_start_fails(self, _mock_tunnel):
         values = {
             "DATABASE_MODE": "aliyun_postgres",
@@ -102,7 +102,7 @@ class DatabaseConfigTests(SimpleTestCase):
         self.assertEqual(config["default"]["ENGINE"], "django.db.backends.sqlite3")
         self.assertEqual(config["default"]["NAME"], self.project_dir / "db.sqlite3")
 
-    @patch("fake_image_detector.database._start_aliyun_db_tunnel", side_effect=RuntimeError("tunnel down"))
+    @patch("core.config.database._start_aliyun_db_tunnel", side_effect=RuntimeError("tunnel down"))
     def test_aliyun_mode_still_raises_without_fallback_config(self, _mock_tunnel):
         values = {
             "DATABASE_MODE": "aliyun_postgres",
