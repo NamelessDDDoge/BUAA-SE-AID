@@ -298,6 +298,9 @@ def _finalize_detection_task(task_pk, image_num):
     if completed_count != image_num:
         return
 
+    if detection_task.task_type != "image":
+        return
+
     with transaction.atomic():
         detection_task.status = "completed"
         detection_task.completion_time = timezone.now()

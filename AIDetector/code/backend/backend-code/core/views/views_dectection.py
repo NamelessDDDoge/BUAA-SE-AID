@@ -196,7 +196,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 
-from ..utils.report_generator import generate_detection_task_report
+from ..utils.report_generator import generate_task_report
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -214,8 +214,10 @@ def download_task_report(request, task_id):
     if task.status != "completed":
         return Response({"detail": "Task not completed yet."}, status=400)
 
-    if not task.report_file:
-        # generate_detection_task_report(task)
+    if task.task_type in {"paper", "review"}:
+        generate_task_report(task)
+        task.refresh_from_db(fields=["report_file"])
+    elif not task.report_file:
         return Response({"detail": "Report is still being generated."}, status=202)
 
     abs_path = os.path.join(settings.MEDIA_ROOT, task.report_file.name)

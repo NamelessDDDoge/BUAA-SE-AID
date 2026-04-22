@@ -5,12 +5,14 @@ from django.conf import settings
 from django.utils import timezone
 
 from ...models import DetectionResult, DetectionTask
+from ...utils.report_generator import generate_task_report
 from ..capabilities.image_detection_service import run_image_detection_task
 from ..capabilities.llm_analysis_service import build_suspicious_paragraph_explanations
 from ..capabilities.reference_check_service import evaluate_references
 from ..capabilities.text_detection_service import analyze_text_segments
 from ..resources.document_preprocessor import preprocess_document
 from ..resources.image_extraction_service import create_image_uploads_for_resource
+from ..resources.text_sanitizer import sanitize_json_like
 
 IMAGE_METHOD_KEYS = {
     "llm",
@@ -63,13 +65,14 @@ def run_paper_detection_task(task_id, api_key=None):
         "image_results": image_results,
     }
 
-    detection_task.text_detection_results = results_payload
+    detection_task.text_detection_results = sanitize_json_like(results_payload)
     detection_task.status = "completed"
     detection_task.completion_time = timezone.now()
     detection_task.error_message = ""
     detection_task.save(
         update_fields=["text_detection_results", "status", "completion_time", "error_message"]
     )
+    generate_task_report(detection_task)
     return "Paper detection finished"
 
 

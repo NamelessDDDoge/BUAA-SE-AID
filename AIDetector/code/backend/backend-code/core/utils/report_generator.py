@@ -169,6 +169,275 @@ def generate_detection_task_report(task: DetectionTask) -> str:
     return rel_path
 
 
+def generate_task_report(task: DetectionTask) -> str:
+    if task.task_type == "paper":
+        return generate_paper_detection_task_report(task)
+    if task.task_type == "review":
+        return generate_review_detection_task_report(task)
+    return generate_detection_task_report(task)
+
+
+def _create_report_canvas(task: DetectionTask):
+    rel_path = f"reports/task_{task.id}_report.pdf"
+    abs_path = os.path.join(settings.MEDIA_ROOT, rel_path)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    report_canvas = canvas.Canvas(abs_path, pagesize=A4)
+    width, height = A4
+    margin = 40
+    return report_canvas, rel_path, width, height, margin
+
+
+def _ensure_report_space(c, y, height, margin, needed_height=40):
+    if y - needed_height < margin:
+        c.showPage()
+        y = height - margin
+    return y
+
+
+def _draw_report_title_page(c, *, title, task, width, height, margin, metadata_lines):
+    y = height - 120
+    c.setFont("SimSun-Bold", 28)
+    c.drawCentredString(width / 2, y, title)
+    y -= 70
+
+    c.setFont("SimSun", 14)
+    for line in metadata_lines:
+        c.drawString(margin, y, line)
+        y -= 28
+
+    c.showPage()
+
+
+def _draw_report_section_title(c, y, *, title, height, margin):
+    y = _ensure_report_space(c, y, height, margin, needed_height=36)
+    c.setFont("SimSun-Bold", 14)
+    c.drawString(margin, y, title)
+    return y - 22
+
+
+def _draw_report_text_block(c, y, text, *, height, margin, max_chars=46, leading=14, size=10):
+    normalized_text = _stringify_report_value(text)
+    line_count = max(len(textwrap.wrap(normalized_text, width=max_chars)), 1)
+    y = _ensure_report_space(c, y, height, margin, needed_height=line_count * leading + 10)
+    return _draw_multiline(c, margin + 12, y, normalized_text, max_chars=max_chars, leading=leading, size=size) - 8
+
+
+def _draw_report_pairs(c, y, pairs, *, height, margin):
+    c.setFont("SimSun", 10)
+    for label, value in pairs:
+        y = _draw_report_text_block(c, y, f"{label}：{_stringify_report_value(value)}", height=height, margin=margin)
+    return y
+
+
+def _draw_report_items(c, y, items, *, height, margin):
+    if not items:
+        return _draw_report_text_block(c, y, "无", height=height, margin=margin)
+
+    for index, item in enumerate(items, start=1):
+        y = _draw_report_text_block(c, y, f"{index}.", height=height, margin=margin)
+        if isinstance(item, dict):
+            for key, value in item.items():
+                y = _draw_report_text_block(
+                    c,
+                    y,
+                    f"{key}: {_stringify_report_value(value)}",
+                    height=height,
+                    margin=margin,
+                )
+        else:
+            y = _draw_report_text_block(c, y, item, height=height, margin=margin)
+        y -= 4
+    return y
+
+
+def _stringify_report_value(value):
+    if value is None or value == "":
+        return "-"
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    if isinstance(value, float):
+        return f"{value:.2f}"
+    if isinstance(value, (int, str)):
+        return str(value)
+    if isinstance(value, dict):
+        return ", ".join(f"{key}={_stringify_report_value(item)}" for key, item in value.items()) or "-"
+    if isinstance(value, (list, tuple, set)):
+        return ", ".join(_stringify_report_value(item) for item in value) or "-"
+    return str(value)
+
+
+def generate_paper_detection_task_report(task: DetectionTask) -> str:
+    results = task.text_detection_results or {}
+    document = results.get("document", {})
+    paragraph_results = results.get("paragraph_results", [])
+    suspicious_paragraphs = results.get("suspicious_paragraphs", [])
+    reference_results = results.get("reference_results", [])
+    image_results = results.get("image_results", [])
+    paper_file = task.resource_files.filter(resource_type="paper").first()
+
+    c, rel_path, width, height, margin = _create_report_canvas(task)
+    _draw_report_title_page(
+        c,
+        title="论文检测报告 / Paper Detection Report",
+        task=task,
+        width=width,
+        height=height,
+        margin=margin,
+        metadata_lines=[
+            f"任务编号：{task.id}",
+            f"任务名称：{task.task_name}",
+            f"用户：{task.user.username}",
+            f"源文件：{paper_file.file_name if paper_file else '-'}",
+            f"创建时间：{timezone.localtime(task.upload_time).strftime('%Y-%m-%d %H:%M')}",
+            f"完成时间：{timezone.localtime(task.completion_time).strftime('%Y-%m-%d %H:%M') if task.completion_time else '-'}",
+        ],
+    )
+
+    y = height - margin
+    y = _draw_report_section_title(c, y, title="文档摘要", height=height, margin=margin)
+    y = _draw_report_pairs(
+        c,
+        y,
+        [
+            ("文件名", paper_file.file_name if paper_file else "-"),
+            ("段落数", document.get("paragraph_count")),
+            ("分段数", document.get("segment_count")),
+            ("参考文献数", document.get("reference_count")),
+            ("启用图片检测", document.get("image_detection_enabled")),
+        ],
+        height=height,
+        margin=margin,
+    )
+
+    y = _draw_report_section_title(c, y, title="段落检测结果", height=height, margin=margin)
+    y = _draw_report_items(
+        c,
+        y,
+        [
+            {
+                "paragraph_index": item.get("paragraph_index"),
+                "label": item.get("label"),
+                "probability": item.get("probability"),
+                "text": item.get("text"),
+            }
+            for item in paragraph_results
+        ],
+        height=height,
+        margin=margin,
+    )
+
+    y = _draw_report_section_title(c, y, title="可疑段落解释", height=height, margin=margin)
+    y = _draw_report_items(
+        c,
+        y,
+        [
+            {
+                "paragraph_index": item.get("paragraph_index"),
+                "probability": item.get("probability"),
+                "explanation": item.get("explanation"),
+            }
+            for item in suspicious_paragraphs
+        ],
+        height=height,
+        margin=margin,
+    )
+
+    y = _draw_report_section_title(c, y, title="参考文献检查", height=height, margin=margin)
+    y = _draw_report_items(
+        c,
+        y,
+        [
+            {
+                "reference_index": item.get("reference_index"),
+                "exists": item.get("exists"),
+                "is_relevant": item.get("is_relevant"),
+                "reference": item.get("reference"),
+                "overlap_terms": item.get("overlap_terms"),
+            }
+            for item in reference_results
+        ],
+        height=height,
+        margin=margin,
+    )
+
+    y = _draw_report_section_title(c, y, title="论文图片检测", height=height, margin=margin)
+    _draw_report_items(
+        c,
+        y,
+        [
+            {
+                "image_id": item.get("image_id"),
+                "page_number": item.get("page_number"),
+                "status": item.get("status"),
+                "is_fake": item.get("is_fake"),
+                "confidence_score": item.get("confidence_score"),
+            }
+            for item in image_results
+        ],
+        height=height,
+        margin=margin,
+    )
+
+    c.save()
+    task.report_file = rel_path
+    task.save(update_fields=["report_file"])
+    return rel_path
+
+
+def generate_review_detection_task_report(task: DetectionTask) -> str:
+    results = task.text_detection_results or {}
+    document = results.get("document", {})
+    paragraph_results = results.get("paragraph_results", [])
+    suspicious_paragraphs = results.get("suspicious_paragraphs", [])
+    relevance_results = results.get("relevance_results", [])
+
+    c, rel_path, width, height, margin = _create_report_canvas(task)
+    _draw_report_title_page(
+        c,
+        title="同行评审检测报告 / Review Detection Report",
+        task=task,
+        width=width,
+        height=height,
+        margin=margin,
+        metadata_lines=[
+            f"任务编号：{task.id}",
+            f"任务名称：{task.task_name}",
+            f"用户：{task.user.username}",
+            f"论文文件：{document.get('paper_file_name', '-')}",
+            f"评审文件：{document.get('review_file_name', '-')}",
+            f"创建时间：{timezone.localtime(task.upload_time).strftime('%Y-%m-%d %H:%M')}",
+            f"完成时间：{timezone.localtime(task.completion_time).strftime('%Y-%m-%d %H:%M') if task.completion_time else '-'}",
+        ],
+    )
+
+    y = height - margin
+    y = _draw_report_section_title(c, y, title="文档摘要", height=height, margin=margin)
+    y = _draw_report_pairs(
+        c,
+        y,
+        [
+            ("论文分段数", document.get("paper_segment_count")),
+            ("评审分段数", document.get("review_segment_count")),
+        ],
+        height=height,
+        margin=margin,
+    )
+
+    y = _draw_report_section_title(c, y, title="评审段落检测", height=height, margin=margin)
+    y = _draw_report_items(c, y, paragraph_results, height=height, margin=margin)
+
+    y = _draw_report_section_title(c, y, title="可疑段落解释", height=height, margin=margin)
+    y = _draw_report_items(c, y, suspicious_paragraphs, height=height, margin=margin)
+
+    y = _draw_report_section_title(c, y, title="相关性匹配", height=height, margin=margin)
+    _draw_report_items(c, y, relevance_results, height=height, margin=margin)
+
+    c.save()
+    task.report_file = rel_path
+    task.save(update_fields=["report_file"])
+    return rel_path
+
+
 from ..models import ManualReview, ImageReview
 
 
