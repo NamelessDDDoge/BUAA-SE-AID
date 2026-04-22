@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-04-22T13:35:00+08:00",
+  "updated_at": "2026-04-22T13:58:00+08:00",
   "items": [
     {
       "id": "slice-00-tracking-bootstrap",
@@ -67,11 +67,11 @@
     {
       "id": "slice-07-persistence-split",
       "title": "Persist paper and review results in dedicated tables while keeping compatibility",
-      "status": "in_progress",
+      "status": "done",
       "slice": "slice-07-persistence-split",
-      "verification": "conda run -n detect python manage.py migrate; conda run -n detect python manage.py test core.tests",
-      "attempts": 0,
-      "fallback": ""
+      "verification": "conda run -n detect python manage.py migrate; conda run -n detect python manage.py test core.tests; conda run -n detect python manage.py check",
+      "attempts": 1,
+      "fallback": "Keep DetectionTask.text_detection_results as a compatibility mirror while dedicated PaperDetectionResult/ReviewDetectionResult tables become the primary runtime read path."
     },
     {
       "id": "slice-08-report-and-status-contract",

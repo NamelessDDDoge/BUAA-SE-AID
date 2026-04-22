@@ -8,7 +8,17 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from core.models import DetectionTask, FileManagement, Organization, User
+from core.models import (
+    DetectionTask,
+    FileManagement,
+    Organization,
+    PaperDetectionResult,
+    PaperParagraphResult,
+    PaperReferenceResult,
+    ReviewDetectionResult,
+    ReviewParagraphResult,
+    User,
+)
 from core.services.orchestrators.resource_task_orchestrator import (
     create_resource_detection_task,
     run_resource_detection_task_async,
@@ -185,6 +195,50 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(response.data["status"], "completed")
         self.assertEqual(response.data["results"]["paragraph_results"], task.text_detection_results["paragraph_results"])
 
+    def test_paper_results_endpoint_prefers_dedicated_tables_when_json_is_empty(self):
+        task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="paper",
+            task_name="Paper Result Split",
+            status="completed",
+            text_detection_results={},
+        )
+        source_file = self.create_file("paper-source.pdf", "paper")
+        task.resource_files.add(source_file)
+        paper_result = PaperDetectionResult.objects.create(
+            detection_task=task,
+            source_file=source_file,
+            paragraph_count=1,
+            segment_count=1,
+            reference_count=1,
+            image_detection_enabled=False,
+        )
+        PaperParagraphResult.objects.create(
+            paper_detection_result=paper_result,
+            paragraph_index=0,
+            text="Persisted paragraph",
+            probability=0.8,
+            label="suspicious",
+            details={"source": "split"},
+            explanation="Persisted explanation",
+        )
+        PaperReferenceResult.objects.create(
+            paper_detection_result=paper_result,
+            reference_index=0,
+            reference="[1] Persisted reference",
+            exists=True,
+            is_relevant=True,
+            overlap_terms=["persisted"],
+        )
+
+        response = self.client.get(f"/api/paper-results/{task.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["results"]["document"]["file_name"], "paper-source.pdf")
+        self.assertEqual(response.data["results"]["paragraph_results"][0]["text"], "Persisted paragraph")
+        self.assertEqual(response.data["results"]["reference_results"][0]["reference"], "[1] Persisted reference")
+
     def test_review_task_status_exposes_relevance_results(self):
         review_task = DetectionTask.objects.create(
             organization=self.organization,
@@ -213,6 +267,47 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(response.data["task_type"], "review")
         self.assertEqual(response.data["results"]["relevance_results"][0]["paper_paragraph_index"], 1)
         self.assertIn("1", response.data["result_summary"])
+
+    def test_review_status_prefers_dedicated_tables_when_json_is_empty(self):
+        review_task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="review",
+            task_name="Review Result Split",
+            status="completed",
+            text_detection_results={},
+        )
+        paper_file = self.create_file("linked-paper.pdf", "review_paper")
+        review_file = self.create_file("linked-review.txt", "review_file", linked_file=paper_file)
+        review_task.resource_files.add(paper_file, review_file)
+        review_result = ReviewDetectionResult.objects.create(
+            detection_task=review_task,
+            paper_file=paper_file,
+            review_file=review_file,
+            paper_segment_count=2,
+            review_segment_count=1,
+        )
+        ReviewParagraphResult.objects.create(
+            review_detection_result=review_result,
+            paragraph_index=0,
+            text="Persisted review paragraph",
+            probability=0.2,
+            label="clean",
+            details={"source": "split"},
+            suspicious_explanation="Persisted suspicious explanation",
+            paper_paragraph_index=1,
+            paper_text="Persisted paper paragraph",
+            relevance_score=0.6,
+            relevance_label="relevant",
+            relevance_explanation="Persisted relevance explanation",
+        )
+
+        response = self.client.get(f"/api/detection-task/{review_task.id}/status/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["results"]["document"]["review_file_name"], "linked-review.txt")
+        self.assertEqual(response.data["results"]["paragraph_results"][0]["text"], "Persisted review paragraph")
+        self.assertEqual(response.data["results"]["relevance_results"][0]["paper_paragraph_index"], 1)
 
     @patch("core.views.views_dectection.start_resource_detection_task_thread")
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())

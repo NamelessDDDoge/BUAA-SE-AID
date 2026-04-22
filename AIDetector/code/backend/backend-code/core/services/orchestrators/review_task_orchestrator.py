@@ -7,11 +7,11 @@ from django.utils import timezone
 from ..event_logger import log_user_event
 from ...models import DetectionTask, User
 from ...utils.report_generator import generate_task_report
+from ...utils.task_result_store import store_review_task_results
 from ..capabilities.llm_analysis_service import build_suspicious_paragraph_explanations
 from ..capabilities.review_relevance_service import analyze_review_relevance
 from ..capabilities.text_detection_service import analyze_text_segments
 from ..resources.document_preprocessor import preprocess_document
-from ..resources.text_sanitizer import sanitize_json_like
 
 
 def build_resource_review_placeholder(*, user, task_id, reviewers, reason="", selected_file_ids=None):
@@ -108,7 +108,11 @@ def run_review_detection_task(task_id, api_key=None):
         paper_segments=paper_document["segments"],
     )
 
-    detection_task.text_detection_results = sanitize_json_like({
+    detection_task.text_detection_results = store_review_task_results(
+        detection_task=detection_task,
+        paper_file=paper_file,
+        review_file=review_file,
+        results_payload={
         "document": {
             "paper_file_id": paper_file.id,
             "paper_file_name": paper_file.file_name,
@@ -120,7 +124,8 @@ def run_review_detection_task(task_id, api_key=None):
         "paragraph_results": paragraph_results,
         "suspicious_paragraphs": suspicious_paragraphs,
         "relevance_results": relevance_results,
-    })
+        },
+    )
     detection_task.status = "completed"
     detection_task.completion_time = timezone.now()
     detection_task.error_message = ""

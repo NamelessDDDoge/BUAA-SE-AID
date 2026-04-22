@@ -319,6 +319,126 @@ class DetectionTask(models.Model):
         return f"Task {self.id} - {self.user.username}"
 
 
+class PaperDetectionResult(models.Model):
+    detection_task = models.OneToOneField(
+        DetectionTask,
+        on_delete=models.CASCADE,
+        related_name="paper_detection_result",
+    )
+    source_file = models.ForeignKey(
+        FileManagement,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="paper_detection_results",
+    )
+    paragraph_count = models.IntegerField(default=0)
+    segment_count = models.IntegerField(default=0)
+    reference_count = models.IntegerField(default=0)
+    image_detection_enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.localtime)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Paper result for task {self.detection_task_id}"
+
+
+class PaperParagraphResult(models.Model):
+    paper_detection_result = models.ForeignKey(
+        PaperDetectionResult,
+        on_delete=models.CASCADE,
+        related_name="paragraph_results",
+    )
+    paragraph_index = models.IntegerField()
+    text = models.TextField(blank=True, default="")
+    probability = models.FloatField(default=0.0)
+    label = models.CharField(max_length=32, blank=True, default="")
+    details = models.JSONField(null=True, blank=True)
+    explanation = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["paragraph_index"]
+        unique_together = ("paper_detection_result", "paragraph_index")
+
+    def __str__(self):
+        return f"Paper paragraph {self.paragraph_index} for task {self.paper_detection_result.detection_task_id}"
+
+
+class PaperReferenceResult(models.Model):
+    paper_detection_result = models.ForeignKey(
+        PaperDetectionResult,
+        on_delete=models.CASCADE,
+        related_name="reference_results",
+    )
+    reference_index = models.IntegerField()
+    reference = models.TextField(blank=True, default="")
+    exists = models.BooleanField(default=False)
+    is_relevant = models.BooleanField(default=False)
+    overlap_terms = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["reference_index"]
+        unique_together = ("paper_detection_result", "reference_index")
+
+    def __str__(self):
+        return f"Paper reference {self.reference_index} for task {self.paper_detection_result.detection_task_id}"
+
+
+class ReviewDetectionResult(models.Model):
+    detection_task = models.OneToOneField(
+        DetectionTask,
+        on_delete=models.CASCADE,
+        related_name="review_detection_result",
+    )
+    paper_file = models.ForeignKey(
+        FileManagement,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="review_detection_results_as_paper",
+    )
+    review_file = models.ForeignKey(
+        FileManagement,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="review_detection_results_as_review",
+    )
+    paper_segment_count = models.IntegerField(default=0)
+    review_segment_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.localtime)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Review result for task {self.detection_task_id}"
+
+
+class ReviewParagraphResult(models.Model):
+    review_detection_result = models.ForeignKey(
+        ReviewDetectionResult,
+        on_delete=models.CASCADE,
+        related_name="paragraph_results",
+    )
+    paragraph_index = models.IntegerField()
+    text = models.TextField(blank=True, default="")
+    probability = models.FloatField(default=0.0)
+    label = models.CharField(max_length=32, blank=True, default="")
+    details = models.JSONField(null=True, blank=True)
+    suspicious_explanation = models.TextField(blank=True, null=True)
+    paper_paragraph_index = models.IntegerField(null=True, blank=True)
+    paper_text = models.TextField(blank=True, default="")
+    relevance_score = models.FloatField(null=True, blank=True)
+    relevance_label = models.CharField(max_length=32, blank=True, default="")
+    relevance_explanation = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["paragraph_index"]
+        unique_together = ("review_detection_result", "paragraph_index")
+
+    def __str__(self):
+        return f"Review paragraph {self.paragraph_index} for task {self.review_detection_result.detection_task_id}"
+
+
 class ImageUpload(models.Model):
     detection_task = models.ForeignKey(DetectionTask, on_delete=models.CASCADE, related_name='image_uploads',
                                        null=True)  # 关联任务

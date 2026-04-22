@@ -12,6 +12,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 from ..models import DetectionTask, DetectionResult, SubDetectionResult
+from .task_result_store import get_paper_task_results_payload, get_review_task_results_payload
 
 # ─── 字体注册（宋体） ──────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -267,7 +268,7 @@ def _stringify_report_value(value):
 
 
 def generate_paper_detection_task_report(task: DetectionTask) -> str:
-    results = task.text_detection_results or {}
+    results = get_paper_task_results_payload(task)
     document = results.get("document", {})
     paragraph_results = results.get("paragraph_results", [])
     suspicious_paragraphs = results.get("suspicious_paragraphs", [])
@@ -385,7 +386,7 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
 
 
 def generate_review_detection_task_report(task: DetectionTask) -> str:
-    results = task.text_detection_results or {}
+    results = get_review_task_results_payload(task)
     document = results.get("document", {})
     paragraph_results = results.get("paragraph_results", [])
     suspicious_paragraphs = results.get("suspicious_paragraphs", [])

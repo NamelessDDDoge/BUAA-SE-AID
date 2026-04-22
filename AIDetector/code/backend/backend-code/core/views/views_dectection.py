@@ -197,6 +197,7 @@ from rest_framework.response import Response
 
 
 from ..utils.report_generator import generate_task_report
+from ..utils.task_result_store import get_task_results_payload
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -522,7 +523,7 @@ def get_detection_task_status_normal(request, task_id):
             elif detection_task.task_type == 'paper':
                 result_summary = '论文检测已完成'
             elif detection_task.task_type == 'review':
-                relevance_count = len((detection_task.text_detection_results or {}).get('relevance_results', []))
+                relevance_count = len((get_task_results_payload(detection_task) or {}).get('relevance_results', []))
                 result_summary = f'Review 检测已完成，匹配 {relevance_count} 段'
 
         fake_resource_files = []
@@ -596,7 +597,7 @@ def get_detection_task_status_normal(request, task_id):
             "pending_resource_files": pending_resource_files,
             "resource_split_note": split_note,
             "detection_results": [],
-            "results": detection_task.text_detection_results if detection_task.task_type in {'paper', 'review'} else None,
+            "results": get_task_results_payload(detection_task) if detection_task.task_type in {'paper', 'review'} else None,
         }
 
         for result in detection_results:
@@ -634,7 +635,7 @@ class CustomPagination(PageNumberPagination):
 def get_paper_detection_results(request, task_id):
     try:
         task = DetectionTask.objects.get(id=task_id, user=request.user)
-        results = task.text_detection_results or {}
+        results = get_task_results_payload(task) or {}
         if isinstance(results, list):
             results = {"paragraph_results": results}
         return Response({
@@ -773,7 +774,7 @@ def get_user_tasks(request):
             elif task.task_type == 'paper':
                 result_summary = '论文检测已完成'
             elif task.task_type == 'review':
-                relevance_count = len((task.text_detection_results or {}).get('relevance_results', []))
+                relevance_count = len((get_task_results_payload(task) or {}).get('relevance_results', []))
                 result_summary = f'Review 检测已完成，匹配 {relevance_count} 段'
 
         task_data.append({

@@ -5,8 +5,16 @@ from unittest.mock import patch
 from reportlab.pdfgen import canvas
 from django.test import TestCase, override_settings
 
-from core.models import DetectionTask, FileManagement, Organization, User
+from core.models import (
+    DetectionTask,
+    FileManagement,
+    Organization,
+    PaperDetectionResult,
+    ReviewDetectionResult,
+    User,
+)
 from core.services.resources.document_preprocessor import preprocess_document
+from core.services.resources.text_sanitizer import sanitize_json_like
 from core.tasks import run_paper_detection, run_review_detection
 
 
@@ -114,6 +122,8 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(task.completion_time is not None, True)
         self.assertEqual(mock_post.call_count, 3)
         self.assertTrue(all(item["text"] for item in task.text_detection_results["paragraph_results"]))
+        self.assertTrue(PaperDetectionResult.objects.filter(detection_task=task).exists())
+        self.assertEqual(task.paper_detection_result.paragraph_results.count(), 3)
         mock_image_detection.assert_not_called()
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
@@ -149,6 +159,7 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(task.status, "completed")
         self.assertEqual(task.text_detection_results["image_results"], [])
         self.assertEqual(task.text_detection_results["document"]["image_detection_enabled"], False)
+        self.assertFalse(task.paper_detection_result.image_detection_enabled)
         mock_image_detection.assert_not_called()
 
     def test_preprocess_document_extracts_text_from_pdf_when_pymupdf_is_available(self):
@@ -160,6 +171,16 @@ class ResourcePreprocessingTests(TestCase):
         self.assertIn("PDF parsing should work", result["text_content"])
         self.assertGreaterEqual(len(result["segments"]), 1)
         self.assertGreaterEqual(len(result["paragraphs"]), 1)
+
+    def test_preprocess_document_removes_null_bytes_from_pdf_text(self):
+        file_record = self.create_pdf_file("paper-null.pdf", "Null\x00byte should not reach JSON storage.")
+        file_path = self.temp_media / file_record.stored_path
+
+        result = preprocess_document(str(file_path))
+
+        self.assertNotIn("\x00", result["text_content"])
+        self.assertTrue(all("\x00" not in segment for segment in result["segments"]))
+        self.assertTrue(all("\x00" not in paragraph for paragraph in result["paragraphs"]))
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
     @patch("core.services.integrations.fastdetect_client.requests.post")
@@ -195,6 +216,7 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(len(task.text_detection_results["paragraph_results"]), 1)
         self.assertTrue(task.text_detection_results["paragraph_results"][0]["text"])
         self.assertEqual(task.text_detection_results["reference_results"], [])
+        self.assertEqual(task.paper_detection_result.reference_results.count(), 0)
         mock_image_detection.assert_not_called()
 
     @patch("core.services.integrations.fastdetect_client.requests.post")
@@ -229,7 +251,23 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(len(task.text_detection_results["paragraph_results"]), 1)
         self.assertEqual(len(task.text_detection_results["relevance_results"]), 1)
         self.assertEqual(task.text_detection_results["relevance_results"][0]["paper_paragraph_index"], 0)
+        self.assertTrue(ReviewDetectionResult.objects.filter(detection_task=task).exists())
+        self.assertEqual(task.review_detection_result.paragraph_results.count(), 1)
 
     def test_task_compatibility_wrappers_are_plain_functions_without_celery_delay(self):
         self.assertFalse(hasattr(run_paper_detection, "delay"))
         self.assertFalse(hasattr(run_review_detection, "delay"))
+
+    def test_sanitize_json_like_removes_null_bytes_recursively(self):
+        payload = {
+            "document": {"file_name": "bad\x00name.pdf"},
+            "paragraph_results": [{"text": "abc\x00def", "details": {"reason": "x\x00y"}}],
+            "list": ["ok\x00", 1, None],
+        }
+
+        sanitized = sanitize_json_like(payload)
+
+        self.assertEqual(sanitized["document"]["file_name"], "badname.pdf")
+        self.assertEqual(sanitized["paragraph_results"][0]["text"], "abcdef")
+        self.assertEqual(sanitized["paragraph_results"][0]["details"]["reason"], "xy")
+        self.assertEqual(sanitized["list"][0], "ok")
