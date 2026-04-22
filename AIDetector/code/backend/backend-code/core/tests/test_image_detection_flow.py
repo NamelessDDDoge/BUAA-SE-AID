@@ -186,6 +186,9 @@ class LocalDetectionFlowTests(TestCase):
         self.assertEqual(status_response.data["progress"]["total_results"], 1)
         self.assertEqual(status_response.data["progress"]["completed_results"], 1)
         self.assertEqual(status_response.data["progress"]["pending_results"], 0)
+        self.assertEqual(status_response.data["results"]["result_type"], "image")
+        self.assertEqual(status_response.data["results"]["summary"]["fake_images"], 1)
+        self.assertEqual(status_response.data["results"]["image_results"][0]["image_id"], self.image_upload.id)
         self.assertEqual(len(status_response.data["detection_results"]), 1)
 
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
@@ -665,6 +668,7 @@ class LocalDetectionApiCoverageTests(TestCase):
         self.assertEqual(task_detail_response.data["progress"]["completed_results"], 0)
         self.assertEqual(task_detail_response.data["progress"]["pending_results"], 0)
         self.assertEqual(task_detail_response.data["progress"]["failed_results"], 1)
+        self.assertEqual(task_detail_response.data["results"]["result_type"], "image")
         self.assertEqual(task_detail_response.data["detection_results"][0]["status"], "failed")
 
         image_detection_response = self.client.get(f"/api/detection/{image_id}/")

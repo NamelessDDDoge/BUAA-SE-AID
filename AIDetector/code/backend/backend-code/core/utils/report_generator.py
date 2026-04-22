@@ -178,6 +178,14 @@ def generate_task_report(task: DetectionTask) -> str:
     return generate_detection_task_report(task)
 
 
+def ensure_task_report_file(task: DetectionTask, *, force: bool = False) -> str:
+    report_name = getattr(task.report_file, "name", "") or ""
+    abs_path = os.path.join(settings.MEDIA_ROOT, report_name) if report_name else ""
+    if force or not report_name or not os.path.exists(abs_path):
+        return generate_task_report(task)
+    return report_name
+
+
 def _create_report_canvas(task: DetectionTask):
     rel_path = f"reports/task_{task.id}_report.pdf"
     abs_path = os.path.join(settings.MEDIA_ROOT, rel_path)

@@ -196,8 +196,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 
-from ..utils.report_generator import generate_task_report
-from ..utils.task_result_store import get_task_results_payload
+from ..utils.report_generator import ensure_task_report_file
+from ..utils.task_result_serializer import (
+    build_detection_task_status_payload,
+    build_task_result_summary,
+)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -215,15 +218,9 @@ def download_task_report(request, task_id):
     if task.status != "completed":
         return Response({"detail": "Task not completed yet."}, status=400)
 
-    if task.task_type in {"paper", "review"}:
-        generate_task_report(task)
-        task.refresh_from_db(fields=["report_file"])
-    elif not task.report_file:
-        return Response({"detail": "Report is still being generated."}, status=202)
-
-    abs_path = os.path.join(settings.MEDIA_ROOT, task.report_file.name)
-    if not os.path.exists(abs_path):
-        return Response({"detail": "Report file missing."}, status=410)
+    report_name = ensure_task_report_file(task)
+    task.refresh_from_db(fields=["report_file"])
+    abs_path = os.path.join(settings.MEDIA_ROOT, report_name)
 
     return FileResponse(open(abs_path, "rb"),
                         as_attachment=True,
@@ -273,12 +270,9 @@ def download_image_report(request, image_id):
     if task.status != "completed":
         return Response({"detail": "Task not completed yet."}, status=400)
 
-    if not task.report_file:
-        return Response({"detail": "Report is still being generated."}, status=202)
-
-    abs_path = os.path.join(settings.MEDIA_ROOT, task.report_file.name)
-    if not os.path.exists(abs_path):
-        return Response({"detail": "Report file missing."}, status=410)
+    report_name = ensure_task_report_file(task)
+    task.refresh_from_db(fields=["report_file"])
+    abs_path = os.path.join(settings.MEDIA_ROOT, report_name)
 
     return FileResponse(open(abs_path, "rb"),
                         as_attachment=True,
@@ -507,109 +501,8 @@ def detection_result_by_image(request, image_id):
 @permission_classes([IsAuthenticated])
 def get_detection_task_status_normal(request, task_id):
     try:
-        # 鑾峰彇浠诲姟鍜屽叧鑱旂殑妫€娴嬬粨鏋滐紝浠呭厑璁告湰浜鸿闂?
         detection_task = DetectionTask.objects.get(id=task_id, user=request.user)
-        detection_results = DetectionResult.objects.filter(detection_task=detection_task)
-        resource_files = detection_task.resource_files.all().order_by('id')
-
-        result_summary = '检测进行中'
-        if detection_task.status == 'failed':
-            result_summary = detection_task.error_message or '检测失败'
-        elif detection_task.status == 'completed':
-            if detection_task.task_type == 'image':
-                total = detection_results.count()
-                fake = detection_results.filter(is_fake=True).count()
-                result_summary = f'疑似造假 {fake}/{total}'
-            elif detection_task.task_type == 'paper':
-                result_summary = '论文检测已完成'
-            elif detection_task.task_type == 'review':
-                relevance_count = len((get_task_results_payload(detection_task) or {}).get('relevance_results', []))
-                result_summary = f'Review 检测已完成，匹配 {relevance_count} 段'
-
-        fake_resource_files = []
-        normal_resource_files = []
-        pending_resource_files = []
-        split_note = None
-
-        if detection_task.task_type == 'review':
-            keywords = ['fake', 'aigc', '鐤戜技', '寮傚父', '鍙枒']
-            for f in resource_files:
-                file_item = {
-                    "file_id": f.id,
-                    "file_name": f.file_name,
-                    "resource_type": f.resource_type,
-                    "file_type": f.file_type,
-                    "file_size": f.file_size,
-                    "upload_time": timezone.localtime(f.upload_time),
-                }
-                if detection_task.status != 'completed':
-                    pending_resource_files.append(file_item)
-                elif any(k.lower() in (f.file_name or '').lower() for k in keywords):
-                    fake_resource_files.append(file_item)
-                else:
-                    normal_resource_files.append(file_item)
-
-            if detection_task.status == 'completed':
-                split_note = 'Current fake/normal grouping for review tasks is placeholder logic based on filenames.'
-        elif detection_task.task_type == 'paper':
-            for f in resource_files:
-                normal_resource_files.append({
-                    "file_id": f.id,
-                    "file_name": f.file_name,
-                    "resource_type": f.resource_type,
-                    "file_type": f.file_type,
-                    "file_size": f.file_size,
-                    "upload_time": timezone.localtime(f.upload_time),
-                })
-            if detection_task.status == 'completed':
-                split_note = 'Paper detection currently does not expose fake/normal grouping.'
-
-        # 鏀堕泦浠诲姟鐩稿叧鐨勫浘鍍忓拰鐘舵€佷俊鎭?
-        task_status = {
-            "task_id": detection_task.id,
-            "task_name": detection_task.task_name,
-            "task_type": detection_task.task_type,
-            "status": detection_task.status,
-            "upload_time": timezone.localtime(detection_task.upload_time),
-            "completion_time": timezone.localtime(detection_task.completion_time) if detection_task.completion_time else None,
-            "result_summary": result_summary,
-            "error_message": detection_task.error_message,
-            "is_running": detection_task.status in {"pending", "in_progress"},
-            "progress": {
-                "total_results": detection_results.count(),
-                "completed_results": detection_results.filter(status="completed").count(),
-                "pending_results": detection_results.filter(status="in_progress").count(),
-                "failed_results": detection_results.filter(status="failed").count(),
-            },
-            "resource_files": [
-                {
-                    "file_id": f.id,
-                    "file_name": f.file_name,
-                    "resource_type": f.resource_type,
-                    "file_type": f.file_type,
-                    "file_size": f.file_size,
-                    "upload_time": timezone.localtime(f.upload_time),
-                }
-                for f in resource_files
-            ],
-            "fake_resource_files": fake_resource_files,
-            "normal_resource_files": normal_resource_files,
-            "pending_resource_files": pending_resource_files,
-            "resource_split_note": split_note,
-            "detection_results": [],
-            "results": get_task_results_payload(detection_task) if detection_task.task_type in {'paper', 'review'} else None,
-        }
-
-        for result in detection_results:
-            task_status["detection_results"].append({
-                "image_id": result.image_upload.id,
-                "status": result.status,
-                "is_fake": result.is_fake,
-                "confidence_score": result.confidence_score,
-                "detection_time": timezone.localtime(result.detection_time),
-            })
-
-        return Response(task_status)
+        return Response(build_detection_task_status_payload(detection_task))
 
     except DetectionTask.DoesNotExist:
         return Response({"message": "Detection task not found or permission denied"}, status=404)
@@ -635,13 +528,13 @@ class CustomPagination(PageNumberPagination):
 def get_paper_detection_results(request, task_id):
     try:
         task = DetectionTask.objects.get(id=task_id, user=request.user)
-        results = get_task_results_payload(task) or {}
-        if isinstance(results, list):
-            results = {"paragraph_results": results}
         return Response({
             "task_id": task.id,
+            "task_name": task.task_name,
+            "task_type": task.task_type,
             "status": task.status,
-            "results": results
+            "result_summary": build_task_result_summary(task),
+            "results": build_detection_task_status_payload(task)["results"],
         })
     except DetectionTask.DoesNotExist:
         return Response({"message": "Detection task not found"}, status=404)
@@ -763,27 +656,13 @@ def get_user_tasks(request):
 
     task_data = []
     for task in page_obj.object_list:
-        result_summary = '检测进行中'
-        if task.status == 'failed':
-            result_summary = task.error_message or '检测失败'
-        elif task.status == 'completed':
-            if task.task_type == 'image':
-                total = task.detection_results.count()
-                fake = task.detection_results.filter(is_fake=True).count()
-                result_summary = f'疑似造假 {fake}/{total}'
-            elif task.task_type == 'paper':
-                result_summary = '论文检测已完成'
-            elif task.task_type == 'review':
-                relevance_count = len((get_task_results_payload(task) or {}).get('relevance_results', []))
-                result_summary = f'Review 检测已完成，匹配 {relevance_count} 段'
-
         task_data.append({
             'task_id': task.id,
             'task_type': task.task_type,
             'task_name': task.task_name,
             'upload_time': timezone.localtime(task.upload_time).strftime('%Y-%m-%d %H:%M:%S'),
             'status': task.status,
-            'result_summary': result_summary,
+            'result_summary': build_task_result_summary(task),
             'error_message': task.error_message,
             'completion_time': timezone.localtime(task.completion_time).strftime('%Y-%m-%d %H:%M:%S') if task.completion_time else None,
             'resource_file_ids': list(task.resource_files.values_list('id', flat=True))
