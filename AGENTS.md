@@ -15,6 +15,7 @@ Current focus:
 
 Local environment rule:
 - always use the `detect` conda environment for commands run under `C:\Users\admin\Desktop\SE\BUAA-SE-AID`
+- every backend change must include an explicit `python manage.py migrate` verification pass before claiming completion, even when the edit looks schema-neutral; do not treat migrations as optional for backend work
 - every code or migration change must be followed by a full runtime verification pass before claiming completion; at minimum run migrations plus the relevant end-to-end or full test command for the affected app/workspace
 - after every successful verification step, automatically run git management end-to-end: create a commit and attempt a push immediately; if push fails because of network or remote issues, record it and continue
 
