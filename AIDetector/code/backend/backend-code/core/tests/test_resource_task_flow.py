@@ -9,6 +9,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from core.models import (
+    DetectionResult,
     DetectionTask,
     FileManagement,
     Organization,
@@ -192,7 +193,10 @@ class ResourceTaskFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["task_id"], task.id)
+        self.assertEqual(response.data["task_type"], "paper")
         self.assertEqual(response.data["status"], "completed")
+        self.assertEqual(response.data["result_summary"], "论文检测已完成，疑似段落 1 段")
+        self.assertEqual(response.data["results"]["result_type"], "paper")
         self.assertEqual(response.data["results"]["paragraph_results"], task.text_detection_results["paragraph_results"])
 
     def test_paper_results_endpoint_prefers_dedicated_tables_when_json_is_empty(self):
@@ -236,6 +240,7 @@ class ResourceTaskFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["results"]["document"]["file_name"], "paper-source.pdf")
+        self.assertEqual(response.data["results"]["result_type"], "paper")
         self.assertEqual(response.data["results"]["paragraph_results"][0]["text"], "Persisted paragraph")
         self.assertEqual(response.data["results"]["reference_results"][0]["reference"], "[1] Persisted reference")
 
@@ -265,6 +270,7 @@ class ResourceTaskFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["task_type"], "review")
+        self.assertEqual(response.data["results"]["result_type"], "review")
         self.assertEqual(response.data["results"]["relevance_results"][0]["paper_paragraph_index"], 1)
         self.assertIn("1", response.data["result_summary"])
 
@@ -306,8 +312,41 @@ class ResourceTaskFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["results"]["document"]["review_file_name"], "linked-review.txt")
+        self.assertEqual(response.data["results"]["result_type"], "review")
         self.assertEqual(response.data["results"]["paragraph_results"][0]["text"], "Persisted review paragraph")
         self.assertEqual(response.data["results"]["relevance_results"][0]["paper_paragraph_index"], 1)
+
+    @patch("core.views.views_dectection.ensure_task_report_file", return_value="reports/task_1_report.pdf")
+    def test_image_report_download_regenerates_missing_task_report_with_shared_helper(self, mock_ensure_report):
+        task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="image",
+            task_name="Image Report Regeneration",
+            status="completed",
+        )
+        source_file = self.create_file("image-source.png", "image")
+        image_upload = task.image_uploads.create(
+            file_management=source_file,
+            image="extracted_images/image-source.png",
+        )
+        DetectionResult.objects.create(
+            image_upload=image_upload,
+            detection_task=task,
+            status="completed",
+            is_fake=False,
+            confidence_score=0.2,
+        )
+
+        reports_dir = Path(self.temp_media) / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        report_path = reports_dir / "task_1_report.pdf"
+        report_path.write_bytes(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF")
+
+        response = self.client.get(f"/api/tasks_image/{image_upload.id}/report/")
+
+        self.assertEqual(response.status_code, 200)
+        mock_ensure_report.assert_called_once_with(task)
 
     @patch("core.views.views_dectection.start_resource_detection_task_thread")
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
