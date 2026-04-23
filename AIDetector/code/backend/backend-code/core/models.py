@@ -272,7 +272,7 @@ class FileManagement(models.Model):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, db_index=True, null=True, blank=True)
     file_name = models.CharField(max_length=255)
     file_size = models.BigIntegerField()
-    file_type = models.CharField(max_length=50)
+    file_type = models.CharField(max_length=255)
     resource_type = models.CharField(max_length=20, choices=RESOURCE_TYPE_CHOICES, default='image', db_index=True)
     linked_file = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='linked_children')
     stored_path = models.CharField(max_length=500, default='', blank=True)
