@@ -12,6 +12,12 @@ from ..capabilities.llm_analysis_service import build_suspicious_paragraph_expla
 from ..capabilities.reference_check_service import evaluate_references
 from ..capabilities.text_detection_service import analyze_text_segments
 from ..resources.document_preprocessor import preprocess_document
+from ..resources.document_preprocessor import (
+    extract_document_paragraphs,
+    extract_document_references,
+    split_text_into_segments,
+)
+from ..resources.text_sanitizer import sanitize_text_content
 from ..resources.image_extraction_service import create_image_uploads_for_resource
 
 IMAGE_METHOD_KEYS = {
@@ -42,6 +48,15 @@ def run_paper_detection_task(task_id, api_key=None):
         return _mark_task_failed(detection_task, "Paper file path does not exist")
 
     processed_document = preprocess_document(file_path)
+    override_text = _get_text_override(detection_task)
+    if override_text:
+        sanitized_text = sanitize_text_content(override_text)
+        processed_document = {
+            "text_content": sanitized_text,
+            "paragraphs": extract_document_paragraphs(sanitized_text),
+            "references": extract_document_references(sanitized_text),
+            "segments": split_text_into_segments(sanitized_text),
+        }
     paragraph_results = analyze_text_segments(processed_document["segments"], api_key=api_key)
     explanations = build_suspicious_paragraph_explanations(paragraph_results, api_key=api_key)
     reference_results = evaluate_references(
@@ -128,3 +143,13 @@ def _mark_task_failed(detection_task, message):
     detection_task.completion_time = timezone.now()
     detection_task.save(update_fields=["status", "error_message", "completion_time"])
     return message
+
+
+def _get_text_override(detection_task):
+    raw_payload = detection_task.text_detection_results
+    if not isinstance(raw_payload, dict):
+        return ""
+    text_override = raw_payload.get("text_override")
+    if isinstance(text_override, str):
+        return text_override
+    return ""

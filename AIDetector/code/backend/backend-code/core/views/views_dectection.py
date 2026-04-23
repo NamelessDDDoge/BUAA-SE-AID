@@ -551,6 +551,7 @@ def create_resource_task(request):
     file_ids = request.data.get('file_ids', [])
     task_name = request.data.get('task_name', '').strip()
     api_key = request.data.get('api_key')
+    text_override = request.data.get('text_override')
     extract_images = request.data.get('extract_images', None)
     if_use_llm = request.data.get('if_use_llm', False)
     method_switches = request.data.get('method_switches')
@@ -562,6 +563,7 @@ def create_resource_task(request):
             file_ids=file_ids,
             task_name=task_name,
             api_key=api_key,
+            text_override=text_override,
             if_use_llm=if_use_llm,
             method_switches=method_switches,
             extract_images=extract_images,

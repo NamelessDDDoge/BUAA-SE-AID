@@ -24,6 +24,7 @@ def create_resource_detection_task(
     file_ids,
     task_name="",
     api_key=None,
+    text_override=None,
     if_use_llm=False,
     method_switches=None,
     extract_images=None,
@@ -70,6 +71,12 @@ def create_resource_detection_task(
 
     task_status = "in_progress" if async_task_starter is not None else "pending"
 
+    initial_text_results = None
+    if task_type == "paper" and isinstance(text_override, str):
+        normalized_text = text_override.strip()
+        if normalized_text:
+            initial_text_results = {"text_override": normalized_text}
+
     detection_task = DetectionTask.objects.create(
         organization=user.organization,
         user=user,
@@ -78,6 +85,7 @@ def create_resource_detection_task(
         status=task_status,
         if_use_llm=effective_if_use_llm,
         method_switches=normalized_switches,
+        text_detection_results=initial_text_results,
     )
     detection_task.resource_files.add(*file_list)
 

@@ -1,12 +1,15 @@
 from django.core.paginator import EmptyPage, Paginator
 from django.utils import timezone
+from django.conf import settings
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+import os
 
 from ..models import FileManagement, ImageUpload, User
 from ..services import log_user_event
 from ..services.resources import save_uploaded_resource
+from ..services.resources.document_preprocessor import preprocess_document
 from .views_dectection import CustomPagination
 
 
@@ -112,6 +115,54 @@ def get_extracted_images(request, file_id):
         "total": paginator.page.paginator.count,
         "images": image_list,
     })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_resource_text_preview(request, file_id):
+    try:
+        file_management = FileManagement.objects.get(id=file_id, user=request.user)
+    except FileManagement.DoesNotExist:
+        return Response({"message": "File not found"}, status=404)
+
+    if file_management.resource_type not in {"paper", "review_paper", "review_file"}:
+        return Response(
+            {
+                "message": "Current file type has no text preview",
+                "file_id": file_management.id,
+                "resource_type": file_management.resource_type,
+            },
+            status=400,
+        )
+
+    stored_path = (file_management.stored_path or "").strip()
+    if not stored_path:
+        return Response({"message": "File path is empty"}, status=400)
+
+    file_path = stored_path if os.path.isabs(stored_path) else os.path.join(settings.MEDIA_ROOT, stored_path)
+    if not os.path.exists(file_path):
+        return Response({"message": "File path does not exist"}, status=404)
+
+    processed = preprocess_document(file_path)
+    text_content = processed.get("text_content") or ""
+    max_chars = 60000
+    truncated = len(text_content) > max_chars
+    preview_text = text_content[:max_chars]
+
+    return Response(
+        {
+            "file_id": file_management.id,
+            "file_name": file_management.file_name,
+            "resource_type": file_management.resource_type,
+            "text_content": preview_text,
+            "text_truncated": truncated,
+            "paragraph_count": len(processed.get("paragraphs") or []),
+            "segment_count": len(processed.get("segments") or []),
+            "reference_count": len(processed.get("references") or []),
+            "paragraph_preview": (processed.get("paragraphs") or [])[:8],
+            "reference_preview": (processed.get("references") or [])[:8],
+        }
+    )
 
 
 @api_view(["POST"])
