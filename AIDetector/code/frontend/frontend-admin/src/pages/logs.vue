@@ -44,7 +44,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import logsApi from '@/api/logs'
-import EventLogTable from '@/features/logs/EventLogTable.vue'
+import EventLogTable from '@/features/logger/EventLogTable.vue'
 import { useSnackbarStore } from '@/stores/snackbar'
 
 const snackbar = useSnackbarStore()
