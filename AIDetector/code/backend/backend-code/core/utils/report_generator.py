@@ -279,8 +279,11 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
     results = get_paper_task_results_payload(task)
     document = results.get("document", {})
     paragraph_results = results.get("paragraph_results", [])
+    confirmed_ai_paragraphs = results.get("confirmed_ai_paragraphs", [])
     suspicious_paragraphs = results.get("suspicious_paragraphs", [])
     reference_results = results.get("reference_results", [])
+    data_authenticity_results = results.get("data_authenticity_results", {})
+    overall_evaluation = results.get("overall_evaluation", {})
     image_results = results.get("image_results", [])
     paper_file = task.resource_files.filter(resource_type="paper").first()
 
@@ -327,9 +330,27 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
                 "paragraph_index": item.get("paragraph_index"),
                 "label": item.get("label"),
                 "probability": item.get("probability"),
+                "ai_verdict": item.get("ai_verdict") or (item.get("details") or {}).get("ai_verdict"),
+                "forgery_reason": item.get("forgery_reason") or (item.get("details") or {}).get("forgery_reason"),
                 "text": item.get("text"),
             }
             for item in paragraph_results
+        ],
+        height=height,
+        margin=margin,
+    )
+
+    y = _draw_report_section_title(c, y, title="基本确认 AI 段落", height=height, margin=margin)
+    y = _draw_report_items(
+        c,
+        y,
+        [
+            {
+                "paragraph_index": item.get("paragraph_index"),
+                "probability": item.get("probability"),
+                "reason": item.get("reason"),
+            }
+            for item in confirmed_ai_paragraphs
         ],
         height=height,
         margin=margin,
@@ -360,10 +381,43 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
                 "reference_index": item.get("reference_index"),
                 "exists": item.get("exists"),
                 "is_relevant": item.get("is_relevant"),
+                "authenticity_score": item.get("authenticity_score"),
+                "authenticity_label": item.get("authenticity_label"),
+                "authenticity_reason": item.get("authenticity_reason"),
                 "reference": item.get("reference"),
                 "overlap_terms": item.get("overlap_terms"),
             }
             for item in reference_results
+        ],
+        height=height,
+        margin=margin,
+    )
+
+    y = _draw_report_section_title(c, y, title="数据真实性检查", height=height, margin=margin)
+    y = _draw_report_text_block(
+        c,
+        y,
+        data_authenticity_results.get("summary") or "-",
+        height=height,
+        margin=margin,
+    )
+    y = _draw_report_items(
+        c,
+        y,
+        data_authenticity_results.get("findings") or [],
+        height=height,
+        margin=margin,
+    )
+
+    y = _draw_report_section_title(c, y, title="整篇论文综合评价", height=height, margin=margin)
+    y = _draw_report_pairs(
+        c,
+        y,
+        [
+            ("风险评分", overall_evaluation.get("risk_score")),
+            ("风险等级", overall_evaluation.get("risk_level")),
+            ("综合结论", overall_evaluation.get("summary")),
+            ("证据摘要", overall_evaluation.get("evidence")),
         ],
         height=height,
         margin=margin,

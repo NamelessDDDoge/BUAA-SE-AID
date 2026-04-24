@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 from .text_sanitizer import sanitize_text_content
 
@@ -52,13 +53,22 @@ def split_text_into_segments(text_content, max_segment_length=500, fallback_segm
     current_segment = ""
 
     for paragraph in paragraphs:
-        if len(current_segment) + len(paragraph) < max_segment_length:
-            current_segment += f"{paragraph} "
-            continue
+        sentence_chunks = _split_paragraph_into_sentences(paragraph)
+        for chunk in sentence_chunks:
+            if len(chunk) > max_segment_length:
+                for hard_chunk in _hard_split_text(chunk, max_segment_length):
+                    if current_segment:
+                        segments.append(current_segment.strip())
+                        current_segment = ""
+                    segments.append(hard_chunk.strip())
+                continue
 
-        if current_segment:
-            segments.append(current_segment.strip())
-        current_segment = f"{paragraph} "
+            if len(current_segment) + len(chunk) + 1 <= max_segment_length:
+                current_segment = f"{current_segment} {chunk}".strip()
+            else:
+                if current_segment:
+                    segments.append(current_segment.strip())
+                current_segment = chunk
 
     if current_segment:
         segments.append(current_segment.strip())
@@ -71,11 +81,38 @@ def split_text_into_segments(text_content, max_segment_length=500, fallback_segm
 
 
 def extract_document_paragraphs(text_content):
-    return [
-        cleaned
-        for cleaned in (sanitize_text_content(paragraph.strip()) for paragraph in (text_content or "").split("\n"))
-        if cleaned
-    ]
+    raw_text = sanitize_text_content(text_content or "")
+    if not raw_text:
+        return []
+
+    normalized_text = re.sub(r"\r\n?", "\n", raw_text)
+    normalized_text = re.sub(r"\n{3,}", "\n\n", normalized_text)
+
+    # Prefer blank lines as paragraph boundaries.
+    blocks = [block.strip() for block in re.split(r"\n\s*\n", normalized_text) if block.strip()]
+    paragraphs = []
+    for block in blocks:
+        candidate_lines = [sanitize_text_content(line.strip()) for line in block.split("\n") if line.strip()]
+        if len(candidate_lines) <= 1:
+            paragraphs.append(block)
+            continue
+
+        merged_line = ""
+        for line in candidate_lines:
+            if not merged_line:
+                merged_line = line
+                continue
+
+            # Start a new paragraph when encountering likely heading/item starts.
+            if _looks_like_new_paragraph(line):
+                paragraphs.append(merged_line.strip())
+                merged_line = line
+            else:
+                merged_line = f"{merged_line} {line}".strip()
+        if merged_line:
+            paragraphs.append(merged_line.strip())
+
+    return [p for p in paragraphs if p]
 
 
 def extract_document_references(text_content):
@@ -94,3 +131,32 @@ def extract_document_references(text_content):
         for paragraph in paragraphs
         if paragraph.startswith("[") or paragraph[:2].isdigit() or "doi" in paragraph.lower()
     ]
+
+
+def _looks_like_new_paragraph(line):
+    if re.match(r"^(第[一二三四五六七八九十0-9]+[章节部分]|[0-9]+[\.、])", line):
+        return True
+    if re.match(r"^\[[0-9]+\]", line):
+        return True
+    return False
+
+
+def _split_paragraph_into_sentences(paragraph):
+    text = sanitize_text_content(paragraph or "")
+    if not text:
+        return []
+
+    parts = re.split(r"(?<=[。！？!?；;])\s+", text)
+    refined = []
+    for part in parts:
+        cleaned = part.strip()
+        if cleaned:
+            refined.append(cleaned)
+    return refined or [text]
+
+
+def _hard_split_text(text, max_len):
+    stripped = (text or "").strip()
+    if not stripped:
+        return []
+    return [stripped[i: i + max_len] for i in range(0, len(stripped), max_len)]

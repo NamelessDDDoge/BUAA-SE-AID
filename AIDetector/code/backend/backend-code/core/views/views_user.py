@@ -59,6 +59,18 @@ from rest_framework import serializers, views
 from django.contrib.auth import authenticate
 
 
+def _safe_avatar_url(user):
+    avatar_field = getattr(user, 'avatar', None)
+    if not avatar_field:
+        return None
+    try:
+        if avatar_field.name and avatar_field.storage.exists(avatar_field.name):
+            return avatar_field.url
+    except Exception:
+        return None
+    return None
+
+
 class UserLoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField()
@@ -84,7 +96,7 @@ class UserLoginView(views.APIView):
                     'role': user.role,
                     'organization': user.organization.name if user.organization else None,
                     'profile': user.profile,
-                    'avatar': user.avatar.url
+                    'avatar': _safe_avatar_url(user)
                 })
             return Response({"message": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -174,6 +186,7 @@ class TokenRefreshView(views.APIView):
 
 class UserDetailSerializer(serializers.ModelSerializer):
     organization_name = serializers.SerializerMethodField(read_only=True)  # 动态获取组织名称
+    avatar = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = get_user_model()
@@ -182,6 +195,9 @@ class UserDetailSerializer(serializers.ModelSerializer):
 
     def get_organization_name(self, obj):
         return obj.organization.name if obj.organization else None
+
+    def get_avatar(self, obj):
+        return _safe_avatar_url(obj)
 
 
 from rest_framework.permissions import IsAuthenticated
@@ -237,7 +253,10 @@ class AvatarUpdateView(views.APIView):
 
         if serializer.is_valid():
             serializer.save()  # 保存更新后的头像
-            return Response({"message": "Avatar updated successfully"}, status=status.HTTP_200_OK)
+            return Response(
+                {"message": "Avatar updated successfully", "avatar": _safe_avatar_url(user)},
+                status=status.HTTP_200_OK,
+            )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

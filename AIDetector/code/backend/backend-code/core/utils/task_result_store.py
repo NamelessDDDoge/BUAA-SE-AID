@@ -125,10 +125,11 @@ def get_task_results_payload(task):
 
 
 def get_paper_task_results_payload(task):
+    raw_payload = sanitize_json_like(task.text_detection_results or {})
     try:
         paper_result = task.paper_detection_result
     except PaperDetectionResult.DoesNotExist:
-        return sanitize_json_like(task.text_detection_results or {})
+        return raw_payload
 
     paragraph_results = [
         {
@@ -149,6 +150,11 @@ def get_paper_task_results_payload(task):
         for item in paper_result.paragraph_results.all().order_by("paragraph_index")
         if item.explanation
     ]
+    raw_reference_map = {
+        int(item.get("reference_index")): item
+        for item in (raw_payload.get("reference_results") or [])
+        if item.get("reference_index") is not None
+    }
     reference_results = [
         {
             "reference_index": item.reference_index,
@@ -156,6 +162,9 @@ def get_paper_task_results_payload(task):
             "exists": item.exists,
             "is_relevant": item.is_relevant,
             "overlap_terms": item.overlap_terms or [],
+            "authenticity_score": raw_reference_map.get(item.reference_index, {}).get("authenticity_score"),
+            "authenticity_label": raw_reference_map.get(item.reference_index, {}).get("authenticity_label"),
+            "authenticity_reason": raw_reference_map.get(item.reference_index, {}).get("authenticity_reason"),
         }
         for item in paper_result.reference_results.all().order_by("reference_index")
     ]
@@ -172,6 +181,16 @@ def get_paper_task_results_payload(task):
         .order_by("image_upload_id")
     ]
 
+    confirmed_ai_paragraphs = raw_payload.get("confirmed_ai_paragraphs") or [
+        {
+            "paragraph_index": item.paragraph_index,
+            "probability": item.probability,
+            "reason": (item.details or {}).get("forgery_reason"),
+        }
+        for item in paper_result.paragraph_results.all().order_by("paragraph_index")
+        if bool((item.details or {}).get("is_ai_confirmed"))
+    ]
+
     return sanitize_json_like(
         {
             "document": {
@@ -183,8 +202,11 @@ def get_paper_task_results_payload(task):
                 "image_detection_enabled": paper_result.image_detection_enabled,
             },
             "paragraph_results": paragraph_results,
+            "confirmed_ai_paragraphs": confirmed_ai_paragraphs,
             "suspicious_paragraphs": suspicious_paragraphs,
             "reference_results": reference_results,
+            "data_authenticity_results": raw_payload.get("data_authenticity_results") or {"summary": "-", "findings": []},
+            "overall_evaluation": raw_payload.get("overall_evaluation") or {},
             "image_results": image_results,
         }
     )

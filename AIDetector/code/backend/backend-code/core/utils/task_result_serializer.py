@@ -17,7 +17,8 @@ def build_task_result_summary(task):
     if task.task_type == "paper":
         results = get_task_results_payload(task) or {}
         suspicious_count = len(results.get("suspicious_paragraphs", []))
-        return f"论文检测已完成，疑似段落 {suspicious_count} 段"
+        confirmed_count = len(results.get("confirmed_ai_paragraphs", []))
+        return f"论文检测已完成，疑似段落 {suspicious_count} 段，基本确认AI {confirmed_count} 段"
     if task.task_type == "review":
         results = get_task_results_payload(task) or {}
         relevance_count = len(results.get("relevance_results", []))

@@ -8,7 +8,11 @@ from ...models import DetectionResult, DetectionTask
 from ...utils.report_generator import generate_task_report
 from ...utils.task_result_store import store_paper_task_results
 from ..capabilities.image_detection_service import run_image_detection_task
-from ..capabilities.llm_analysis_service import build_suspicious_paragraph_explanations
+from ..capabilities.llm_analysis_service import (
+    build_suspicious_paragraph_explanations,
+    build_overall_paper_evaluation,
+)
+from ..capabilities.data_authenticity_service import evaluate_data_authenticity
 from ..capabilities.reference_check_service import evaluate_references
 from ..capabilities.text_detection_service import analyze_text_segments
 from ..resources.document_preprocessor import preprocess_document
@@ -58,10 +62,27 @@ def run_paper_detection_task(task_id, api_key=None):
             "segments": split_text_into_segments(sanitized_text),
         }
     paragraph_results = analyze_text_segments(processed_document["segments"], api_key=api_key)
+    confirmed_ai_paragraphs = [
+        {
+            "paragraph_index": item.get("paragraph_index"),
+            "probability": item.get("probability"),
+            "reason": item.get("forgery_reason") or (item.get("details") or {}).get("forgery_reason"),
+        }
+        for item in paragraph_results
+        if bool(item.get("is_ai_confirmed"))
+    ]
     explanations = build_suspicious_paragraph_explanations(paragraph_results, api_key=api_key)
     reference_results = evaluate_references(
         text_content=processed_document["text_content"],
         references=processed_document["references"],
+    )
+    data_authenticity_results = evaluate_data_authenticity(paragraph_results)
+    overall_evaluation = build_overall_paper_evaluation(
+        paragraph_results=paragraph_results,
+        confirmed_ai_paragraphs=confirmed_ai_paragraphs,
+        reference_results=reference_results,
+        data_authenticity_results=data_authenticity_results,
+        api_key=api_key,
     )
     image_results = _run_paper_image_detection(detection_task, file_management)
 
@@ -75,8 +96,11 @@ def run_paper_detection_task(task_id, api_key=None):
             "image_detection_enabled": _paper_image_detection_enabled(detection_task),
         },
         "paragraph_results": paragraph_results,
+        "confirmed_ai_paragraphs": confirmed_ai_paragraphs,
         "suspicious_paragraphs": explanations,
         "reference_results": reference_results,
+        "data_authenticity_results": data_authenticity_results,
+        "overall_evaluation": overall_evaluation,
         "image_results": image_results,
     }
 
