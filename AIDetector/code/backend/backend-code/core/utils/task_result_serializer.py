@@ -1,6 +1,7 @@
+from django.db.models import Count, Q
 from django.utils import timezone
 
-from ..models import DetectionResult
+from ..models import DetectionResult, PaperDetectionResult, ReviewDetectionResult
 from .task_result_store import get_task_results_payload
 
 
@@ -11,21 +12,44 @@ def build_task_result_summary(task):
         return "检测进行中"
 
     if task.task_type == "image":
-        total = task.detection_results.count()
-        fake = task.detection_results.filter(is_fake=True).count()
+        counts = task.detection_results.aggregate(
+            total=Count("id"),
+            fake=Count("id", filter=Q(is_fake=True)),
+        )
+        total = counts["total"] or 0
+        fake = counts["fake"] or 0
         return f"疑似造假 {fake}/{total}"
     if task.task_type == "paper":
-        results = get_task_results_payload(task) or {}
-        suspicious_count = len(results.get("suspicious_paragraphs", []))
-        confirmed_count = len(results.get("confirmed_ai_paragraphs", []))
+        try:
+            paper_result = task.paper_detection_result
+            suspicious_count = paper_result.paragraph_results.exclude(explanation__isnull=True).exclude(explanation="").count()
+        except PaperDetectionResult.DoesNotExist:
+            results = get_task_results_payload(task) or {}
+            suspicious_count = len(results.get("suspicious_paragraphs", []))
+        raw_results = task.text_detection_results or {}
+        confirmed_count = len(raw_results.get("confirmed_ai_paragraphs") or [])
         return f"论文检测已完成，疑似段落 {suspicious_count} 段，基本确认AI {confirmed_count} 段"
     if task.task_type == "review":
-        results = get_task_results_payload(task) or {}
-        review_results = results.get("review_analysis_results") or {}
-        overall = review_results.get("overall") or {}
-        template_level = overall.get("template_like_level", "low")
-        relevance_level = overall.get("relevance_level", "low")
-        return f"Review 检测已完成，模板化 {template_level}，相关度 {relevance_level}"
+        raw_results = task.text_detection_results or {}
+        review_results = raw_results.get("review_analysis_results") or {}
+        overall = review_results.get("overall") or raw_results.get("overall_evaluation") or {}
+        template_level = overall.get("template_like_level")
+        relevance_level = overall.get("relevance_level")
+
+        if template_level or relevance_level:
+            return f"Review 检测已完成，模板化 {template_level or '-'}，相关度 {relevance_level or '-'}"
+
+        try:
+            review_result = task.review_detection_result
+            relevance_count = review_result.paragraph_results.filter(
+                Q(paper_paragraph_index__isnull=False)
+                | Q(relevance_score__isnull=False)
+                | (Q(relevance_explanation__isnull=False) & ~Q(relevance_explanation=""))
+            ).count()
+        except ReviewDetectionResult.DoesNotExist:
+            results = get_task_results_payload(task) or {}
+            relevance_count = len(results.get("relevance_results", []))
+        return f"Review 检测已完成，匹配 {relevance_count} 段"
     return "检测已完成"
 
 

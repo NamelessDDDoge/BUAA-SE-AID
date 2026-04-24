@@ -12,6 +12,7 @@ from ..models import ReviewRequest
 from ..utils.serializers_safe import serialize_value
 from django.utils import timezone
 from datetime import datetime
+from django.db.models import Q
 from core.models import Log, User
 from rest_framework.decorators import api_view, permission_classes
 from collections import defaultdict
@@ -27,6 +28,10 @@ from core.util import send_notification
 from core.models import Notification
 
 
+def _is_software_admin(user):
+    return user.email == 'admin@mail.com' or (user.is_staff and user.organization is None)
+
+
 class AdminDetailSerializer(serializers.ModelSerializer):
     admin_type = serializers.SerializerMethodField()  # 新增字段：区分管理员类型
     organization_name = serializers.SerializerMethodField(read_only=True)  # 动态获取组织名称
@@ -37,7 +42,7 @@ class AdminDetailSerializer(serializers.ModelSerializer):
                   'admin_type']
 
     def get_admin_type(self, obj):
-        if obj.email == 'admin@mail.com' or (obj.is_staff and obj.organization is None):
+        if _is_software_admin(obj):
             return 'software_admin'  # 软件管理员
         elif obj.is_staff:
             return 'organization_admin'  # 组织管理员（非全局）
@@ -75,7 +80,7 @@ class AdminDashboardView(APIView):
     @permission_classes([IsAdminUser])
     def get(self, request):
         # 获取所有用户信息
-        if request.user.email == 'admin@mail.com':
+        if _is_software_admin(request.user):
             users = User.objects.all()
         else:
             users = User.objects.filter(organization=request.user.organization)
@@ -92,7 +97,7 @@ class AdminDashboardView(APIView):
 
         # 获取最近30天的检测任务统计
         one_month_ago = timezone.now() - timedelta(days=30)
-        if request.user.email == 'admin@mail.com':
+        if _is_software_admin(request.user):
             recent_tasks = DetectionTask.objects.filter(upload_time__gte=one_month_ago)
         else:
             recent_tasks = DetectionTask.objects.filter(upload_time__gte=one_month_ago,
@@ -164,7 +169,7 @@ def top_publishers_with_fake_ratio(request):
     # 获取所有 publisher 用户
     user_id = request.user.id
     user = User.objects.get(id=user_id)
-    if request.user.email == 'admin@mail.com':
+    if _is_software_admin(request.user):
         publishers = User.objects.filter(role='publisher')
     else:
         publishers = User.objects.filter(role='publisher', organization=user.organization)
@@ -208,7 +213,7 @@ def top_organizations_with_fake_ratio(request):
     user = User.objects.get(id=user_id)
 
     # 权限控制：如果是全局管理员则获取所有组织，否则仅获取当前用户所在组织
-    if request.user.email == 'admin@mail.com':
+    if _is_software_admin(request.user):
         organizations = Organization.objects.all()
     else:
         organizations = Organization.objects.filter(id=user.organization.id)
@@ -358,7 +363,7 @@ def daily_task_count(request):
         start_of_day = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
         end_of_day = timezone.make_aware(datetime.combine(target_date, datetime.max.time()))
 
-        if request.user.email == 'admin@mail.com':
+        if _is_software_admin(request.user):
             count = DetectionTask.objects.filter(upload_time__range=[start_of_day, end_of_day]).count()
         else:
             count = DetectionTask.objects.filter(upload_time__range=[start_of_day, end_of_day],
@@ -395,7 +400,7 @@ def daily_review_request_count(request):
         start_of_day = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
         end_of_day = timezone.make_aware(datetime.combine(target_date, datetime.max.time()))
 
-        if request.user.email == 'admin@mail.com':
+        if _is_software_admin(request.user):
             count = ReviewRequest.objects.filter(request_time__range=[start_of_day, end_of_day]).count()
         else:
             count = ReviewRequest.objects.filter(request_time__range=[start_of_day, end_of_day],
@@ -432,7 +437,7 @@ def daily_completed_manual_review_count(request):
         start_of_day = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
         end_of_day = timezone.make_aware(datetime.combine(target_date, datetime.max.time()))
 
-        if request.user.email == 'admin@mail.com':
+        if _is_software_admin(request.user):
             count = ManualReview.objects.filter(
                 review_time__range=[start_of_day, end_of_day],
                 status='completed'
@@ -478,7 +483,7 @@ def get_sub_method_distribution_by_tag(request):
 
     for tag in TAG_CHOICES:
         # Step 1: 获取该 tag 下的所有 image_upload
-        if request.user.email == 'admin@mail.com':
+        if _is_software_admin(request.user):
             image_uploads = ImageUpload.objects.filter(
                 file_management__tag=tag
             )
@@ -681,7 +686,7 @@ class UserActionLogGetView(APIView):
         # 获取所有日志记录并应用筛选条件
         logs = Log.objects.all().order_by('-operation_time')
         # 权限控制
-        if request.user.email != 'admin@mail.com':
+        if not _is_software_admin(request.user):
             organization = user.organization
             logs = logs.filter(user__organization=organization)
         else:
@@ -772,7 +777,7 @@ class UserActionLogDownloadView(APIView):
         # 获取所有日志记录并应用筛选条件
         logs = Log.objects.all().order_by('-operation_time')
         # 权限控制
-        if request.user.email != 'admin@mail.com':
+        if not _is_software_admin(request.user):
             organization = user.organization
             logs = logs.filter(user__organization=organization)
         else:
@@ -829,7 +834,7 @@ def get_task_summary(request):
     user_id = request.user.id
     user = User.objects.get(id=user_id)
     # 权限控制
-    if request.user.email != 'admin@mail.com':
+    if not _is_software_admin(request.user):
         organization = user.organization
         tasks = DetectionTask.objects.filter(organization=organization)
     else:
@@ -888,7 +893,7 @@ def get_detection_task_status(request, task_id):
     user = User.objects.get(id=user_id)
     try:
         # 权限控制
-        if request.user.email != 'admin@mail.com':
+        if not _is_software_admin(request.user):
             user_organization = user.organization
             detection_task = DetectionTask.objects.get(id=task_id, organization=user_organization)
         else:
@@ -969,14 +974,14 @@ def get_all_user_tasks(request):
     if start_time and end_time and start_time >= end_time:
         return Response({'error': 'startTime must be earlier than endTime'}, status=400)
 
-    if request.user.email != 'admin@mail.com':
+    if not _is_software_admin(request.user):
         tasks = DetectionTask.objects.filter(organization=user.organization)
     else:
         tasks = DetectionTask.objects.all()
         if organization_id:
             tasks = tasks.filter(organization_id=organization_id)
 
-    tasks = tasks.order_by('-upload_time')
+    tasks = tasks.select_related('user', 'organization', 'paper_detection_result', 'review_detection_result').order_by('-upload_time')
 
     if status_filter:
         tasks = tasks.filter(status=status_filter)
@@ -1039,10 +1044,9 @@ def get_users(request):
     user_id = request.user.id
     user = User.objects.get(id=user_id)
     # 权限控制
-    if request.user.email != 'admin@mail.com':  # 非软件管理员
+    if not _is_software_admin(user):  # 非软件管理员
         current_organization = user.organization
         users = users.filter(organization=current_organization)  # 仅能访问本组织用户
-        organization_id = current_organization.id  # 自动绑定当前组织 ID（可选）
     elif organization_name:  # 软件管理员传入了 organization
         users = users.filter(organization__name__startswith=organization_name)
 
@@ -1070,7 +1074,7 @@ def get_users(request):
         return Response({'error': 'Invalid page number'}, status=400)
 
     def get_admin_type(user_obj):
-        if user_obj.email == 'admin@mail.com' or (user_obj.is_staff and user_obj.organization is None):
+        if _is_software_admin(user_obj):
             return 'software_admin'  # 软件管理员
         elif user_obj.is_staff:
             return 'organization_admin'  # 组织管理员（非全局）
@@ -1259,7 +1263,7 @@ def get_files(request):
     user = User.objects.get(id=user_id)
 
     # 权限控制
-    if user.email != 'admin@mail.com':
+    if not _is_software_admin(user):
         current_organization = user.organization
         files = files.filter(organization=current_organization)
     elif organization_name:
@@ -1332,7 +1336,7 @@ def get_all_review_requests(request):
     user_id = request.user.id
     user = User.objects.get(id=user_id)
     # 权限控制
-    if request.user.email != 'admin@mail.com':
+    if not _is_software_admin(request.user):
         current_organization = user.organization
         review_requests = review_requests.filter(organization=current_organization)
     elif organization_id:
@@ -1379,7 +1383,7 @@ def get_review_request_detail_admin(request, reviewRequest_id):
     user = User.objects.get(id=user_id)
     try:
         # 权限控制
-        if request.user.email != 'admin@mail.com':
+        if not _is_software_admin(request.user):
             user_organization = user.organization
             review_request = ReviewRequest.objects.get(
                 id=reviewRequest_id,

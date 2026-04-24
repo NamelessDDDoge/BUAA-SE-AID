@@ -7,7 +7,7 @@ const baseApiUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL +
 const instance = axios.create({
     //配置
     baseURL: baseApiUrl, //接口请求的域名地址
-    timeout: 5000,//请求超时时间
+    timeout: 15000,//请求超时时间
     headers:{}, //设置请求头信息
 })
  

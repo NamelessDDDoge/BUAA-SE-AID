@@ -15,6 +15,10 @@ from django.db import models
 from django.db.models import Count, F
 
 
+def _is_software_admin(user):
+    return user.email == 'admin@mail.com' or (user.is_staff and user.organization is None)
+
+
 class CreateOrganizationApplicationView(views.APIView):
     def post(self, request):
         org_name = request.data.get('name')
@@ -55,7 +59,7 @@ class CreateOrganizationApplicationView(views.APIView):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def get_pending_organization_applications_detail(request, app_id):
-    if request.user.email != 'admin@mail.com':
+    if not _is_software_admin(request.user):
         return Response({"error": "Permission denied"}, status=403)
 
     try:
@@ -79,7 +83,7 @@ def get_pending_organization_applications_detail(request, app_id):
 @api_view(['GET'])
 @permission_classes([IsAdminUser])
 def get_pending_organization_applications(request):
-    if request.user.email != 'admin@mail.com':
+    if not _is_software_admin(request.user):
         return Response({"error": "Permission denied"}, status=403)
 
     # 获取查询参数
@@ -150,7 +154,7 @@ def approve_organization_application(request, app_id):
     except OrganizationApplication.DoesNotExist:
         return Response({"error": "Application not found or already processed"}, status=404)
 
-    if request.user.email != 'admin@mail.com':
+    if not _is_software_admin(request.user):
         return Response({"error": "Only the software admin can approve applications"}, status=403)
 
     try:
@@ -234,7 +238,7 @@ def reject_organization_application(request, app_id):
     except OrganizationApplication.DoesNotExist:
         return Response({"error": "Application not found or already processed"}, status=404)
 
-    if request.user.email != 'admin@mail.com':
+    if not _is_software_admin(request.user):
         return Response({"error": "Only the software admin can reject applications"}, status=403)
 
     application.status = 'rejected'
@@ -261,7 +265,7 @@ def create_organization_root(request):
         return Response({"message": "All required fields must be provided"}, status=status.HTTP_400_BAD_REQUEST)
 
     # 检查是否是根管理员
-    if request.user.email != 'admin@mail.com':
+    if not _is_software_admin(request.user):
         return Response({"error": "Permission denied"}, status=403)
 
     try:
