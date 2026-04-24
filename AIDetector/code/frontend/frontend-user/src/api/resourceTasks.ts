@@ -8,6 +8,7 @@ export default {
     extract_images?: boolean
     if_use_llm?: boolean
     method_switches?: Record<string, boolean>
+    text_override?: string
   }) {
     return http.post('/resource-task/create/', data)
   },

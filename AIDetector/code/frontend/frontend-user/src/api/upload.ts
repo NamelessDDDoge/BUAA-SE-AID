@@ -14,6 +14,10 @@ export default {
     return http.get(`/upload/${data.file_id}/extract_images/?page=${data.page_number}&page_size=${data.page_size}`)
   },
 
+  getResourceTextPreview(fileId: number) {
+    return http.get(`/upload/${fileId}/preview_text/`)
+  },
+
   addTag(data: any) {
     console.log(data)
     return http.post(`/upload/${data.fileId}/addTag/`, {tag:data.tag})

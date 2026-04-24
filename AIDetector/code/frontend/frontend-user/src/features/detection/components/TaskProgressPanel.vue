@@ -61,6 +61,60 @@
                 已选 {{ selectedPaperMethodCount }}/9 项
               </v-chip>
             </div>
+
+            <v-divider class="my-4" />
+            <div class="d-flex justify-space-between align-center mb-3">
+              <div>
+                <div class="text-subtitle-1 font-weight-medium">提取文本预览（可编辑）</div>
+                <div class="text-caption text-medium-emphasis">点击按钮在弹窗中查看并修改文本。</div>
+              </div>
+              <v-btn color="primary" variant="outlined" @click="paperPreviewDialog = true">
+                打开文本预览窗口
+              </v-btn>
+            </div>
+
+            <v-dialog v-model="paperPreviewDialog" max-width="960">
+              <v-card class="paper-preview-card">
+                <v-card-title>
+                  <span>论文文本预览与编辑</span>
+                </v-card-title>
+                <v-card-text class="paper-preview-content">
+                  <v-alert
+                    v-if="paperTextPreviewError"
+                    type="warning"
+                    variant="tonal"
+                    class="mb-3"
+                  >
+                    {{ paperTextPreviewError }}
+                  </v-alert>
+                  <v-textarea
+                    :model-value="paperEditableText"
+                    :loading="paperTextPreviewLoading"
+                    label="论文文本（可在创建任务前修改）"
+                    placeholder="未获取到提取文本，可点击右上角重新提取。"
+                    variant="outlined"
+                    rows="16"
+                    auto-grow
+                    @update:model-value="emit('update:paperEditableText', String($event || ''))"
+                  />
+                  <div class="text-caption text-medium-emphasis mt-2">
+                    说明：你在这里修改的文本将作为本次论文检测的输入。
+                  </div>
+                </v-card-text>
+                <v-card-actions class="paper-preview-actions">
+                  <v-btn
+                    variant="outlined"
+                    color="primary"
+                    :loading="paperTextPreviewLoading"
+                    @click="emit('reload-paper-text-preview')"
+                  >
+                    重新提取文字
+                  </v-btn>
+                  <v-spacer />
+                  <v-btn color="primary" @click="paperPreviewDialog = false">保存并关闭</v-btn>
+                </v-card-actions>
+              </v-card>
+            </v-dialog>
           </template>
         </v-card-text>
 
@@ -78,6 +132,7 @@
 <script setup lang="ts">
 import ImageSelectionStep from '@/components/steps/ImageSelectionStep.vue'
 import type { DetectionType, TaskOption, UploadedResourceFile } from '../types'
+import { ref } from 'vue'
 
 defineProps<{
   taskType: DetectionType
@@ -92,6 +147,9 @@ defineProps<{
   paperImageDetectionSupported: boolean
   paperImageDetectionHint: string
   selectedPaperMethodCount: number
+  paperEditableText: string
+  paperTextPreviewLoading: boolean
+  paperTextPreviewError: string
 }>()
 
 const emit = defineEmits<{
@@ -99,17 +157,21 @@ const emit = defineEmits<{
   (e: 'submit-image-task'): void
   (e: 'submit-resource-task'): void
   (e: 'configure-paper-methods'): void
+  (e: 'reload-paper-text-preview'): void
   (e: 'update-selected-images', images: any[]): void
   (e: 'update-tag', tag: string): void
   (e: 'update-name', name: string): void
   (e: 'update:resourceDomainTag', value: string): void
   (e: 'update:resourceTaskName', value: string): void
   (e: 'update:paperEnableImageDetection', value: boolean): void
+  (e: 'update:paperEditableText', value: string): void
 }>()
 
 const handlePaperToggle = (value: boolean | null) => {
   emit('update:paperEnableImageDetection', Boolean(value))
 }
+
+const paperPreviewDialog = ref(false)
 </script>
 
 <style scoped>
@@ -118,5 +180,23 @@ const handlePaperToggle = (value: boolean | null) => {
   min-height: 100vh;
   background-color: rgb(var(--v-theme-surface));
   overflow: hidden;
+}
+
+.paper-preview-card {
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.paper-preview-content {
+  overflow-y: auto;
+}
+
+.paper-preview-actions {
+  position: sticky;
+  bottom: 0;
+  background: rgb(var(--v-theme-surface));
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  z-index: 2;
 }
 </style>

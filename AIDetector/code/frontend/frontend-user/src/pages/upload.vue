@@ -54,6 +54,9 @@
     :paper-image-detection-supported="paperImageDetectionSupported"
     :paper-image-detection-hint="paperImageDetectionHint"
     :selected-paper-method-count="selectedPaperMethodCount"
+    :paper-editable-text="paperEditableText"
+    :paper-text-preview-loading="paperTextPreviewLoading"
+    :paper-text-preview-error="paperTextPreviewError"
     @back="returnToUpload"
     @update-selected-images="updateSelectedImages"
     @update-tag="handleSelectedTag"
@@ -62,6 +65,8 @@
     @update:resourceTaskName="updateResourceTaskName"
     @update:paperEnableImageDetection="updatePaperEnableImageDetection"
     @configure-paper-methods="openPaperMethodSelection"
+    @reload-paper-text-preview="reloadPaperTextPreview"
+    @update:paperEditableText="updatePaperEditableText"
     @submit-image-task="handleNext"
     @submit-resource-task="handleResourceTaskNext"
   />
@@ -133,6 +138,9 @@ const currentTaskName = ref('')
 const resourceTaskName = ref('')
 const uploadedResourceFiles = ref<UploadedResourceFile[]>([])
 const resourceDomainTag = ref('')
+const paperEditableText = ref('')
+const paperTextPreviewLoading = ref(false)
+const paperTextPreviewError = ref('')
 const taskSelectionDialog = ref(false)
 const pendingDetectionPayload = ref<PendingDetectionPayload | null>(null)
 const taskSelectionContext = ref<TaskSelectionContext>('image')
@@ -270,6 +278,36 @@ const updatePaperEnableImageDetection = (value: boolean) => {
   paperEnableImageDetection.value = value
 }
 
+const updatePaperEditableText = (value: string) => {
+  paperEditableText.value = value
+}
+
+const loadPaperTextPreview = async (resourceFileId: number) => {
+  paperTextPreviewLoading.value = true
+  paperTextPreviewError.value = ''
+  try {
+    const response = await uploadApi.getResourceTextPreview(resourceFileId)
+    paperEditableText.value = response?.data?.text_content || ''
+    if (response?.data?.text_truncated) {
+      paperTextPreviewError.value = '提取文本过长，当前为截断预览（前 60000 字）。'
+    }
+  } catch (error: any) {
+    paperEditableText.value = ''
+    paperTextPreviewError.value = error?.response?.data?.message || '提取文本预览失败。'
+  } finally {
+    paperTextPreviewLoading.value = false
+  }
+}
+
+const reloadPaperTextPreview = async () => {
+  const resourceFileId = uploadedResourceFiles.value[0]?.file_id
+  if (!resourceFileId) {
+    paperTextPreviewError.value = '当前没有可预览的论文文件。'
+    return
+  }
+  await loadPaperTextPreview(resourceFileId)
+}
+
 const uploadSingleFile = async (
   file: File,
   payload: {
@@ -405,6 +443,7 @@ const submitUpload = async () => {
         name: mainFiles.value[0].name,
         resource_type: 'paper',
       }]
+      await loadPaperTextPreview(data.file_id)
       resourceTaskName.value = `论文检测 ${new Date().toISOString().slice(0, 19)}`
       uploadProgress.value = 100
       snackbar.showMessage('论文上传成功，请确认后创建任务。', 'success')
@@ -493,6 +532,7 @@ const handleResourceTaskNext = async () => {
       extract_images?: boolean
       if_use_llm?: boolean
       method_switches?: Record<string, boolean>
+      text_override?: string
     } = {
       task_type: taskType,
       task_name: resourceTaskName.value,
@@ -505,6 +545,9 @@ const handleResourceTaskNext = async () => {
         ? { ...paperMethodSwitches.value }
         : Object.fromEntries(Object.keys(createDefaultMethodSwitches()).map(key => [key, false]))
       payload.if_use_llm = Boolean(payload.method_switches.llm)
+      if (paperEditableText.value.trim()) {
+        payload.text_override = paperEditableText.value.trim()
+      }
     }
 
     await resourceTasksApi.createResourceTask(payload)
@@ -570,6 +613,9 @@ const returnToUpload = () => {
   resourceTaskName.value = ''
   resourceDomainTag.value = ''
   uploadedResourceFiles.value = []
+  paperEditableText.value = ''
+  paperTextPreviewLoading.value = false
+  paperTextPreviewError.value = ''
   pendingDetectionPayload.value = null
   taskSelectionDialog.value = false
   taskSelectionContext.value = 'image'

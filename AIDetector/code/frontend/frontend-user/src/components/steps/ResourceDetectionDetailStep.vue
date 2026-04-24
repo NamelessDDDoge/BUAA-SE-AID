@@ -24,11 +24,26 @@
                 <v-chip :color="statusColor" size="small">{{ statusLabel }}</v-chip>
                 <v-chip size="small" color="grey-lighten-2">任务 #{{ task.task_id }}</v-chip>
                 <v-chip size="small" color="grey-lighten-2">{{ totalCountLabel }} {{ totalCount }}</v-chip>
+                <v-chip v-if="isPaper" size="small" color="primary" variant="tonal">
+                  基本确认AI段落 {{ paperConfirmedParagraphs.length }}
+                </v-chip>
               </div>
 
               <div class="text-body-2 text-medium-emphasis mb-2">{{ task.result_summary || defaultSummary }}</div>
               <div v-if="task.error_message" class="text-body-2 text-error mb-2">{{ task.error_message }}</div>
               <div class="text-body-2 text-medium-emphasis mb-4">{{ descriptionText }}</div>
+
+              <v-alert
+                v-if="isPaper && paperOverallEvaluation?.summary"
+                type="info"
+                variant="tonal"
+                class="mb-4"
+              >
+                <div class="font-weight-medium mb-1">
+                  整篇综合评价（{{ paperOverallEvaluation.risk_level || 'unknown' }}）
+                </div>
+                <div>{{ paperOverallEvaluation.summary }}</div>
+              </v-alert>
 
               <div class="d-flex flex-wrap ga-3">
                 <v-btn color="secondary" variant="elevated" :disabled="task.status !== 'completed'" @click="$emit('download')">
@@ -51,21 +66,71 @@
           {{ task.resource_split_note }}
         </v-alert>
 
-        <v-row>
+        <v-card v-if="isPaper" class="mb-6" elevation="2" rounded="lg">
+          <v-card-title class="text-h6">论文段落统计与整篇评价</v-card-title>
+          <v-card-text>
+            <v-row>
+              <v-col cols="12" md="4">
+                <div class="text-caption text-medium-emphasis">段落总数</div>
+                <div class="text-h5 font-weight-bold">{{ paperParagraphs.length }}</div>
+              </v-col>
+              <v-col cols="12" md="4">
+                <div class="text-caption text-medium-emphasis">疑似 AI 段落</div>
+                <div class="text-h5 font-weight-bold text-error">{{ paperSuspiciousParagraphs.length }}</div>
+              </v-col>
+              <v-col cols="12" md="4">
+                <div class="text-caption text-medium-emphasis">基本确认 AI 段落</div>
+                <div class="text-h5 font-weight-bold" :class="paperConfirmedParagraphs.length ? 'text-warning' : 'text-success'">
+                  {{ paperConfirmedParagraphs.length }}
+                </div>
+              </v-col>
+            </v-row>
+
+            <v-divider class="my-4" />
+
+            <div class="text-subtitle-2 mb-2">整篇论文综合评价</div>
+            <v-alert
+              :type="paperOverallRiskLevel === 'high' ? 'error' : paperOverallRiskLevel === 'medium' ? 'warning' : 'success'"
+              variant="tonal"
+            >
+              <div class="mb-1"><strong>风险等级：</strong>{{ paperOverallRiskLevelText }}</div>
+              <div class="mb-1"><strong>风险评分：</strong>{{ paperOverallScore }}</div>
+              <div><strong>总结：</strong>{{ paperOverallSummary }}</div>
+            </v-alert>
+          </v-card-text>
+        </v-card>
+
+        <v-row v-if="!isPaper">
           <v-col v-if="showFakeCard" cols="12" :md="isPaper || reviewMode ? 12 : 6">
             <v-card elevation="2" rounded="lg" class="h-100">
               <v-card-title class="d-flex justify-space-between align-center">
                 <div class="d-flex align-center ga-2">
                   <v-icon color="error">mdi-alert-circle</v-icon>
                   <span class="text-h6">{{ fakeSectionTitle }}</span>
-                  <v-chip color="error" size="small">{{ reviewMode ? fakeFiles.length : `${selectedFakeCount}/${fakeFiles.length}` }}</v-chip>
+                  <v-chip color="error" size="small">
+                    {{
+                      reviewMode
+                        ? fakeFiles.length
+                        : isPaper
+                          ? fakeCount
+                          : `${selectedFakeCount}/${fakeFiles.length}`
+                    }}
+                  </v-chip>
                 </div>
-                <v-btn v-if="!reviewMode" size="small" variant="text" color="error" @click="toggleSelect(fakeFiles)">
+                <v-btn v-if="!reviewMode && !isPaper" size="small" variant="text" color="error" @click="toggleSelect(fakeFiles)">
                   {{ isAllSelected(fakeFiles) ? '取消全选' : '全选' }}
                 </v-btn>
               </v-card-title>
               <v-card-text>
-                <v-list v-if="fakeFiles.length" lines="two">
+                <v-list v-if="isPaper && paperSuspiciousParagraphs.length" lines="two">
+                  <v-list-item v-for="paragraph in paperSuspiciousParagraphs" :key="`sus-${paragraph.paragraph_index}`">
+                    <v-list-item-title>
+                      第 {{ (paragraph.paragraph_index ?? 0) + 1 }} 段 · AIGC率 {{ ((paragraph.probability || 0) * 100).toFixed(1) }}%
+                    </v-list-item-title>
+                    <v-list-item-subtitle>{{ paragraph.forgery_reason || paragraph.text || '-' }}</v-list-item-subtitle>
+                  </v-list-item>
+                </v-list>
+                <v-list v-else-if="!isPaper && fakeFiles.length" lines="two">
                   <v-list-item v-for="file in fakeFiles" :key="file.file_id">
                     <template v-if="!reviewMode" #prepend>
                       <v-checkbox-btn v-model="selectedFileIds" :value="file.file_id" color="error" />
@@ -85,14 +150,30 @@
                 <div class="d-flex align-center ga-2">
                   <v-icon color="success">mdi-check-circle</v-icon>
                   <span class="text-h6">{{ normalSectionTitle }}</span>
-                  <v-chip color="success" size="small">{{ reviewMode ? effectiveNormalFiles.length : `${selectedNormalCount}/${effectiveNormalFiles.length}` }}</v-chip>
+                  <v-chip color="success" size="small">
+                    {{
+                      reviewMode
+                        ? effectiveNormalFiles.length
+                        : isPaper
+                          ? paperCleanParagraphs.length
+                          : `${selectedNormalCount}/${effectiveNormalFiles.length}`
+                    }}
+                  </v-chip>
                 </div>
-                <v-btn v-if="!reviewMode" size="small" variant="text" color="success" @click="toggleSelect(effectiveNormalFiles)">
+                <v-btn v-if="!reviewMode && !isPaper" size="small" variant="text" color="success" @click="toggleSelect(effectiveNormalFiles)">
                   {{ isAllSelected(effectiveNormalFiles) ? '取消全选' : '全选' }}
                 </v-btn>
               </v-card-title>
               <v-card-text>
-                <v-list v-if="effectiveNormalFiles.length" lines="two">
+                <v-list v-if="isPaper && paperCleanParagraphs.length" lines="two">
+                  <v-list-item v-for="paragraph in paperCleanParagraphs" :key="`clean-${paragraph.paragraph_index}`">
+                    <v-list-item-title>
+                      第 {{ (paragraph.paragraph_index ?? 0) + 1 }} 段 · AIGC率 {{ ((paragraph.probability || 0) * 100).toFixed(1) }}%
+                    </v-list-item-title>
+                    <v-list-item-subtitle>{{ paragraph.text || '-' }}</v-list-item-subtitle>
+                  </v-list-item>
+                </v-list>
+                <v-list v-else-if="!isPaper && effectiveNormalFiles.length" lines="two">
                   <v-list-item v-for="file in effectiveNormalFiles" :key="file.file_id">
                     <template v-if="!reviewMode" #prepend>
                       <v-checkbox-btn v-model="selectedFileIds" :value="file.file_id" color="success" />
@@ -162,6 +243,15 @@ interface TaskDetail {
   normal_resource_files?: ResourceFile[]
   pending_resource_files?: ResourceFile[]
   resource_split_note?: string | null
+  results?: {
+    paragraph_results?: Array<{ paragraph_index: number; label?: string; probability?: number; text?: string; forgery_reason?: string }>
+    confirmed_ai_paragraphs?: Array<{ paragraph_index: number; probability?: number; reason?: string }>
+    overall_evaluation?: {
+      risk_score?: number
+      risk_level?: string
+      summary?: string
+    }
+  }
 }
 
 interface ReviewerOption {
@@ -201,6 +291,21 @@ watch(() => props.task.task_id, () => {
 
 const isPaper = computed(() => props.task.task_type === 'paper')
 const reviewMode = computed(() => props.task.task_type === 'review')
+const paperParagraphs = computed(() => props.task.results?.paragraph_results || [])
+const paperSuspiciousParagraphs = computed(() => paperParagraphs.value.filter(p => p.label === 'suspicious'))
+const paperCleanParagraphs = computed(() => paperParagraphs.value.filter(p => p.label === 'clean'))
+const paperConfirmedParagraphs = computed(() => props.task.results?.confirmed_ai_paragraphs || [])
+const paperOverallEvaluation = computed(() => props.task.results?.overall_evaluation || null)
+const paperOverallRiskLevel = computed(() => String(paperOverallEvaluation.value?.risk_level || 'low'))
+const paperOverallRiskLevelText = computed(() => {
+  if (paperOverallRiskLevel.value === 'high') return '高风险'
+  if (paperOverallRiskLevel.value === 'medium') return '中风险'
+  return '低风险'
+})
+const paperOverallScore = computed(() => Number(paperOverallEvaluation.value?.risk_score || 0))
+const paperOverallSummary = computed(() => String(
+  paperOverallEvaluation.value?.summary || '暂无整篇评价，建议查看段落级结果。',
+))
 const reviewIsFake = computed(() => reviewMode.value && fakeFiles.value.length > 0)
 
 const showFakeCard = computed(() => !reviewMode.value || reviewIsFake.value)
@@ -208,18 +313,18 @@ const showNormalCard = computed(() => !reviewMode.value || !reviewIsFake.value)
 
 const detailTitle = computed(() => props.task.task_type === 'paper' ? '论文检测详情' : '同行评审 Review 检测详情')
 
-const totalCountLabel = computed(() => props.task.task_type === 'paper' ? '论文总数' : 'Review 总数')
-const fakeCountLabel = computed(() => props.task.task_type === 'paper' ? '造假论文数量' : '造假 Review 数量')
-const fakeSectionTitle = computed(() => props.task.task_type === 'paper' ? '疑似造假论文' : '疑似造假 Review')
-const normalSectionTitle = computed(() => props.task.task_type === 'paper' ? '正常论文' : '正常 Review')
-const emptyFakeText = computed(() => props.task.task_type === 'paper' ? '暂无疑似造假论文' : '暂无疑似造假 Review')
-const emptyNormalText = computed(() => props.task.task_type === 'paper' ? '暂无正常论文' : '暂无正常 Review')
+const totalCountLabel = computed(() => props.task.task_type === 'paper' ? '段落总数' : 'Review 总数')
+const fakeCountLabel = computed(() => props.task.task_type === 'paper' ? '疑似AI段落数量' : '造假 Review 数量')
+const fakeSectionTitle = computed(() => props.task.task_type === 'paper' ? '疑似造假段落' : '疑似造假 Review')
+const normalSectionTitle = computed(() => props.task.task_type === 'paper' ? '非疑似段落' : '正常 Review')
+const emptyFakeText = computed(() => props.task.task_type === 'paper' ? '暂无疑似造假段落' : '暂无疑似造假 Review')
+const emptyNormalText = computed(() => props.task.task_type === 'paper' ? '暂无非疑似段落' : '暂无正常 Review')
 
 const defaultSummary = computed(() => props.task.task_type === 'paper' ? '论文检测任务已创建，等待系统输出完整结论。' : 'Review 检测任务已创建，等待系统输出完整结论。')
 
 const descriptionText = computed(() => {
   if (props.task.task_type === 'paper') {
-    return '展示论文 AIGC 概率、可疑段落分析及参考文献分析相关结果，支持下载综合鉴伪报告并发起人工复核。'
+    return '展示每段 AIGC 率、疑似段落、基本确认 AI 段落与整篇综合评价，支持下载综合鉴伪报告并发起人工复核。'
   }
   return '展示 Review 文本 AIGC 概率与评审相关度检测结果，支持下载综合鉴伪报告并发起人工复核。'
 })
@@ -254,8 +359,14 @@ const statusColor = computed(() => {
   }
 })
 
-const totalCount = computed(() => fakeFiles.value.length + effectiveNormalFiles.value.length)
-const fakeCount = computed(() => fakeFiles.value.length)
+const totalCount = computed(() => {
+  if (isPaper.value) return paperParagraphs.value.length
+  return fakeFiles.value.length + effectiveNormalFiles.value.length
+})
+const fakeCount = computed(() => {
+  if (isPaper.value) return paperSuspiciousParagraphs.value.length
+  return fakeFiles.value.length
+})
 const riskRatio = computed(() => {
   if (!totalCount.value) {
     return 0
@@ -293,6 +404,9 @@ const canSubmit = computed(() => {
   if (reviewMode.value) {
     return selectedReviewers.value.length > 0 && fakeFiles.value.length > 0
   }
+  if (isPaper.value) {
+    return selectedReviewers.value.length > 0 && props.task.resource_files.length > 0
+  }
   return selectedReviewers.value.length > 0 && selectedFileIds.value.length > 0
 })
 
@@ -322,7 +436,9 @@ const submitReview = () => {
   }
   const selectedIds = reviewMode.value
     ? props.task.resource_files.map(f => f.file_id)
-    : selectedFileIds.value
+    : isPaper.value
+      ? props.task.resource_files.map(f => f.file_id)
+      : selectedFileIds.value
 
   emit('request-review', {
     reviewers: selectedReviewers.value,
