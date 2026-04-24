@@ -61,60 +61,115 @@
                 已选 {{ selectedPaperMethodCount }}/9 项
               </v-chip>
             </div>
+          </template>
 
+          <template v-if="taskType === 'paper' || taskType === 'review'">
             <v-divider class="my-4" />
             <div class="d-flex justify-space-between align-center mb-3">
               <div>
-                <div class="text-subtitle-1 font-weight-medium">提取文本预览（可编辑）</div>
+                <div class="text-subtitle-1 font-weight-medium">
+                  {{ taskType === 'paper' ? '提取文本预览（可编辑）' : 'Review 论文文本预览（可编辑）' }}
+                </div>
                 <div class="text-caption text-medium-emphasis">点击按钮在弹窗中查看并修改文本。</div>
               </div>
-              <v-btn color="primary" variant="outlined" @click="paperPreviewDialog = true">
+              <v-btn color="primary" variant="outlined" @click="textPreviewDialog = true">
                 打开文本预览窗口
               </v-btn>
             </div>
 
-            <v-dialog v-model="paperPreviewDialog" max-width="960">
+            <v-dialog v-model="textPreviewDialog" max-width="960">
               <v-card class="paper-preview-card">
                 <v-card-title>
-                  <span>论文文本预览与编辑</span>
+                  <span>{{ taskType === 'paper' ? '论文文本预览与编辑' : 'Review 论文文本预览与编辑' }}</span>
                 </v-card-title>
                 <v-card-text class="paper-preview-content">
                   <v-alert
-                    v-if="paperTextPreviewError"
+                    v-if="currentTextPreviewError"
                     type="warning"
                     variant="tonal"
                     class="mb-3"
                   >
-                    {{ paperTextPreviewError }}
+                    {{ currentTextPreviewError }}
                   </v-alert>
                   <v-textarea
-                    :model-value="paperEditableText"
-                    :loading="paperTextPreviewLoading"
-                    label="论文文本（可在创建任务前修改）"
+                    :model-value="currentEditableText"
+                    :loading="currentTextPreviewLoading"
+                    :label="taskType === 'paper' ? '论文文本（可在创建任务前修改）' : 'Review 论文文本（可在创建任务前修改）'"
                     placeholder="未获取到提取文本，可点击右上角重新提取。"
                     variant="outlined"
                     rows="16"
                     auto-grow
-                    @update:model-value="emit('update:paperEditableText', String($event || ''))"
+                    @update:model-value="handleEditableTextUpdate(String($event || ''))"
                   />
                   <div class="text-caption text-medium-emphasis mt-2">
-                    说明：你在这里修改的文本将作为本次论文检测的输入。
+                    说明：你在这里修改的文本将作为本次检测的输入。
                   </div>
                 </v-card-text>
                 <v-card-actions class="paper-preview-actions">
                   <v-btn
                     variant="outlined"
                     color="primary"
-                    :loading="paperTextPreviewLoading"
-                    @click="emit('reload-paper-text-preview')"
+                    :loading="currentTextPreviewLoading"
+                    @click="handleReloadPreview"
                   >
                     重新提取文字
                   </v-btn>
                   <v-spacer />
-                  <v-btn color="primary" @click="paperPreviewDialog = false">保存并关闭</v-btn>
+                  <v-btn color="primary" @click="textPreviewDialog = false">保存并关闭</v-btn>
                 </v-card-actions>
               </v-card>
             </v-dialog>
+
+            <template v-if="taskType === 'review'">
+              <v-divider class="my-4" />
+              <div class="d-flex justify-space-between align-center mb-3">
+                <div>
+                  <div class="text-subtitle-1 font-weight-medium">Review 内容预览（可编辑）</div>
+                  <div class="text-caption text-medium-emphasis">这部分会和论文文本一起交给 LLM 审查。</div>
+                </div>
+                <v-btn color="primary" variant="outlined" @click="reviewContentDialog = true">
+                  打开 Review 预览窗口
+                </v-btn>
+              </div>
+
+              <v-dialog v-model="reviewContentDialog" max-width="960">
+                <v-card class="paper-preview-card">
+                  <v-card-title>
+                    <span>Review 内容预览与编辑</span>
+                  </v-card-title>
+                  <v-card-text class="paper-preview-content">
+                    <v-alert v-if="reviewContentTextPreviewError" type="warning" variant="tonal" class="mb-3">
+                      {{ reviewContentTextPreviewError }}
+                    </v-alert>
+                    <v-textarea
+                      :model-value="reviewEditableText"
+                      :loading="reviewContentTextPreviewLoading"
+                      label="Review 文本（可在创建任务前修改）"
+                      placeholder="未获取到提取文本，可点击右上角重新提取。"
+                      variant="outlined"
+                      rows="16"
+                      auto-grow
+                      @update:model-value="emit('update:reviewEditableText', String($event || ''))"
+                    />
+                    <div class="text-caption text-medium-emphasis mt-2">
+                      说明：这部分文本会和论文文本共同参与 Review 审查。
+                    </div>
+                  </v-card-text>
+                  <v-card-actions class="paper-preview-actions">
+                    <v-btn
+                      variant="outlined"
+                      color="primary"
+                      :loading="reviewContentTextPreviewLoading"
+                      @click="emit('reload-review-text-preview')"
+                    >
+                      重新提取文字
+                    </v-btn>
+                    <v-spacer />
+                    <v-btn color="primary" @click="reviewContentDialog = false">保存并关闭</v-btn>
+                  </v-card-actions>
+                </v-card>
+              </v-dialog>
+            </template>
           </template>
         </v-card-text>
 
@@ -131,10 +186,9 @@
 
 <script setup lang="ts">
 import ImageSelectionStep from '@/components/steps/ImageSelectionStep.vue'
+import { computed, ref } from 'vue'
 import type { DetectionType, TaskOption, UploadedResourceFile } from '../types'
-import { ref } from 'vue'
-
-defineProps<{
+const props = defineProps<{
   taskType: DetectionType
   fileId: number | null
   uploadedResourceFiles: UploadedResourceFile[]
@@ -150,6 +204,12 @@ defineProps<{
   paperEditableText: string
   paperTextPreviewLoading: boolean
   paperTextPreviewError: string
+  reviewPaperEditableText: string
+  reviewPaperTextPreviewLoading: boolean
+  reviewPaperTextPreviewError: string
+  reviewEditableText: string
+  reviewTextPreviewLoading: boolean
+  reviewTextPreviewError: string
 }>()
 
 const emit = defineEmits<{
@@ -158,6 +218,8 @@ const emit = defineEmits<{
   (e: 'submit-resource-task'): void
   (e: 'configure-paper-methods'): void
   (e: 'reload-paper-text-preview'): void
+  (e: 'reload-review-paper-text-preview'): void
+  (e: 'reload-review-text-preview'): void
   (e: 'update-selected-images', images: any[]): void
   (e: 'update-tag', tag: string): void
   (e: 'update-name', name: string): void
@@ -165,13 +227,50 @@ const emit = defineEmits<{
   (e: 'update:resourceTaskName', value: string): void
   (e: 'update:paperEnableImageDetection', value: boolean): void
   (e: 'update:paperEditableText', value: string): void
+  (e: 'update:reviewPaperEditableText', value: string): void
+  (e: 'update:reviewEditableText', value: string): void
 }>()
 
 const handlePaperToggle = (value: boolean | null) => {
   emit('update:paperEnableImageDetection', Boolean(value))
 }
 
-const paperPreviewDialog = ref(false)
+const textPreviewDialog = ref(false)
+const reviewContentDialog = ref(false)
+
+const currentEditableText = computed(() => {
+  if (props.taskType === 'paper') return props.paperEditableText
+  return props.reviewPaperEditableText
+})
+
+const currentTextPreviewLoading = computed(() => {
+  if (props.taskType === 'paper') return props.paperTextPreviewLoading
+  return props.reviewPaperTextPreviewLoading
+})
+
+const currentTextPreviewError = computed(() => {
+  if (props.taskType === 'paper') return props.paperTextPreviewError
+  return props.reviewPaperTextPreviewError
+})
+
+const reviewContentTextPreviewLoading = computed(() => props.reviewTextPreviewLoading)
+const reviewContentTextPreviewError = computed(() => props.reviewTextPreviewError)
+
+const handleEditableTextUpdate = (value: string) => {
+  if (props.taskType === 'paper') {
+    emit('update:paperEditableText', value)
+    return
+  }
+  emit('update:reviewPaperEditableText', value)
+}
+
+const handleReloadPreview = () => {
+  if (props.taskType === 'paper') {
+    emit('reload-paper-text-preview')
+    return
+  }
+  emit('reload-review-paper-text-preview')
+}
 </script>
 
 <style scoped>

@@ -77,8 +77,44 @@ DATA_AUTH_USER_TEMPLATE = """
 
 请输出JSON：
 {{
-  "risk_level": "low|medium|high",
+  "risk_level": "none|low|medium|high",
   "reason": "string, 不超过100字"
+}}
+""".strip()
+
+
+REVIEW_ANALYSIS_SYSTEM_PROMPT = (
+    "你是学术同行评审审查助手。请同时结合论文与Review内容，判断Review是否模板化、是否存在错误，"
+    "以及Review与论文的相关度。只输出JSON。"
+)
+
+
+REVIEW_ANALYSIS_USER_TEMPLATE = """
+输入：
+- paper_text: {paper_text}
+- review_paragraphs: {review_paragraphs}
+
+请输出JSON：
+{{
+  "overall": {{
+    "template_like_level": "low|medium|high",
+    "wrongness_level": "low|medium|high",
+    "relevance_level": "low|medium|high",
+    "summary": "string, 不超过160字",
+    "key_findings": ["string", "string"],
+    "suggestions": ["string", "string"]
+  }},
+  "paragraph_results": [
+    {{
+      "review_paragraph_index": 0,
+      "paper_paragraph_index": 0,
+      "template_like_level": "low|medium|high",
+      "wrongness_level": "low|medium|high",
+      "relevance_score": "0到1的小数",
+      "relevance_level": "low|medium|high",
+      "explanation": "string, 不超过120字"
+    }}
+  ]
 }}
 """.strip()
 

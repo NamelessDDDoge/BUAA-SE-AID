@@ -1,79 +1,52 @@
-import re
+from .llm import assess_data_authenticity_finding
 
 
-_NUMBER_PATTERN = re.compile(r"(?P<value>-?\d+(?:\.\d+)?)\s*(?P<unit>%|％)?")
-_CLAIM_KEYWORDS = ("显著", "证明", "表明", "提升", "降低", "优于", "有效")
-
-
-def evaluate_data_authenticity(paragraph_results):
+def evaluate_data_authenticity(paragraph_results, api_key=None):
     findings = []
-    metric_registry = {}
-
+    llm_invoked = False
+    llm_error = None
     for item in paragraph_results or []:
         paragraph_index = int(item.get("paragraph_index", 0))
         text = (item.get("text") or "").strip()
         if not text:
             continue
 
-        for match in _NUMBER_PATTERN.finditer(text):
-            value = float(match.group("value"))
-            unit = match.group("unit")
-            claim = _extract_claim_snippet(text, match.start(), match.end())
-            metric_key = _normalize_metric_key(claim)
+        llm_finding = assess_data_authenticity_finding(
+            paragraph_index=paragraph_index,
+            claim_text=text,
+            evidence=text[:240],
+            api_key=api_key,
+        )
+        if isinstance(llm_finding, dict) and llm_finding.get("error"):
+            if llm_error is None:
+                llm_error = str(llm_finding.get("error") or "").strip()
+            continue
+        if isinstance(llm_finding, dict):
+            llm_invoked = True
+        if isinstance(llm_finding, dict) and llm_finding.get("risk_level") in {"low", "medium", "high"}:
+            findings.append(
+                {
+                    "paragraph_index": paragraph_index,
+                    "claim_text": text[:240],
+                    "risk_level": llm_finding["risk_level"],
+                    "reason": llm_finding["reason"],
+                    "evidence": text[:240],
+                    "analysis_source": "llm",
+                }
+            )
 
-            risk_level = None
-            reason = None
-            evidence = f"value={value}, unit={'percent' if unit else 'number'}"
-
-            if unit and (value < 0 or value > 100):
-                risk_level = "high"
-                reason = "百分比超出 0-100 的常识区间。"
-            elif metric_key in metric_registry and abs(metric_registry[metric_key] - value) > 20:
-                risk_level = "medium"
-                reason = "同类指标在文档中出现较大数值跳变，存在口径不一致风险。"
-            elif any(keyword in text for keyword in _CLAIM_KEYWORDS) and not _contains_statistical_evidence(text):
-                risk_level = "low"
-                reason = "包含强结论表达，但缺少显著性或样本量等统计支撑。"
-
-            metric_registry[metric_key] = value
-
-            if risk_level:
-                findings.append(
-                    {
-                        "paragraph_index": paragraph_index,
-                        "claim_text": claim,
-                        "risk_level": risk_level,
-                        "reason": reason,
-                        "evidence": evidence,
-                    }
-                )
-
-    summary = _build_summary(findings)
+    summary = _build_summary(findings, llm_invoked=llm_invoked, llm_error=llm_error)
     return {
         "summary": summary,
         "findings": findings,
     }
 
 
-def _extract_claim_snippet(text, start, end, window=32):
-    left = max(0, start - window)
-    right = min(len(text), end + window)
-    return text[left:right].strip()
-
-
-def _normalize_metric_key(claim_text):
-    tokens = re.findall(r"[A-Za-z\u4e00-\u9fff]+", claim_text or "")
-    if not tokens:
-        return "unknown_metric"
-    return "_".join(tokens[:4]).lower()
-
-
-def _contains_statistical_evidence(text):
-    lowered = (text or "").lower()
-    return any(token in lowered for token in ("p<", "p =", "ci", "n=", "样本", "置信区间"))
-
-
-def _build_summary(findings):
+def _build_summary(findings, llm_invoked=False, llm_error=None):
+    if llm_error:
+        return f"数据真实性分析调用 LLM 失败：{llm_error}"
+    if not llm_invoked:
+        return "数据真实性分析未能调用 LLM。"
     if not findings:
         return "未发现明显数据一致性风险。"
 

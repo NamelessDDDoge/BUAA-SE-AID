@@ -2,7 +2,7 @@ import http from './request'
 
 export default {
   getUnRead() {
-    return http.get('/notification/notify/')
+    return http.get('/notification/notify/', { timeout: 30000 })
   },
 
   setReadAll() {
@@ -14,6 +14,6 @@ export default {
   },
 
   getAllNotifications() {
-    return http.get('/notification/get/')
+    return http.get('/notification/get/', { timeout: 30000 })
   }
 }

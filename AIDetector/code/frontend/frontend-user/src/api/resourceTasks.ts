@@ -9,6 +9,8 @@ export default {
     if_use_llm?: boolean
     method_switches?: Record<string, boolean>
     text_override?: string
+    paper_text_override?: string
+    review_text_override?: string
   }) {
     return http.post('/resource-task/create/', data)
   },

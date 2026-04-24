@@ -8,6 +8,8 @@ from .prompts import (
     DATA_AUTH_USER_TEMPLATE,
     OVERALL_EVALUATION_SYSTEM_PROMPT,
     OVERALL_EVALUATION_USER_TEMPLATE,
+    REVIEW_ANALYSIS_SYSTEM_PROMPT,
+    REVIEW_ANALYSIS_USER_TEMPLATE,
     REFERENCE_AUTH_SYSTEM_PROMPT,
     REFERENCE_AUTH_USER_TEMPLATE,
     SEGMENT_EXPLANATION_SYSTEM_PROMPT,
@@ -19,6 +21,32 @@ from .prompts import (
 DEFAULT_LLM_ENDPOINT = os.environ.get("OPENAI_COMPAT_ENDPOINT", "").strip()
 DEFAULT_LLM_MODEL = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-4o-mini")
 DEFAULT_LLM_API_KEY = os.environ.get("OPENAI_COMPAT_API_KEY", "").strip()
+
+
+def get_llm_runtime_config(api_key=None):
+    endpoint = (
+        os.environ.get("OPENAI_COMPAT_ENDPOINT", "").strip()
+        or os.environ.get("FASTDETECT_OPENAI_COMPAT_ENDPOINT", "").strip()
+        or os.environ.get("FASTDETECT_LLM_ENDPOINT", "").strip()
+        or DEFAULT_LLM_ENDPOINT
+    )
+    model = (
+        os.environ.get("OPENAI_COMPAT_MODEL", "").strip()
+        or os.environ.get("FASTDETECT_OPENAI_COMPAT_MODEL", "").strip()
+        or DEFAULT_LLM_MODEL
+        or "gpt-4o-mini"
+    )
+    key = (
+        (api_key or "").strip()
+        or os.environ.get("OPENAI_COMPAT_API_KEY", "").strip()
+        or os.environ.get("FASTDETECT_OPENAI_COMPAT_API_KEY", "").strip()
+        or DEFAULT_LLM_API_KEY
+    )
+    return {
+        "endpoint": endpoint,
+        "model": model,
+        "key": key,
+    }
 
 
 def explain_text_segment(*, text, score, api_key=None):
@@ -103,11 +131,13 @@ def assess_data_authenticity_finding(*, paragraph_index, claim_text, evidence, a
         api_key=api_key,
     )
     if not isinstance(response_json, dict):
+        if isinstance(response_json, str):
+            return {"error": response_json}
         return None
 
     risk_level = str(response_json.get("risk_level") or "").strip().lower()
     reason = str(response_json.get("reason") or "").strip()
-    if risk_level not in {"low", "medium", "high"}:
+    if risk_level not in {"none", "low", "medium", "high"}:
         return None
     return {
         "risk_level": risk_level,
@@ -115,15 +145,69 @@ def assess_data_authenticity_finding(*, paragraph_index, claim_text, evidence, a
     }
 
 
-def _request_structured_json(*, system_prompt, user_prompt, api_key=None, timeout=30):
-    endpoint = DEFAULT_LLM_ENDPOINT
-    key = (api_key or DEFAULT_LLM_API_KEY or "").strip()
-    if not endpoint or not key:
+def analyze_review_text(*, paper_text, review_paragraphs, api_key=None, timeout=60):
+    response_json = _request_structured_json(
+        system_prompt=REVIEW_ANALYSIS_SYSTEM_PROMPT,
+        user_prompt=render_prompt(
+            REVIEW_ANALYSIS_USER_TEMPLATE,
+            paper_text=paper_text or "",
+            review_paragraphs=_format_review_paragraphs(review_paragraphs),
+        ),
+        api_key=api_key,
+        timeout=timeout,
+    )
+    if not isinstance(response_json, dict):
+        if isinstance(response_json, str):
+            return {"error": response_json}
         return None
+
+    overall = response_json.get("overall") if isinstance(response_json.get("overall"), dict) else {}
+    paragraph_results = response_json.get("paragraph_results") if isinstance(response_json.get("paragraph_results"), list) else []
+    return {
+        "overall": {
+            "template_like_level": _normalize_level(overall.get("template_like_level")),
+            "wrongness_level": _normalize_level(overall.get("wrongness_level")),
+            "relevance_level": _normalize_level(overall.get("relevance_level")),
+            "summary": str(overall.get("summary") or "暂无整体总结。"),
+            "key_findings": _to_string_list(overall.get("key_findings")),
+            "suggestions": _to_string_list(overall.get("suggestions")),
+        },
+        "paragraph_results": [
+            {
+                "review_paragraph_index": _coerce_int(item.get("review_paragraph_index")),
+                "paper_paragraph_index": _coerce_optional_int(item.get("paper_paragraph_index")),
+                "template_like_level": _normalize_level(item.get("template_like_level")),
+                "wrongness_level": _normalize_level(item.get("wrongness_level")),
+                "relevance_score": _coerce_float(item.get("relevance_score")),
+                "relevance_level": _normalize_level(item.get("relevance_level")),
+                "explanation": str(item.get("explanation") or ""),
+            }
+            for item in paragraph_results
+            if isinstance(item, dict)
+        ],
+    }
+
+
+def _request_structured_json(*, system_prompt, user_prompt, api_key=None, timeout=30):
+    config = get_llm_runtime_config(api_key=api_key)
+    endpoint = config["endpoint"]
+    model = config["model"]
+    key = config["key"]
+    if not endpoint or not key:
+        return (
+            "LLM API endpoint 或 API key 未配置。"
+            "请配置 OPENAI_COMPAT_*（或 FASTDETECT_OPENAI_COMPAT_*）环境变量。"
+        )
+
+    if endpoint.rstrip("/").endswith("/api/detect"):
+        return (
+            "当前 endpoint 指向 FastDetect 文本检测接口(/api/detect)，"
+            "不是 OpenAI 兼容聊天接口。请改为聊天 completions endpoint。"
+        )
 
     try:
         payload = {
-            "model": DEFAULT_LLM_MODEL,
+            "model": model,
             "temperature": 0.2,
             "response_format": {"type": "json_object"},
             "messages": [
@@ -141,13 +225,21 @@ def _request_structured_json(*, system_prompt, user_prompt, api_key=None, timeou
             timeout=timeout,
         )
         response.raise_for_status()
-        body = response.json()
+        try:
+            body = response.json()
+        except Exception:
+            return f"LLM 接口返回了非 JSON 响应，HTTP {response.status_code}。"
         content = body.get("choices", [{}])[0].get("message", {}).get("content", "")
         if not content:
-            return None
-        return _extract_json(content)
-    except Exception:
-        return None
+            return "LLM 接口返回内容为空。"
+        parsed = _extract_json(content)
+        if parsed is None:
+            return f"LLM 返回内容不是可解析的 JSON：{content[:200]}"
+        return parsed
+    except requests.RequestException as exc:
+        return f"LLM 请求失败：{exc}"
+    except Exception as exc:
+        return f"LLM 未知错误：{exc}"
 
 
 def _extract_json(content):
@@ -175,6 +267,38 @@ def _coerce_float(value):
         return float(value)
     except Exception:
         return None
+
+
+def _coerce_int(value):
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _coerce_optional_int(value):
+    if value in (None, ""):
+        return None
+    return _coerce_int(value)
+
+
+def _normalize_level(value):
+    level = str(value or "").strip().lower()
+    return level if level in {"low", "medium", "high"} else "low"
+
+
+def _format_review_paragraphs(review_paragraphs):
+    if not isinstance(review_paragraphs, list):
+        return "[]"
+    formatted = []
+    for item in review_paragraphs:
+        if not isinstance(item, dict):
+            continue
+        formatted.append({
+            "review_paragraph_index": item.get("review_paragraph_index"),
+            "text": str(item.get("text") or ""),
+        })
+    return json.dumps(formatted, ensure_ascii=False)
 
 
 def _fallback_segment_explanation(score):

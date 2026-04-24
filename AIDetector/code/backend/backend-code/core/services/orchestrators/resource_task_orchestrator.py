@@ -25,6 +25,8 @@ def create_resource_detection_task(
     task_name="",
     api_key=None,
     text_override=None,
+    paper_text_override=None,
+    review_text_override=None,
     if_use_llm=False,
     method_switches=None,
     extract_images=None,
@@ -75,7 +77,17 @@ def create_resource_detection_task(
     if task_type == "paper" and isinstance(text_override, str):
         normalized_text = text_override.strip()
         if normalized_text:
-            initial_text_results = {"text_override": normalized_text}
+            initial_text_results = {"text_override": normalized_text, "paper_text_override": normalized_text}
+    elif task_type == "review":
+        initial_text_results = {}
+        if isinstance(text_override, str) and text_override.strip():
+            initial_text_results["review_text_override"] = text_override.strip()
+        if isinstance(paper_text_override, str) and paper_text_override.strip():
+            initial_text_results["paper_text_override"] = paper_text_override.strip()
+        if isinstance(review_text_override, str) and review_text_override.strip():
+            initial_text_results["review_text_override"] = review_text_override.strip()
+        if not initial_text_results:
+            initial_text_results = None
 
     detection_task = DetectionTask.objects.create(
         organization=user.organization,

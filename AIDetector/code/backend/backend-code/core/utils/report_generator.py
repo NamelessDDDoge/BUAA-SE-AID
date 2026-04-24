@@ -451,8 +451,10 @@ def generate_review_detection_task_report(task: DetectionTask) -> str:
     results = get_review_task_results_payload(task)
     document = results.get("document", {})
     paragraph_results = results.get("paragraph_results", [])
+    review_analysis = results.get("review_analysis_results", {}) or {}
+    overall_evaluation = review_analysis.get("overall", {}) or results.get("overall_evaluation", {}) or {}
+    review_analysis_paragraphs = review_analysis.get("paragraph_results", []) or results.get("relevance_results", [])
     suspicious_paragraphs = results.get("suspicious_paragraphs", [])
-    relevance_results = results.get("relevance_results", [])
 
     c, rel_path, width, height, margin = _create_report_canvas(task)
     _draw_report_title_page(
@@ -481,19 +483,59 @@ def generate_review_detection_task_report(task: DetectionTask) -> str:
         [
             ("论文分段数", document.get("paper_segment_count")),
             ("评审分段数", document.get("review_segment_count")),
+            ("评审段落数", document.get("review_paragraph_count")),
         ],
         height=height,
         margin=margin,
     )
 
-    y = _draw_report_section_title(c, y, title="评审段落检测", height=height, margin=margin)
-    y = _draw_report_items(c, y, paragraph_results, height=height, margin=margin)
+    y = _draw_report_section_title(c, y, title="Review 综合审查", height=height, margin=margin)
+    y = _draw_report_pairs(
+        c,
+        y,
+        [
+            ("模板化倾向", overall_evaluation.get("template_like_level")),
+            ("内容错误风险", overall_evaluation.get("wrongness_level")),
+            ("与论文相关度", overall_evaluation.get("relevance_level")),
+            ("综合总结", overall_evaluation.get("summary")),
+        ],
+        height=height,
+        margin=margin,
+    )
+    y = _draw_report_items(
+        c,
+        y,
+        [
+            {"key_findings": overall_evaluation.get("key_findings", [])},
+            {"suggestions": overall_evaluation.get("suggestions", [])},
+        ],
+        height=height,
+        margin=margin,
+    )
+
+    y = _draw_report_section_title(c, y, title="Review 段落审查", height=height, margin=margin)
+    y = _draw_report_items(
+        c,
+        y,
+        [
+            {
+                "review_paragraph_index": item.get("review_paragraph_index", item.get("paragraph_index")),
+                "template_like_level": item.get("template_like_level") or (item.get("details") or {}).get("template_like_level"),
+                "wrongness_level": item.get("wrongness_level") or (item.get("details") or {}).get("wrongness_level"),
+                "relevance_score": item.get("relevance_score") or (item.get("details") or {}).get("relevance_score"),
+                "relevance_level": item.get("relevance_level") or (item.get("details") or {}).get("relevance_level"),
+                "explanation": item.get("explanation") or item.get("relevance_explanation") or (item.get("details") or {}).get("explanation"),
+                "text": item.get("review_text") or item.get("text"),
+                "paper_paragraph_index": item.get("paper_paragraph_index"),
+            }
+            for item in review_analysis_paragraphs
+        ],
+        height=height,
+        margin=margin,
+    )
 
     y = _draw_report_section_title(c, y, title="可疑段落解释", height=height, margin=margin)
     y = _draw_report_items(c, y, suspicious_paragraphs, height=height, margin=margin)
-
-    y = _draw_report_section_title(c, y, title="相关性匹配", height=height, margin=margin)
-    _draw_report_items(c, y, relevance_results, height=height, margin=margin)
 
     c.save()
     task.report_file = rel_path

@@ -1,9 +1,23 @@
+import os
+
 import requests
 
 
-DEFAULT_FASTDETECT_API_ENDPOINT = "https://api.fastdetect.net/api/detect"
-DEFAULT_FASTDETECT_MODEL = "fast-detect(llama3-8b/llama3-8b-instruct)"
-DEFAULT_FASTDETECT_API_KEY = "sk-szcr9duUjGSmp6UaDQlsJku1zBG3Rr1NSjFoGLsvFb5VWVos"
+DEFAULT_FASTDETECT_API_ENDPOINT = (
+    os.environ.get("FASTDETECT_API_ENDPOINT", "").strip()
+    or os.environ.get("DEFAULT_FASTDETECT_API_ENDPOINT", "").strip()
+    or "https://api.fastdetect.net/api/detect"
+)
+DEFAULT_FASTDETECT_MODEL = (
+    os.environ.get("FASTDETECT_LLM_MODEL", "").strip()
+    or os.environ.get("DEFAULT_FASTDETECT_MODEL", "").strip()
+    or "fast-detect(llama3-8b/llama3-8b-instruct)"
+)
+DEFAULT_FASTDETECT_API_KEY = (
+    os.environ.get("FASTDETECT_API_KEY", "").strip()
+    or os.environ.get("DEFAULT_FASTDETECT_API_KEY", "").strip()
+    or ""
+)
 
 
 def detect_text_segment(text, *, api_key=None, detector=None, endpoint=None, timeout=30):

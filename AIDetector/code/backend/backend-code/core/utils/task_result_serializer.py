@@ -21,8 +21,11 @@ def build_task_result_summary(task):
         return f"论文检测已完成，疑似段落 {suspicious_count} 段，基本确认AI {confirmed_count} 段"
     if task.task_type == "review":
         results = get_task_results_payload(task) or {}
-        relevance_count = len(results.get("relevance_results", []))
-        return f"Review 检测已完成，匹配 {relevance_count} 段"
+        review_results = results.get("review_analysis_results") or {}
+        overall = review_results.get("overall") or {}
+        template_level = overall.get("template_like_level", "low")
+        relevance_level = overall.get("relevance_level", "low")
+        return f"Review 检测已完成，模板化 {template_level}，相关度 {relevance_level}"
     return "检测已完成"
 
 

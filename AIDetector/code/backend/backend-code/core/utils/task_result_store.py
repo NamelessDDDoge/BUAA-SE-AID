@@ -68,14 +68,11 @@ def store_review_task_results(*, detection_task, paper_file, review_file, result
     sanitized_payload = sanitize_json_like(results_payload)
     document = sanitized_payload.get("document", {})
     paragraph_results = sanitized_payload.get("paragraph_results", [])
-    suspicious_map = {
-        item.get("paragraph_index"): item.get("explanation")
-        for item in sanitized_payload.get("suspicious_paragraphs", [])
-        if item.get("paragraph_index") is not None
-    }
-    relevance_map = {
+    review_analysis = sanitized_payload.get("review_analysis_results") or {}
+    overall_evaluation = review_analysis.get("overall") or sanitized_payload.get("overall_evaluation") or {}
+    analysis_map = {
         item.get("review_paragraph_index"): item
-        for item in sanitized_payload.get("relevance_results", [])
+        for item in review_analysis.get("paragraph_results", [])
         if item.get("review_paragraph_index") is not None
     }
 
@@ -99,16 +96,16 @@ def store_review_task_results(*, detection_task, paper_file, review_file, result
                 probability=float(item.get("probability") or 0.0),
                 label=item.get("label", ""),
                 details=item.get("details"),
-                suspicious_explanation=suspicious_map.get(item.get("paragraph_index", index)),
+                suspicious_explanation=(item.get("details") or {}).get("explanation"),
                 paper_paragraph_index=_coerce_optional_int(
-                    relevance_map.get(item.get("paragraph_index", index), {}).get("paper_paragraph_index")
+                    analysis_map.get(item.get("paragraph_index", index), {}).get("paper_paragraph_index")
                 ),
-                paper_text=relevance_map.get(item.get("paragraph_index", index), {}).get("paper_text", ""),
+                paper_text="",
                 relevance_score=_coerce_optional_float(
-                    relevance_map.get(item.get("paragraph_index", index), {}).get("relevance_score")
+                    analysis_map.get(item.get("paragraph_index", index), {}).get("relevance_score")
                 ),
-                relevance_label=relevance_map.get(item.get("paragraph_index", index), {}).get("label", ""),
-                relevance_explanation=relevance_map.get(item.get("paragraph_index", index), {}).get("explanation"),
+                relevance_label=analysis_map.get(item.get("paragraph_index", index), {}).get("relevance_level", ""),
+                relevance_explanation=analysis_map.get(item.get("paragraph_index", index), {}).get("explanation"),
             )
             for index, item in enumerate(paragraph_results)
         ]
@@ -213,10 +210,11 @@ def get_paper_task_results_payload(task):
 
 
 def get_review_task_results_payload(task):
+    raw_payload = sanitize_json_like(task.text_detection_results or {})
     try:
         review_result = task.review_detection_result
     except ReviewDetectionResult.DoesNotExist:
-        return sanitize_json_like(task.text_detection_results or {})
+        return raw_payload
 
     paragraph_rows = list(review_result.paragraph_results.all().order_by("paragraph_index"))
     paragraph_results = [
@@ -229,6 +227,10 @@ def get_review_task_results_payload(task):
         }
         for item in paragraph_rows
     ]
+    review_analysis_results = sanitize_json_like(raw_payload.get("review_analysis_results") or {
+        "overall": raw_payload.get("overall_evaluation") or {},
+        "paragraph_results": [],
+    })
     suspicious_paragraphs = [
         {
             "paragraph_index": item.paragraph_index,
@@ -247,9 +249,11 @@ def get_review_task_results_payload(task):
             "relevance_score": item.relevance_score,
             "label": item.relevance_label,
             "explanation": item.relevance_explanation,
+            "template_like_level": (item.details or {}).get("template_like_level"),
+            "wrongness_level": (item.details or {}).get("wrongness_level"),
         }
         for item in paragraph_rows
-        if item.paper_paragraph_index is not None or item.relevance_score is not None or item.relevance_explanation
+        if item.relevance_score is not None or item.relevance_explanation or item.details
     ]
 
     return sanitize_json_like(
@@ -261,10 +265,14 @@ def get_review_task_results_payload(task):
                 "review_file_name": review_result.review_file.file_name if review_result.review_file else "",
                 "paper_segment_count": review_result.paper_segment_count,
                 "review_segment_count": review_result.review_segment_count,
+                "paper_paragraph_count": raw_payload.get("document", {}).get("paper_paragraph_count"),
+                "review_paragraph_count": raw_payload.get("document", {}).get("review_paragraph_count"),
             },
             "paragraph_results": paragraph_results,
             "suspicious_paragraphs": suspicious_paragraphs,
             "relevance_results": relevance_results,
+            "review_analysis_results": review_analysis_results,
+            "overall_evaluation": review_analysis_results.get("overall") or {},
         }
     )
 

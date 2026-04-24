@@ -100,7 +100,36 @@
           </v-card-text>
         </v-card>
 
-        <v-row v-if="!isPaper">
+        <v-card v-if="reviewMode" class="mb-6" elevation="2" rounded="lg">
+          <v-card-title class="text-h6">Review 审查摘要</v-card-title>
+          <v-card-text>
+            <v-row>
+              <v-col cols="12" md="4">
+                <div class="text-caption text-medium-emphasis">模板化倾向</div>
+                <div class="text-h5 font-weight-bold">{{ reviewOverallLevelText(reviewOverallEvaluation?.template_like_level) }}</div>
+              </v-col>
+              <v-col cols="12" md="4">
+                <div class="text-caption text-medium-emphasis">内容错误风险</div>
+                <div class="text-h5 font-weight-bold">{{ reviewOverallLevelText(reviewOverallEvaluation?.wrongness_level) }}</div>
+              </v-col>
+              <v-col cols="12" md="4">
+                <div class="text-caption text-medium-emphasis">与论文相关度</div>
+                <div class="text-h5 font-weight-bold">{{ reviewOverallLevelText(reviewOverallEvaluation?.relevance_level) }}</div>
+              </v-col>
+            </v-row>
+
+            <v-divider class="my-4" />
+
+            <v-alert type="info" variant="tonal">
+              <div class="mb-1"><strong>总结：</strong>{{ reviewOverallEvaluation?.summary || '暂无总结' }}</div>
+              <div v-if="(reviewOverallEvaluation?.key_findings || []).length" class="mt-2">
+                <strong>关键发现：</strong>{{ (reviewOverallEvaluation?.key_findings || []).join('；') }}
+              </div>
+            </v-alert>
+          </v-card-text>
+        </v-card>
+
+        <v-row v-if="!isPaper && !reviewMode">
           <v-col v-if="showFakeCard" cols="12" :md="isPaper || reviewMode ? 12 : 6">
             <v-card elevation="2" rounded="lg" class="h-100">
               <v-card-title class="d-flex justify-space-between align-center">
@@ -306,7 +335,15 @@ const paperOverallScore = computed(() => Number(paperOverallEvaluation.value?.ri
 const paperOverallSummary = computed(() => String(
   paperOverallEvaluation.value?.summary || '暂无整篇评价，建议查看段落级结果。',
 ))
+const reviewOverallEvaluation = computed(() => props.task?.results?.review_analysis_results?.overall || props.task?.results?.overall_evaluation || null)
 const reviewIsFake = computed(() => reviewMode.value && fakeFiles.value.length > 0)
+
+const reviewOverallLevelText = (level?: string) => {
+  const normalized = String(level || 'low').toLowerCase()
+  if (normalized === 'high') return '高'
+  if (normalized === 'medium') return '中'
+  return '低'
+}
 
 const showFakeCard = computed(() => !reviewMode.value || reviewIsFake.value)
 const showNormalCard = computed(() => !reviewMode.value || !reviewIsFake.value)

@@ -8,10 +8,14 @@ from ..event_logger import log_user_event
 from ...models import DetectionTask, User
 from ...utils.report_generator import generate_task_report
 from ...utils.task_result_store import store_review_task_results
-from ..capabilities.llm_analysis_service import build_suspicious_paragraph_explanations
-from ..capabilities.review_relevance_service import analyze_review_relevance
-from ..capabilities.text_detection_service import analyze_text_segments
+from ..capabilities.review_analysis_service import evaluate_review_analysis
 from ..resources.document_preprocessor import preprocess_document
+from ..resources.document_preprocessor import (
+    extract_document_paragraphs,
+    extract_document_references,
+    split_text_into_segments,
+)
+from ..resources.text_sanitizer import sanitize_text_content
 
 
 def build_resource_review_placeholder(*, user, task_id, reviewers, reason="", selected_file_ids=None):
@@ -101,29 +105,82 @@ def run_review_detection_task(task_id, api_key=None):
 
     paper_document = preprocess_document(paper_path)
     review_document = preprocess_document(review_path)
-    paragraph_results = analyze_text_segments(review_document["segments"], api_key=api_key)
-    suspicious_paragraphs = build_suspicious_paragraph_explanations(paragraph_results, api_key=api_key)
-    relevance_results = analyze_review_relevance(
-        review_segments=review_document["segments"],
-        paper_segments=paper_document["segments"],
+    paper_override_text = _get_text_override(detection_task, "paper_text_override")
+    review_override_text = _get_text_override(detection_task, "review_text_override")
+    legacy_review_override_text = _get_text_override(detection_task, "text_override")
+
+    if paper_override_text:
+        paper_document = _build_document_from_text(sanitize_text_content(paper_override_text))
+    if review_override_text:
+        review_document = _build_document_from_text(sanitize_text_content(review_override_text))
+    elif legacy_review_override_text:
+        review_document = _build_document_from_text(sanitize_text_content(legacy_review_override_text))
+
+    analysis_results = evaluate_review_analysis(
+        paper_document=paper_document,
+        review_document=review_document,
+        api_key=api_key,
     )
+    paragraph_results = []
+    analysis_map = {
+        item.get("review_paragraph_index"): item
+        for item in analysis_results.get("paragraph_results", [])
+        if item.get("review_paragraph_index") is not None
+    }
+    for index, paragraph in enumerate(review_document.get("paragraphs") or []):
+        analysis_item = analysis_map.get(index, {})
+        template_level = analysis_item.get("template_like_level", "low")
+        wrongness_level = analysis_item.get("wrongness_level", "low")
+        relevance_score = float(analysis_item.get("relevance_score") or 0.0)
+        paragraph_results.append(
+            {
+                "paragraph_index": index,
+                "text": paragraph,
+                "probability": max(
+                    relevance_score,
+                    0.85 if template_level == "high" or wrongness_level == "high" else 0.55 if template_level == "medium" or wrongness_level == "medium" else 0.15,
+                ),
+                "label": "suspicious"
+                if template_level == "high" or wrongness_level == "high" or relevance_score < 0.45
+                else "clean",
+                "details": {
+                    **analysis_item,
+                    "template_like_level": template_level,
+                    "wrongness_level": wrongness_level,
+                    "relevance_score": relevance_score,
+                },
+            }
+        )
+
+    suspicious_paragraphs = [
+        {
+            "paragraph_index": item["paragraph_index"],
+            "probability": item["probability"],
+            "explanation": item.get("details", {}).get("explanation") or item.get("text", ""),
+        }
+        for item in paragraph_results
+        if item.get("label") == "suspicious"
+    ]
 
     detection_task.text_detection_results = store_review_task_results(
         detection_task=detection_task,
         paper_file=paper_file,
         review_file=review_file,
         results_payload={
-        "document": {
-            "paper_file_id": paper_file.id,
-            "paper_file_name": paper_file.file_name,
-            "review_file_id": review_file.id,
-            "review_file_name": review_file.file_name,
-            "paper_segment_count": len(paper_document["segments"]),
-            "review_segment_count": len(review_document["segments"]),
-        },
-        "paragraph_results": paragraph_results,
-        "suspicious_paragraphs": suspicious_paragraphs,
-        "relevance_results": relevance_results,
+            "document": {
+                "paper_file_id": paper_file.id,
+                "paper_file_name": paper_file.file_name,
+                "review_file_id": review_file.id,
+                "review_file_name": review_file.file_name,
+                "paper_segment_count": len(paper_document["segments"]),
+                "review_segment_count": len(review_document["segments"]),
+                "paper_paragraph_count": len(paper_document["paragraphs"]),
+                "review_paragraph_count": len(review_document["paragraphs"]),
+            },
+            "paragraph_results": paragraph_results,
+            "suspicious_paragraphs": suspicious_paragraphs,
+            "review_analysis_results": analysis_results,
+            "relevance_results": analysis_results.get("paragraph_results", []),
         },
     )
     detection_task.status = "completed"
@@ -142,3 +199,20 @@ def _mark_review_task_failed(detection_task, message):
     detection_task.completion_time = timezone.now()
     detection_task.save(update_fields=["status", "error_message", "completion_time"])
     return message
+
+
+def _build_document_from_text(text_content):
+    return {
+        "text_content": text_content,
+        "paragraphs": extract_document_paragraphs(text_content),
+        "references": extract_document_references(text_content),
+        "segments": split_text_into_segments(text_content),
+    }
+
+
+def _get_text_override(detection_task, key="text_override"):
+    raw_payload = detection_task.text_detection_results
+    if not isinstance(raw_payload, dict):
+        return ""
+    text_override = raw_payload.get(key)
+    return text_override if isinstance(text_override, str) else ""

@@ -57,6 +57,12 @@
     :paper-editable-text="paperEditableText"
     :paper-text-preview-loading="paperTextPreviewLoading"
     :paper-text-preview-error="paperTextPreviewError"
+    :review-paper-editable-text="reviewPaperEditableText"
+    :review-paper-text-preview-loading="reviewPaperTextPreviewLoading"
+    :review-paper-text-preview-error="reviewPaperTextPreviewError"
+    :review-editable-text="reviewEditableText"
+    :review-text-preview-loading="reviewTextPreviewLoading"
+    :review-text-preview-error="reviewTextPreviewError"
     @back="returnToUpload"
     @update-selected-images="updateSelectedImages"
     @update-tag="handleSelectedTag"
@@ -66,7 +72,11 @@
     @update:paperEnableImageDetection="updatePaperEnableImageDetection"
     @configure-paper-methods="openPaperMethodSelection"
     @reload-paper-text-preview="reloadPaperTextPreview"
+    @reload-review-paper-text-preview="reloadReviewPaperTextPreview"
+    @reload-review-text-preview="reloadReviewTextPreview"
     @update:paperEditableText="updatePaperEditableText"
+    @update:reviewPaperEditableText="updateReviewPaperEditableText"
+    @update:reviewEditableText="updateReviewEditableText"
     @submit-image-task="handleNext"
     @submit-resource-task="handleResourceTaskNext"
   />
@@ -141,6 +151,12 @@ const resourceDomainTag = ref('')
 const paperEditableText = ref('')
 const paperTextPreviewLoading = ref(false)
 const paperTextPreviewError = ref('')
+const reviewEditableText = ref('')
+const reviewTextPreviewLoading = ref(false)
+const reviewTextPreviewError = ref('')
+const reviewPaperEditableText = ref('')
+const reviewPaperTextPreviewLoading = ref(false)
+const reviewPaperTextPreviewError = ref('')
 const taskSelectionDialog = ref(false)
 const pendingDetectionPayload = ref<PendingDetectionPayload | null>(null)
 const taskSelectionContext = ref<TaskSelectionContext>('image')
@@ -166,6 +182,12 @@ watch(detectionType, () => {
   uploadProgress.value = 0
   paperEnableImageDetection.value = true
   paperMethodSwitches.value = createDefaultMethodSwitches()
+  reviewEditableText.value = ''
+  reviewTextPreviewLoading.value = false
+  reviewTextPreviewError.value = ''
+  reviewPaperEditableText.value = ''
+  reviewPaperTextPreviewLoading.value = false
+  reviewPaperTextPreviewError.value = ''
 })
 
 const resourceDomainOptions: TaskOption[] = [
@@ -282,6 +304,14 @@ const updatePaperEditableText = (value: string) => {
   paperEditableText.value = value
 }
 
+const updateReviewEditableText = (value: string) => {
+  reviewEditableText.value = value
+}
+
+const updateReviewPaperEditableText = (value: string) => {
+  reviewPaperEditableText.value = value
+}
+
 const loadPaperTextPreview = async (resourceFileId: number) => {
   paperTextPreviewLoading.value = true
   paperTextPreviewError.value = ''
@@ -306,6 +336,58 @@ const reloadPaperTextPreview = async () => {
     return
   }
   await loadPaperTextPreview(resourceFileId)
+}
+
+const loadReviewTextPreview = async (resourceFileId: number) => {
+  reviewTextPreviewLoading.value = true
+  reviewTextPreviewError.value = ''
+  try {
+    const response = await uploadApi.getResourceTextPreview(resourceFileId)
+    reviewEditableText.value = response?.data?.text_content || ''
+    if (response?.data?.text_truncated) {
+      reviewTextPreviewError.value = '提取文本过长，当前为截断预览（前 60000 字）。'
+    }
+  } catch (error: any) {
+    reviewEditableText.value = ''
+    reviewTextPreviewError.value = error?.response?.data?.message || '提取 Review 文本预览失败。'
+  } finally {
+    reviewTextPreviewLoading.value = false
+  }
+}
+
+const loadReviewPaperTextPreview = async (resourceFileId: number) => {
+  reviewPaperTextPreviewLoading.value = true
+  reviewPaperTextPreviewError.value = ''
+  try {
+    const response = await uploadApi.getResourceTextPreview(resourceFileId)
+    reviewPaperEditableText.value = response?.data?.text_content || ''
+    if (response?.data?.text_truncated) {
+      reviewPaperTextPreviewError.value = '提取文本过长，当前为截断预览（前 60000 字）。'
+    }
+  } catch (error: any) {
+    reviewPaperEditableText.value = ''
+    reviewPaperTextPreviewError.value = error?.response?.data?.message || '提取论文文本预览失败。'
+  } finally {
+    reviewPaperTextPreviewLoading.value = false
+  }
+}
+
+const reloadReviewTextPreview = async () => {
+  const resourceFileId = uploadedResourceFiles.value.find(file => file.resource_type === 'review_file')?.file_id
+  if (!resourceFileId) {
+    reviewTextPreviewError.value = '当前没有可预览的 Review 文件。'
+    return
+  }
+  await loadReviewTextPreview(resourceFileId)
+}
+
+const reloadReviewPaperTextPreview = async () => {
+  const resourceFileId = uploadedResourceFiles.value.find(file => file.resource_type === 'review_paper')?.file_id
+  if (!resourceFileId) {
+    reviewPaperTextPreviewError.value = '当前没有可预览的论文文件。'
+    return
+  }
+  await loadReviewPaperTextPreview(resourceFileId)
 }
 
 const uploadSingleFile = async (
@@ -479,6 +561,8 @@ const submitUpload = async () => {
       { file_id: paperData.file_id, name: reviewPaperFile.value.name, resource_type: 'review_paper' },
       { file_id: reviewData.file_id, name: reviewFile.value.name, resource_type: 'review_file' },
     ]
+    await loadReviewPaperTextPreview(paperData.file_id)
+    await loadReviewTextPreview(reviewData.file_id)
     resourceTaskName.value = `Review 检测 ${new Date().toISOString().slice(0, 19)}`
     uploadProgress.value = 100
     snackbar.showMessage('Review 文件上传成功，请确认后创建任务。', 'success')
@@ -533,6 +617,8 @@ const handleResourceTaskNext = async () => {
       if_use_llm?: boolean
       method_switches?: Record<string, boolean>
       text_override?: string
+      paper_text_override?: string
+      review_text_override?: string
     } = {
       task_type: taskType,
       task_name: resourceTaskName.value,
@@ -547,6 +633,13 @@ const handleResourceTaskNext = async () => {
       payload.if_use_llm = Boolean(payload.method_switches.llm)
       if (paperEditableText.value.trim()) {
         payload.text_override = paperEditableText.value.trim()
+      }
+    } else {
+      if (reviewPaperEditableText.value.trim()) {
+        payload.paper_text_override = reviewPaperEditableText.value.trim()
+      }
+      if (reviewEditableText.value.trim()) {
+        payload.review_text_override = reviewEditableText.value.trim()
       }
     }
 
@@ -616,6 +709,12 @@ const returnToUpload = () => {
   paperEditableText.value = ''
   paperTextPreviewLoading.value = false
   paperTextPreviewError.value = ''
+  reviewEditableText.value = ''
+  reviewTextPreviewLoading.value = false
+  reviewTextPreviewError.value = ''
+  reviewPaperEditableText.value = ''
+  reviewPaperTextPreviewLoading.value = false
+  reviewPaperTextPreviewError.value = ''
   pendingDetectionPayload.value = null
   taskSelectionDialog.value = false
   taskSelectionContext.value = 'image'

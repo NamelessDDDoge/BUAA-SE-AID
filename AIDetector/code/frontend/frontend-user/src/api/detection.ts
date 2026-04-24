@@ -12,7 +12,7 @@ export interface DetectionTaskQuery {
 
 export default {
   listUserTasks(params: DetectionTaskQuery) {
-    return http.get('/user-tasks/', { params })
+    return http.get('/user-tasks/', { params, timeout: 30000 })
   },
 
   submitDetection(data: any) {
