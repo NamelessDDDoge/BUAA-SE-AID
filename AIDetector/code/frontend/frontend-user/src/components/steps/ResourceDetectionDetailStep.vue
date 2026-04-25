@@ -66,6 +66,24 @@
           {{ task.resource_split_note }}
         </v-alert>
 
+        <v-card v-if="task.resource_files?.length" class="mb-6" elevation="2" rounded="lg">
+          <v-card-title class="text-h6">上传文件</v-card-title>
+          <v-card-text>
+            <v-list density="compact">
+              <v-list-item v-for="file in task.resource_files" :key="file.file_id">
+                <v-list-item-title>{{ file.file_name }}</v-list-item-title>
+                <v-list-item-subtitle>{{ file.resource_type }} · {{ formatFileSize(file.file_size) }}</v-list-item-subtitle>
+                <template #append>
+                  <div class="d-flex ga-2">
+                    <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
+                    <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
+                  </div>
+                </template>
+              </v-list-item>
+            </v-list>
+          </v-card-text>
+        </v-card>
+
         <v-card v-if="isPaper" class="mb-6" elevation="2" rounded="lg">
           <v-card-title class="text-h6">论文段落统计与整篇评价</v-card-title>
           <v-card-text>
@@ -225,7 +243,7 @@
                 当前 Review 检测结果为疑似造假。选择审核员后将提交本任务全部内容进行人工审核。
               </template>
               <template v-else>
-                当前 Review 检测结果为正常，无需发起人工审核。
+                当前 Review 检测结果为正常。选择审核员后仍可提交本任务全部内容进行人工审核。
               </template>
             </v-alert>
             <v-autocomplete
@@ -240,15 +258,41 @@
               variant="outlined"
               hide-details
             />
+            <v-textarea
+              v-model="reviewReason"
+              class="mt-4"
+              label="申请人工审核理由"
+              placeholder="请说明为什么需要人工审核"
+              rows="3"
+              variant="outlined"
+              counter="500"
+              :rules="[value => !!String(value || '').trim() || '请填写申请理由']"
+            />
           </v-card-text>
         </v-card>
       </v-col>
     </v-row>
   </v-container>
+
+  <v-dialog v-model="previewDialog" max-width="900">
+    <v-card>
+      <v-card-title class="d-flex align-center">
+        <span class="text-h6">{{ previewTitle }}</span>
+        <v-spacer />
+        <v-btn icon="mdi-close" variant="text" @click="previewDialog = false" />
+      </v-card-title>
+      <v-card-text>
+        <v-alert v-if="previewError" type="warning" variant="tonal" class="mb-4">{{ previewError }}</v-alert>
+        <v-progress-linear v-if="previewLoading" indeterminate color="primary" class="mb-4" />
+        <pre v-else class="file-preview">{{ previewText }}</pre>
+      </v-card-text>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import uploadApi from '@/api/upload'
 
 interface ResourceFile {
   file_id: number
@@ -256,6 +300,7 @@ interface ResourceFile {
   resource_type: string
   file_type: string
   file_size: number
+  file_url?: string | null
 }
 
 interface TaskDetail {
@@ -279,6 +324,19 @@ interface TaskDetail {
       risk_score?: number
       risk_level?: string
       summary?: string
+      template_like_level?: string
+      wrongness_level?: string
+      relevance_level?: string
+      key_findings?: string[]
+    }
+    review_analysis_results?: {
+      overall?: {
+        template_like_level?: string
+        wrongness_level?: string
+        relevance_level?: string
+        summary?: string
+        key_findings?: string[]
+      }
     }
   }
 }
@@ -296,11 +354,17 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'download'): void
-  (e: 'request-review', payload: { reviewers: number[]; selected_file_ids: number[] }): void
+  (e: 'request-review', payload: { reviewers: number[]; selected_file_ids: number[]; reason: string }): void
 }>()
 
 const selectedFileIds = ref<number[]>([])
 const selectedReviewers = ref<number[]>([])
+const reviewReason = ref('')
+const previewDialog = ref(false)
+const previewLoading = ref(false)
+const previewTitle = ref('')
+const previewText = ref('')
+const previewError = ref('')
 
 const fakeFiles = computed(() => props.task.fake_resource_files || [])
 const normalFiles = computed(() => props.task.normal_resource_files || [])
@@ -439,12 +503,12 @@ const canSubmit = computed(() => {
     return false
   }
   if (reviewMode.value) {
-    return selectedReviewers.value.length > 0 && fakeFiles.value.length > 0
+    return selectedReviewers.value.length > 0 && props.task.resource_files.length > 0 && reviewReason.value.trim().length > 0
   }
   if (isPaper.value) {
-    return selectedReviewers.value.length > 0 && props.task.resource_files.length > 0
+    return selectedReviewers.value.length > 0 && props.task.resource_files.length > 0 && reviewReason.value.trim().length > 0
   }
-  return selectedReviewers.value.length > 0 && selectedFileIds.value.length > 0
+  return selectedReviewers.value.length > 0 && selectedFileIds.value.length > 0 && reviewReason.value.trim().length > 0
 })
 
 const isAllSelected = (files: ResourceFile[]) => {
@@ -480,6 +544,7 @@ const submitReview = () => {
   emit('request-review', {
     reviewers: selectedReviewers.value,
     selected_file_ids: selectedIds,
+    reason: reviewReason.value.trim(),
   })
 }
 
@@ -501,4 +566,50 @@ const formatFileSize = (size: number) => {
   if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(2)} MB`
   return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
+
+const getFileUrl = (file: ResourceFile) => {
+  if (!file.file_url) return ''
+  if (/^https?:\/\//.test(file.file_url)) return file.file_url
+  return `${import.meta.env.VITE_API_URL || ''}${file.file_url}`
+}
+
+const downloadFile = (file: ResourceFile) => {
+  const url = getFileUrl(file)
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = file.file_name
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+const previewFile = async (file: ResourceFile) => {
+  previewDialog.value = true
+  previewLoading.value = true
+  previewTitle.value = file.file_name
+  previewText.value = ''
+  previewError.value = ''
+  try {
+    const response = await uploadApi.getResourceTextPreview(file.file_id)
+    previewText.value = response.data?.text_content || '暂无可预览文本。'
+    if (response.data?.text_truncated) {
+      previewError.value = '文件较长，当前仅展示前 60000 字。'
+    }
+  } catch (error: any) {
+    previewError.value = error?.response?.data?.message || '当前文件暂不支持文本预览，请下载查看。'
+  } finally {
+    previewLoading.value = false
+  }
+}
 </script>
+
+<style scoped>
+.file-preview {
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+}
+</style>

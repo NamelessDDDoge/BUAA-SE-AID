@@ -50,6 +50,12 @@
           </v-chip>
         </template>
 
+        <template v-slot:item.task_type="{ item }">
+          <v-chip size="small" :color="getTaskTypeColor(item.task_type)" variant="tonal">
+            {{ getTaskTypeName(item.task_type) }}
+          </v-chip>
+        </template>
+
         <template v-slot:item.progress="{ item }">
           <div class="d-flex align-center">
             <v-progress-linear
@@ -168,6 +174,8 @@ const snackbar = useSnackbarStore()
 
 interface Task {
   review_request_id: number
+  task_name: string
+  task_type: 'image' | 'paper' | 'review'
   request_time: string
   status: string
   progress: string
@@ -175,6 +183,8 @@ interface Task {
 
 const headers = [
   { title: '任务ID', key: 'review_request_id', align: 'start' },
+  { title: '任务名称', key: 'task_name', align: 'center' },
+  { title: '任务类型', key: 'task_type', align: 'center' },
   { title: '提交时间', key: 'request_time', align: 'center' },
   { title: '状态', key: 'status', align: 'center' },
   { title: '进度', key: 'progress', align: 'center' },
@@ -242,6 +252,18 @@ const getStatusName = (status: string) => {
       return status
   }
 }
+
+const getTaskTypeName = (taskType: string) => ({
+  image: '图像',
+  paper: '论文',
+  review: 'Review',
+}[taskType] || '未知')
+
+const getTaskTypeColor = (taskType: string) => ({
+  image: 'primary',
+  paper: 'deep-orange',
+  review: 'teal',
+}[taskType] || 'grey')
 
 const getProgressValue = (progress: string) => {
   const [completed, total] = progress.split('/').map(Number)
@@ -353,6 +375,8 @@ const fetchTasks = async (page: number, pageSize: number) => {
     
     tasks.value = taskList.map((task: any) => ({
       review_request_id: task.review_request_id,
+      task_name: task.task_name || '-',
+      task_type: task.task_type || 'image',
       request_time: task.request_time,
       status: task.status,
       progress: task.progress

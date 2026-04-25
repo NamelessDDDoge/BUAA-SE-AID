@@ -2,9 +2,9 @@
   <v-container class="page-shell">
     <v-row class="mb-6">
       <v-col cols="12" md="8">
-        <h1 class="text-h4 font-weight-bold">人工审核</h1>
+        <h1 class="text-h4 font-weight-bold">人工审核管理</h1>
         <div class="text-body-2 text-medium-emphasis mt-2">
-          统一查看人工审核相关任务与审核申请，并支持管理员审批处理。
+          查看出版社提交的人工审核申请，并对图像、论文和 Review 审核请求进行审批。
         </div>
       </v-col>
       <v-col cols="12" md="4">
@@ -29,11 +29,16 @@
 
     <v-card elevation="2" rounded="lg">
       <v-card-title class="d-flex align-center">
-        <span class="text-h6">审核申请</span>
+        <span class="text-h6">审核请求</span>
         <v-spacer />
-        <span class="text-caption text-medium-emphasis">共 {{ totalRequests }} 条记录</span>
+        <span class="text-caption text-medium-emphasis">共 {{ totalRequests }} 条</span>
       </v-card-title>
       <v-data-table :headers="headers" :items="requests" :loading="loadingRequests" hide-default-footer>
+        <template #item.task_type="{ item }">
+          <v-chip size="small" variant="tonal" :color="item.task_type === 'paper' ? 'deep-orange' : item.task_type === 'review' ? 'teal' : 'primary'">
+            {{ getTaskTypeName(item.task_type) }}
+          </v-chip>
+        </template>
         <template #item.state="{ item }">
           <v-chip size="small" :color="getStateColor(item.state)">{{ getStateName(item.state) }}</v-chip>
         </template>
@@ -60,7 +65,7 @@
 
     <v-dialog v-model="showReviewDialog" max-width="800">
       <v-card class="elevation-4">
-        <v-card-title class="text-h6 font-weight-bold">审核申请详情</v-card-title>
+        <v-card-title class="text-h6 font-weight-bold">审核请求详情</v-card-title>
         <v-card-text>
           <div v-if="selectedRequest" class="d-flex flex-column ga-4">
             <div class="d-flex align-center">
@@ -77,12 +82,37 @@
 
             <div v-if="reviewDetails" class="d-flex flex-column ga-4">
               <div v-if="reviewDetails.reason">
-                <div class="text-subtitle-1 font-weight-bold mb-2">申请原因</div>
+                <div class="text-subtitle-1 font-weight-bold mb-2">申请理由</div>
                 <div class="text-body-1">{{ reviewDetails.reason }}</div>
               </div>
 
+              <div v-if="reviewDetails.selected_files?.length">
+                <div class="text-subtitle-1 font-weight-bold mb-2">已选文件</div>
+                <v-list density="compact">
+                  <v-list-item v-for="file in reviewDetails.selected_files" :key="file.id || file.file_id">
+                    <v-list-item-title>{{ file.file_name }}</v-list-item-title>
+                    <v-list-item-subtitle>{{ file.resource_type }} · {{ file.file_type }}</v-list-item-subtitle>
+                    <template #append>
+                      <div class="d-flex ga-2">
+                        <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
+                        <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
+                      </div>
+                    </template>
+                  </v-list-item>
+                </v-list>
+              </div>
+
+              <div v-if="reviewDetails.imgs?.length">
+                <div class="text-subtitle-1 font-weight-bold mb-2">图像</div>
+                <v-row>
+                  <v-col v-for="img in reviewDetails.imgs" :key="img.id" cols="4">
+                    <v-img :src="getImageUrl(img.url)" height="80" cover class="rounded" />
+                  </v-col>
+                </v-row>
+              </div>
+
               <div>
-                <div class="text-subtitle-1 font-weight-bold mb-2">指派审核人</div>
+                <div class="text-subtitle-1 font-weight-bold mb-2">指定审核员</div>
                 <div class="d-flex flex-wrap ga-4">
                   <div v-for="person in reviewDetails.persons" :key="person.id" class="d-flex align-center">
                     <v-avatar size="32" class="mr-2">
@@ -102,6 +132,21 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <v-dialog v-model="previewDialog" max-width="900">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <span class="text-h6">{{ previewTitle }}</span>
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" @click="previewDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <v-alert v-if="previewError" type="warning" variant="tonal" class="mb-4">{{ previewError }}</v-alert>
+          <v-progress-linear v-if="previewLoading" indeterminate color="primary" class="mb-4" />
+          <pre v-else class="file-preview">{{ previewText }}</pre>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
   </v-container>
 </template>
 
@@ -115,8 +160,10 @@ const snackbar = useSnackbarStore()
 
 interface ReviewRequest {
   id: number
-  taskName: string
-  taskType: string
+  request_type: 'image' | 'resource'
+  task_type: 'image' | 'paper' | 'review'
+  task_id?: number | null
+  task_name?: string | null
   username: string
   avatar: string
   state: string
@@ -124,18 +171,20 @@ interface ReviewRequest {
 }
 
 const headers = [
-  { title: '资源类型', key: 'taskType', align: 'center' as const },
-  { title: '资源名称', key: 'taskName', align: 'start' as const },
   { title: '发布者', key: 'username', align: 'start' as const },
+  { title: '任务类型', key: 'task_type', align: 'center' as const },
   { title: '状态', key: 'state', align: 'center' as const },
   { title: '提交时间', key: 'time', align: 'center' as const },
   { title: '操作', key: 'actions', align: 'center' as const, sortable: false },
 ]
 
-const taskTypeFilter = ref('image')
+type ReviewTaskType = '' | 'image' | 'paper' | 'review'
+
+const taskTypeFilter = ref<ReviewTaskType>('')
 const taskTypeOptions = [
+  { label: '全部', value: '', color: 'primary' },
   { label: '图像', value: 'image', color: 'primary' },
-  { label: '评审', value: 'review', color: 'teal' },
+  { label: 'Review', value: 'review', color: 'teal' },
   { label: '论文', value: 'paper', color: 'deep-orange' },
 ]
 
@@ -150,8 +199,55 @@ const showReviewDialog = ref(false)
 const selectedRequest = ref<ReviewRequest | null>(null)
 const reviewDetails = ref<any>(null)
 const rejectReason = ref('')
+const previewDialog = ref(false)
+const previewLoading = ref(false)
+const previewTitle = ref('')
+const previewText = ref('')
+const previewError = ref('')
 
 const getImageUrl = (url: string) => import.meta.env.VITE_API_URL + url
+
+const getTaskTypeName = (taskType: string) => ({
+  image: '图像',
+  paper: '论文',
+  review: 'Review',
+}[taskType] || taskType)
+
+const getFileUrl = (file: any) => {
+  if (!file?.file_url) return ''
+  if (/^https?:\/\//.test(file.file_url)) return file.file_url
+  return `${import.meta.env.VITE_API_URL || ''}${file.file_url}`
+}
+
+const downloadFile = (file: any) => {
+  const url = getFileUrl(file)
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = file.file_name
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+const previewFile = async (file: any) => {
+  previewDialog.value = true
+  previewLoading.value = true
+  previewTitle.value = file.file_name
+  previewText.value = ''
+  previewError.value = ''
+  try {
+    const response = await reviewApi.getResourceTextPreview(file.file_id || file.id)
+    previewText.value = response.data?.text_content || '暂无可预览文本。'
+    if (response.data?.text_truncated) {
+      previewError.value = '文件较长，当前仅展示前 60000 字。'
+    }
+  } catch (error: any) {
+    previewError.value = error?.response?.data?.message || '当前文件暂不支持预览，请下载查看。'
+  } finally {
+    previewLoading.value = false
+  }
+}
 
 const getStateColor = (state: string) => ({
   pending: 'warning',
@@ -163,13 +259,10 @@ const getStateName = (state: string) => ({
   pending: '待审核',
   refused: '已拒绝',
   accepted: '已通过',
+  pending: '待审核',
+  refused: '已拒绝',
+  accepted: '已通过',
 }[state] || state)
-
-const taskTypeLabel = (taskType: string) => ({
-  image: '图像',
-  paper: '论文',
-  review: '评审',
-}[taskType] || taskType)
 
 const fetchRequests = async () => {
   loadingRequests.value = true
@@ -178,13 +271,15 @@ const fetchRequests = async () => {
       page: currentPage.value,
       page_size: pageSize.value,
       query: searchQuery.value || '',
-      task_type: taskTypeFilter.value,
+      task_type: taskTypeFilter.value || '',
     })
     const { requests: requestList, current_page, total_pages, total_requests } = response.data
     requests.value = requestList.map((request: any) => ({
       id: request.id,
-      taskName: request.task_name || '-',
-      taskType: taskTypeLabel(request.task_type),
+      request_type: request.request_type || 'image',
+      task_type: request.task_type || 'image',
+      task_id: request.task_id,
+      task_name: request.task_name,
       username: request.username,
       avatar: request.avatar ? import.meta.env.VITE_API_URL + request.avatar : '',
       state: request.state,
@@ -195,7 +290,7 @@ const fetchRequests = async () => {
     totalRequests.value = total_requests
   } catch (error) {
     console.error('Failed to fetch review requests:', error)
-    snackbar.showMessage('获取审核申请失败', 'error')
+    snackbar.showMessage('获取审核请求失败。', 'error')
   } finally {
     loadingRequests.value = false
   }
@@ -204,12 +299,12 @@ const fetchRequests = async () => {
 const openReviewDialog = async (request: ReviewRequest) => {
   selectedRequest.value = request
   try {
-    const response = await reviewApi.getReviewRequestDetails(request.id)
+    const response = await reviewApi.getReviewRequestDetails(request.id, request.request_type)
     reviewDetails.value = response.data
     showReviewDialog.value = true
   } catch (error) {
     console.error('Failed to fetch review request detail:', error)
-    snackbar.showMessage('获取审核申请详情失败', 'error')
+    snackbar.showMessage('获取审核请求详情失败。', 'error')
   }
 }
 
@@ -219,14 +314,15 @@ const handleReviewRequest = async (choice: number) => {
     await reviewApi.handleReviewRequest(selectedRequest.value.id, {
       choice,
       reason: rejectReason.value,
+      request_type: selectedRequest.value.request_type,
     })
-    snackbar.showMessage(choice === 1 ? '审核申请已通过' : '审核申请已拒绝', 'success')
+    snackbar.showMessage(choice === 1 ? '审核请求已通过。' : '审核请求已拒绝。', 'success')
     showReviewDialog.value = false
     rejectReason.value = ''
     await fetchRequests()
   } catch (error) {
     console.error('Failed to handle review request:', error)
-    snackbar.showMessage('处理审核申请失败', 'error')
+    snackbar.showMessage('处理审核请求失败。', 'error')
   }
 }
 
@@ -241,9 +337,8 @@ const handlePageSizeChange = (size: number) => {
   fetchRequests()
 }
 
-watch(taskTypeFilter, () => {
-  currentPage.value = 1
-  fetchRequests()
+watch(taskTypeFilter, async () => {
+  await fetchRequests()
 })
 
 onMounted(async () => {
@@ -254,5 +349,13 @@ onMounted(async () => {
 <style scoped>
 .page-shell {
   max-width: 1400px;
+}
+
+.file-preview {
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
 }
 </style>

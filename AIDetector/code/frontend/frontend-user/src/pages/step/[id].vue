@@ -105,12 +105,13 @@ const downloadTaskReport = async () => {
   }
 }
 
-const handleResourceReviewRequest = async (payload: { reviewers: number[]; selected_file_ids: number[] }) => {
+const handleResourceReviewRequest = async (payload: { reviewers: number[]; selected_file_ids: number[]; reason: string }) => {
   try {
     const resp = await resourceTasksApi.submitReviewRequest({
       task_id: taskId.value,
       reviewers: payload.reviewers,
       selected_file_ids: payload.selected_file_ids,
+      reason: payload.reason,
     })
     if (resp?.data?.placeholder) {
       snackbar.showMessage('The placeholder review-request API accepted the submission.', 'success')

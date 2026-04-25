@@ -149,6 +149,16 @@
                       :title="item.raw.username"></v-list-item>
                   </template>
                 </v-autocomplete>
+                <v-textarea
+                  v-model="reviewReason"
+                  class="mt-4"
+                  label="申请人工审核理由"
+                  placeholder="请说明为什么需要人工审核"
+                  rows="3"
+                  variant="outlined"
+                  counter="500"
+                  :rules="[value => !!String(value || '').trim() || '请填写申请理由']"
+                />
               </v-card-text>
             </v-card>
           </v-col>
@@ -359,11 +369,12 @@ const searchQuery = ref('')
 const isSearching = ref(false)
 const allPeople = ref<Person[]>([])
 const selectedPeopleList = ref<Person[]>([])
+const reviewReason = ref('')
 
 // 计算是否可以提交
 const canSubmit = computed(() => {
   const hasSelectedImages = selectedFakeCount.value > 0 || selectedRealCount.value > 0
-  return hasSelectedImages && selectedPeopleList.value.length > 0
+  return hasSelectedImages && selectedPeopleList.value.length > 0 && reviewReason.value.trim().length > 0
 })
 
 // 提交人工审核
@@ -375,7 +386,8 @@ const submitReview = async () => {
     ]
     await publisher.dispatchAnnual({
       image_ids: reviewImages,
-      reviewers: selectedPeopleList.value
+      reviewers: selectedPeopleList.value,
+      reason: reviewReason.value.trim(),
     })
     snackbar.showMessage('已提交人工复查任务，请等待管理员审核', 'success')
     router.push('/annual')

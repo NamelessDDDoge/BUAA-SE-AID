@@ -52,8 +52,41 @@ class SingleImageMethod:
     def set_method_parameters(self, parameters):
         normalized = dict(parameters or {})
         switches = normalized.pop('method_switches', None)
-        self.method_parameters.update(normalized)
+        self.method_parameters.update(self._normalize_method_parameters(normalized))
         self.method_switches_override = self._normalize_method_switches(switches)
+        self._ensure_enabled_urn_models_loaded()
+
+    def _normalize_method_parameters(self, parameters):
+        sanitized = {}
+        for key, value in parameters.items():
+            if value is None:
+                continue
+            sanitized[key] = value
+
+        if 'cmd_block_size' in parameters:
+            try:
+                cmd_block_size = int(parameters.get('cmd_block_size'))
+            except (TypeError, ValueError):
+                cmd_block_size = int(self.method_parameters.get('cmd_block_size', 64) or 64)
+            if cmd_block_size < 2:
+                cmd_block_size = 64
+            sanitized['cmd_block_size'] = cmd_block_size
+
+        if 'urn_k' in parameters:
+            try:
+                urn_k = float(parameters.get('urn_k'))
+            except (TypeError, ValueError):
+                urn_k = float(self.method_parameters.get('urn_k', 0.3) or 0.3)
+            sanitized['urn_k'] = urn_k
+
+        if 'if_use_llm' in parameters:
+            llm_raw = parameters.get('if_use_llm')
+            if llm_raw is None:
+                sanitized['if_use_llm'] = bool(self.method_parameters.get('if_use_llm', True))
+            else:
+                sanitized['if_use_llm'] = bool(llm_raw)
+
+        return sanitized
 
     def get_methods(self):
         return [
@@ -101,6 +134,22 @@ class SingleImageMethod:
             return self.method_switches_override.get(method_name, False)
         return is_method_enabled('single_image', method_name)
 
+    def _ensure_model_loaded(self, method_name, net_attr, hp_attr, weight_path):
+        if not self._is_method_enabled(method_name):
+            return
+        if getattr(self, net_attr) is not None and getattr(self, hp_attr) is not None:
+            return
+        net, hp = urn_initial_model(weight_path)
+        setattr(self, net_attr, net)
+        setattr(self, hp_attr, hp)
+
+    def _ensure_enabled_urn_models_loaded(self):
+        self._ensure_model_loaded('urn_coarse_v2', 'coarse_v2_net', 'coarse_v2_hp', 'weight/Coarse_v2.pkl')
+        self._ensure_model_loaded('urn_blurring', 'blur_net', 'blur_hp', 'weight/blurring.pkl')
+        self._ensure_model_loaded('urn_brute_force', 'brute_net', 'brute_hp', 'weight/brute_force.pkl')
+        self._ensure_model_loaded('urn_contrast', 'contrast_net', 'contrast_hp', 'weight/contrast.pkl')
+        self._ensure_model_loaded('urn_inpainting', 'inpating_net', 'inpating_hp', 'weight/inpainting.pkl')
+
     def get_method_parameters_name_and_type(self):
         # automatically get method parameters name and type
         key = self.method_parameters.keys()
@@ -135,6 +184,14 @@ class SingleImageMethod:
         return 'urn_inpainting', urn_infer(image_path, self.inpating_net, self.inpating_hp, self.method_parameters['urn_k'])
 
     def cmd_method(self, image_paths):
+        try:
+            bs = int(self.method_parameters.get('cmd_block_size', 64) or 64)
+        except (TypeError, ValueError):
+            bs = 64
+        if bs < 2:
+            bs = 64
+        step = max(1, bs // 2)
+
         def _process(path):
             print(path)
             img = cv2.imread(path)
@@ -142,8 +199,6 @@ class SingleImageMethod:
             h, w = gray.shape
             matches = []
 
-            bs = self.method_parameters['cmd_block_size']
-            step = bs // 2
             for y in range(0, h - bs, step):
                 for x in range(0, w - bs, step):
                     block = gray[y:y + bs, x:x + bs]
@@ -258,6 +313,8 @@ class SingleImageMethod:
         # 获取当前脚本所在目录
         if not self.method_parameters['if_use_llm']:
             return None
+        if OpenAI is None:
+            return {'error': 'openai package is not installed; disable llm or install openai'}
         import os
         import shutil
         current_dir = os.path.dirname(os.path.abspath(__file__))

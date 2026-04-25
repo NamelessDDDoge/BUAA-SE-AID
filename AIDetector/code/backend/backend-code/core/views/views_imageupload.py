@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 import os
 
-from ..models import FileManagement, ImageUpload, User
+from ..models import FileManagement, ImageUpload, ResourceReviewRequest, User
 from ..services import log_user_event
 from ..services.resources import save_uploaded_resource
 from ..services.resources.document_preprocessor import preprocess_document
@@ -170,8 +170,16 @@ def download_uploaded_resource(request, file_id):
 @permission_classes([IsAuthenticated])
 def get_resource_text_preview(request, file_id):
     try:
-        file_management = FileManagement.objects.get(id=file_id, user=request.user)
+        file_management = FileManagement.objects.get(id=file_id)
     except FileManagement.DoesNotExist:
+        return Response({"message": "File not found"}, status=404)
+
+    can_access = (
+        file_management.user_id == request.user.id
+        or request.user.is_staff
+        or ResourceReviewRequest.objects.filter(selected_files=file_management, reviewers=request.user).exists()
+    )
+    if not can_access:
         return Response({"message": "File not found"}, status=404)
 
     if file_management.resource_type not in {"paper", "review_paper", "review_file"}:

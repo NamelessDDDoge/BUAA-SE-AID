@@ -8,8 +8,67 @@
       <span class="text-h6 font-weight-medium">返回我的任务</span>
     </div>
 
+    <v-card v-if="requestType === 'resource'" class="pa-6" rounded="lg" elevation="2">
+      <div class="text-h5 font-weight-bold mb-3">资源人工审核任务</div>
+      <div class="text-body-2 text-medium-emphasis mb-4">
+        任务类型：{{ resourceTaskType }} · 任务名称：{{ resourceTaskName || '-' }}
+      </div>
+
+      <v-alert type="info" variant="tonal" class="mb-4">
+        {{ resourceReason || '请根据系统结果完成简要专家复核。' }}
+      </v-alert>
+
+      <v-card variant="outlined" class="mb-4">
+        <v-card-title class="text-subtitle-1">待审核资源</v-card-title>
+        <v-card-text>
+          <v-list density="compact">
+            <v-list-item v-for="file in resourceFiles" :key="file.id || file.file_id">
+              <v-list-item-title>{{ file.file_name }}</v-list-item-title>
+              <v-list-item-subtitle>{{ file.resource_type }} · {{ file.file_type }}</v-list-item-subtitle>
+              <template #append>
+                <div class="d-flex ga-2">
+                  <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
+                  <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
+                </div>
+              </template>
+            </v-list-item>
+          </v-list>
+        </v-card-text>
+      </v-card>
+
+      <v-select
+        v-model="resourceDecision"
+        :items="resourceDecisionOptions"
+        item-title="title"
+        item-value="value"
+        label="最终结论"
+        variant="outlined"
+        class="mb-4"
+      />
+
+      <v-textarea
+        v-model="resourceSteps"
+        rows="4"
+        variant="outlined"
+        label="审核步骤与关键判断（每行一条）"
+        class="mb-4"
+      />
+
+      <v-textarea
+        v-model="resourceComment"
+        rows="4"
+        variant="outlined"
+        label="审核备注"
+        class="mb-4"
+      />
+
+      <div class="d-flex justify-end">
+        <v-btn color="primary" @click="submitResourceReview">提交审核</v-btn>
+      </div>
+    </v-card>
+
     <!-- 主要内容区域 -->
-    <div class="main-content rounded-lg">
+    <div v-else class="main-content rounded-lg">
       <!-- 顶部信息区域 -->
       <div class="info-section pa-6">
         <div class="content-wrapper d-flex justify-center">
@@ -181,13 +240,29 @@
     <!-- 绘制弹窗 -->
     <DrawingDialog v-model="showDrawingDialog" :image-url="currentImage ? getImageUrl(currentImage.url) : ''"
       :initial-paths="currentDimensionPaths" @save="handleDrawingSave" />
+
+    <v-dialog v-model="previewDialog" max-width="900">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <span class="text-h6">{{ previewTitle }}</span>
+          <v-spacer />
+          <v-btn icon="mdi-close" variant="text" @click="previewDialog = false" />
+        </v-card-title>
+        <v-card-text>
+          <v-alert v-if="previewError" type="warning" variant="tonal" class="mb-4">{{ previewError }}</v-alert>
+          <v-progress-linear v-if="previewLoading" indeterminate color="primary" class="mb-4" />
+          <pre v-else class="file-preview">{{ previewText }}</pre>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import reviewer from '@/api/reviewer'
+import uploadApi from '@/api/upload'
 import type { RouteParams } from 'vue-router'
 import { useSnackbarStore } from '@/stores/snackbar'
 import DrawingDialog from '@/components/DrawingDialog.vue'
@@ -196,6 +271,8 @@ import publisher from '@/api/publisher'
 const router = useRouter()
 const snackbar = useSnackbarStore()
 const route = useRoute()
+
+const requestType = computed(() => String(route.query.request_type || 'image'))
 
 interface Image {
   id: number,
@@ -222,6 +299,32 @@ const activeOverlay = ref()
 const isOverlayVisible = ref(false)
 const overall = ref()
 const detection_results = ref<dimension[]>([])
+const resourceTaskType = ref<'paper' | 'review'>('paper')
+const resourceTaskName = ref('')
+const resourceReason = ref('')
+const resourceFiles = ref<Array<{ id?: number; file_id?: number; file_name: string; resource_type: string; file_type: string; file_url?: string | null }>>([])
+const resourceDecision = ref('')
+const resourceSteps = ref('')
+const resourceComment = ref('')
+const previewDialog = ref(false)
+const previewLoading = ref(false)
+const previewTitle = ref('')
+const previewText = ref('')
+const previewError = ref('')
+const resourceDecisionOptions = computed(() => {
+  if (resourceTaskType.value === 'review') {
+    return [
+      { title: '评审内容高度相关', value: 'relevant' },
+      { title: '评审内容部分相关', value: 'partially_relevant' },
+      { title: '评审内容相关性较低', value: 'weak_relevance' },
+    ]
+  }
+  return [
+    { title: '疑似AIGC风险高', value: 'high_ai_risk' },
+    { title: '存在一定AIGC风险', value: 'medium_ai_risk' },
+    { title: '整体风险较低', value: 'low_ai_risk' },
+  ]
+})
 
 interface dimension {
   method: string,
@@ -267,7 +370,25 @@ const formatNumber = (result: number) => {
 
 onMounted(async () => {
   try {
-    const response = (await reviewer.getReviewTaskDetail({ manual_review_id: manual_review_id.value })).data
+    const response = (await reviewer.getReviewTaskDetail({
+      manual_review_id: manual_review_id.value,
+      request_type: requestType.value as 'image' | 'resource',
+    })).data
+
+    if (response.request_type === 'resource' || requestType.value === 'resource') {
+      resourceTaskType.value = response.task_type || (route.query.task_type as 'paper' | 'review') || 'paper'
+      resourceTaskName.value = response.task_name || ''
+      resourceReason.value = response.reason || ''
+      resourceFiles.value = response.selected_files || []
+      const existingPayload = response.result_payload || {}
+      resourceDecision.value = existingPayload.final_decision || ''
+      resourceComment.value = existingPayload.comment || response.conclusion || ''
+      if (Array.isArray(existingPayload.steps)) {
+        resourceSteps.value = existingPayload.steps.join('\n')
+      }
+      return
+    }
+
     images.value = response.imgs
     imageJudgements.value = new Array(images.value.length).fill(null)
 
@@ -289,6 +410,35 @@ onMounted(async () => {
   }
 })
 
+const submitResourceReview = async () => {
+  if (!resourceDecision.value) {
+    snackbar.showMessage('请选择最终结论', 'error')
+    return
+  }
+  const steps = resourceSteps.value
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  try {
+    await reviewer.submitReview(
+      manual_review_id.value,
+      {
+        payload: {
+          task_type: resourceTaskType.value,
+          final_decision: resourceDecision.value,
+          steps,
+          comment: resourceComment.value,
+        },
+      },
+      'resource',
+    )
+    snackbar.showMessage('提交成功', 'success')
+    router.push('/review')
+  } catch (error) {
+    snackbar.showMessage('提交失败', 'error')
+  }
+}
+
 const currentImage = computed(() => {
   if (
     Array.isArray(images.value) &&
@@ -303,6 +453,44 @@ const currentImage = computed(() => {
 
 const getImageUrl = (url: string) => {
   return import.meta.env.VITE_API_URL + url
+}
+
+const getFileUrl = (file: { file_url?: string | null }) => {
+  if (!file.file_url) return ''
+  if (/^https?:\/\//.test(file.file_url)) return file.file_url
+  return `${import.meta.env.VITE_API_URL || ''}${file.file_url}`
+}
+
+const downloadFile = (file: { file_name: string; file_url?: string | null }) => {
+  const url = getFileUrl(file)
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = file.file_name
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+const previewFile = async (file: { id?: number; file_id?: number; file_name: string }) => {
+  const fileId = file.file_id || file.id
+  if (!fileId) return
+  previewDialog.value = true
+  previewLoading.value = true
+  previewTitle.value = file.file_name
+  previewText.value = ''
+  previewError.value = ''
+  try {
+    const response = await uploadApi.getResourceTextPreview(fileId)
+    previewText.value = response.data?.text_content || '暂无可预览文本。'
+    if (response.data?.text_truncated) {
+      previewError.value = '文件较长，当前仅展示前 60000 字。'
+    }
+  } catch (error: any) {
+    previewError.value = error?.response?.data?.message || '当前文件暂不支持文本预览，请下载查看。'
+  } finally {
+    previewLoading.value = false
+  }
 }
 
 const fetchMaskImage = async () => {
@@ -903,5 +1091,13 @@ watch(() => currentDrawingDimension.value, (newVal, oldVal) => {
   height: 16px;
   border-radius: 4px;
   border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.file-preview {
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
 }
 </style>

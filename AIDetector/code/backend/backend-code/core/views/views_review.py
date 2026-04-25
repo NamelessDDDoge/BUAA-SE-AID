@@ -2,6 +2,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.core.mail import send_mail
 from django.core.paginator import Paginator
 from rest_framework import status
+from django.db.models import Q
 
 from ..models import ReviewRequest, ManualReview, DetectionResult, User, DetectionTask, PublisherReviewerRelationship, \
     ManualReview, ImageReview
@@ -9,11 +10,31 @@ from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from ..models import ReviewRequest, DetectionTask, ImageUpload, User, Log
+from ..models import (
+    ReviewRequest,
+    DetectionTask,
+    ImageUpload,
+    User,
+    Log,
+    ResourceReviewRequest,
+    ResourceManualReview,
+    FileManagement,
+)
 from core.util import send_notification
 from core.models import Notification
 import uuid
-from ..services.orchestrators import build_resource_review_placeholder
+
+
+def _serialize_review_resource_file(file):
+    return {
+        'file_id': file.id,
+        'id': file.id,
+        'file_name': file.file_name,
+        'resource_type': file.resource_type,
+        'file_size': file.file_size,
+        'file_type': file.file_type,
+        'file_url': file.stored_path if file.stored_path.startswith('/') else f"/media/{file.stored_path}" if file.stored_path else None,
+    }
 
 
 @api_view(['GET'])
@@ -95,13 +116,15 @@ def create_review_task_with_admin_check(request):
 
     image_ids = request.data.get('image_ids', [])
     reviewers = request.data.get('reviewers', [])
-    reason = request.data.get('reason', 'No reason provided')
+    reason = (request.data.get('reason', '') or '').strip()
 
     # 验证参数
     if not image_ids:
         return Response({'error': 'image_ids is required'}, status=400)
     if not reviewers:
         return Response({'error': 'reviewers is required'}, status=400)
+    if not reason:
+        return Response({'error': 'reason is required'}, status=400)
 
     try:
         # 获取图片对象
@@ -170,8 +193,7 @@ def create_review_task_with_admin_check(request):
 @permission_classes([IsAuthenticated])
 def create_resource_review_task_placeholder(request):
     """
-    论文 / Review 人工审核提交占位接口。
-    该接口先打通前后端联调，不落库，后续替换为正式审核流转逻辑。
+    论文 / Review 人工审核提交接口。
     """
     user = request.user
     if not user.has_permission('publish'):
@@ -180,24 +202,79 @@ def create_resource_review_task_placeholder(request):
     if user.role != 'publisher':
         return Response({'error': 'Only publishers can create review tasks'}, status=403)
 
+    task_id = request.data.get('task_id')
+    reviewers = request.data.get('reviewers', [])
+    reason = (request.data.get('reason', '') or '').strip()
+    selected_file_ids = request.data.get('selected_file_ids', [])
+
+    if not task_id:
+        return Response({'error': 'task_id is required'}, status=400)
+    if not isinstance(reviewers, list) or not reviewers:
+        return Response({'error': 'reviewers is required and must be a non-empty list'}, status=400)
+    if not reason:
+        return Response({'error': 'reason is required'}, status=400)
+    if selected_file_ids and not isinstance(selected_file_ids, list):
+        return Response({'error': 'selected_file_ids must be a list'}, status=400)
+
     try:
-        payload = build_resource_review_placeholder(
-            user=user,
-            task_id=request.data.get('task_id'),
-            reviewers=request.data.get('reviewers', []),
-            reason=request.data.get('reason', ''),
-            selected_file_ids=request.data.get('selected_file_ids', []),
+        detection_task = DetectionTask.objects.get(id=task_id, user=user)
+    except DetectionTask.DoesNotExist:
+        return Response({'error': 'Detection task not found or permission denied'}, status=404)
+
+    if detection_task.task_type not in ('paper', 'review'):
+        return Response({'error': 'This endpoint only supports paper/review tasks'}, status=400)
+    if detection_task.status != 'completed':
+        return Response({'error': 'Task is not completed yet'}, status=400)
+
+    reviewer_users = User.objects.filter(
+        organization=user.organization,
+        id__in=reviewers,
+        role='reviewer',
+        is_active=True,
+    )
+    if reviewer_users.count() != len(set(reviewers)):
+        return Response({'error': 'Some reviewer IDs do not exist or are not reviewers'}, status=404)
+
+    if selected_file_ids:
+        selected_files = detection_task.resource_files.filter(id__in=selected_file_ids)
+        if selected_files.count() != len(set(selected_file_ids)):
+            return Response({'error': 'Some selected_file_ids do not belong to current task'}, status=400)
+    else:
+        selected_files = detection_task.resource_files.all()
+
+    review_request = ResourceReviewRequest.objects.create(
+        detection_task=detection_task,
+        task_type=detection_task.task_type,
+        user=user,
+        organization=user.organization,
+        reason=reason,
+    )
+    review_request.reviewers.add(*reviewer_users)
+    review_request.selected_files.add(*selected_files)
+
+    organization = user.organization
+    if organization and organization.admin_user and organization.admin_user.email:
+        send_mail(
+            '新的资源人工审核任务',
+            '您有新的论文/Review人工审核任务需要审批，请登录系统处理。',
+            '2406854677@qq.com',
+            [organization.admin_user.email],
+            fail_silently=True,
         )
-    except ValueError as exc:
-        return Response({'error': str(exc)}, status=400)
-    except FileNotFoundError as exc:
-        return Response({'error': str(exc)}, status=404)
+
+    Log.objects.create(
+        user=user,
+        operation_type='review_request',
+        related_model='ResourceReviewRequest',
+        related_id=review_request.id,
+    )
 
     return Response({
-        'message': 'Resource review request placeholder submitted',
-        'placeholder': True,
-        'payload': payload,
-    }, status=202)
+        'message': 'Resource review request submitted',
+        'review_request_id': review_request.id,
+        'request_type': 'resource',
+        'task_type': detection_task.task_type,
+    }, status=201)
 
 
 @api_view(['GET'])
@@ -375,6 +452,40 @@ def get_request_detail(request, reviewRequest_id):
     if user.role != 'publisher':
         return Response({'error': 'Only publishers can view task details'}, status=403)
 
+    request_type = request.query_params.get('request_type', 'image')
+
+    if request_type == 'resource':
+        try:
+            resource_request = ResourceReviewRequest.objects.get(id=reviewRequest_id, user=user)
+        except ResourceReviewRequest.DoesNotExist:
+            return Response({'error': 'ResourceReviewRequest not found'}, status=404)
+
+        manual_reviews = resource_request.manual_reviews.all()
+        total_reviewers = resource_request.reviewers.count()
+        completed_reviews_count = manual_reviews.filter(status='completed').count()
+        status_payload = {
+            'done': completed_reviews_count,
+            'process': total_reviewers - completed_reviews_count,
+        }
+        selected_files = [
+            _serialize_review_resource_file(file)
+            for file in resource_request.selected_files.all()
+        ]
+
+        return Response({
+            'request_type': 'resource',
+            'task_type': resource_request.task_type,
+            'task_id': resource_request.detection_task_id,
+            'selected_files': selected_files,
+            'status': status_payload,
+            'reason': resource_request.reason,
+            'ai_detection_result': {
+                'result_summary': resource_request.detection_task.text_detection_results,
+                'detection_time': resource_request.detection_task.completion_time.strftime('%Y-%m-%d %H:%M:%S')
+                if resource_request.detection_task.completion_time else None,
+            },
+        })
+
     try:
         # 获取ReviewRequest对象
         review_request = ReviewRequest.objects.get(id=reviewRequest_id)
@@ -426,6 +537,7 @@ def get_request_detail(request, reviewRequest_id):
     }
 
     return Response({
+        'request_type': 'image',
         'images': images,
         'ai_detection_result': ai_detection_result,
         'status': status,
@@ -442,51 +554,80 @@ def get_publisher_review_tasks(request):
         return Response({'error': 'Only publishers can view their review tasks'}, status=403)
 
     # 获取查询参数
-    status = request.query_params.get('status', '')
+    task_status = request.query_params.get('status', '')
     start_time = request.query_params.get('startTime', None)
     end_time = request.query_params.get('endTime', None)
     page = int(request.query_params.get('page', 1))
     page_size = int(request.query_params.get('page_size', 10))
 
-    # 构建查询条件
-    review_requests = ReviewRequest.objects.filter(user=user).select_related(
-        'detection_result__detection_task').prefetch_related('reviewers', 'manual_reviews')
-    review_requests = review_requests.order_by('-request_time')
+    merged_tasks = []
 
-    if status:
-        review_requests = review_requests.filter(status1=status)
+    image_requests = ReviewRequest.objects.filter(user=user).prefetch_related('reviewers', 'manual_reviews')
+    if task_status:
+        image_requests = image_requests.filter(Q(status1=task_status) | Q(status2=task_status))
     if start_time:
-        review_requests = review_requests.filter(request_time__gte=start_time)
+        image_requests = image_requests.filter(request_time__gte=start_time)
     if end_time:
-        review_requests = review_requests.filter(request_time__lte=end_time)
+        image_requests = image_requests.filter(request_time__lte=end_time)
 
-    # 分页
-    paginator = Paginator(review_requests, page_size)
+    for review_request in image_requests:
+        reviewers_count = review_request.reviewers.count()
+        completed_reviews_count = review_request.manual_reviews.filter(status='completed').count()
+        display_status = review_request.status1 if review_request.status2 == 'accepted' else review_request.status2
+        merged_tasks.append({
+            'review_request_id': review_request.id,
+            'request_type': 'image',
+            'task_type': 'image',
+            'task_id': review_request.detection_result.detection_task_id if review_request.detection_result else None,
+            'task_name': (
+                review_request.detection_result.detection_task.task_name
+                if review_request.detection_result and review_request.detection_result.detection_task
+                else None
+            ),
+            'request_time': review_request.request_time,
+            'status': display_status,
+            'status1': review_request.status1,
+            'status2': review_request.status2,
+            'progress': f"{completed_reviews_count}/{reviewers_count}",
+        })
+
+    resource_requests = ResourceReviewRequest.objects.filter(user=user).select_related('detection_task').prefetch_related('reviewers', 'manual_reviews')
+    if task_status:
+        resource_requests = resource_requests.filter(Q(status1=task_status) | Q(status2=task_status))
+    if start_time:
+        resource_requests = resource_requests.filter(request_time__gte=start_time)
+    if end_time:
+        resource_requests = resource_requests.filter(request_time__lte=end_time)
+
+    for review_request in resource_requests:
+        reviewers_count = review_request.reviewers.count()
+        completed_reviews_count = review_request.manual_reviews.filter(status='completed').count()
+        display_status = review_request.status1 if review_request.status2 == 'accepted' else review_request.status2
+        merged_tasks.append({
+            'review_request_id': review_request.id,
+            'request_type': 'resource',
+            'task_type': review_request.task_type,
+            'task_id': review_request.detection_task_id,
+            'task_name': review_request.detection_task.task_name if review_request.detection_task else None,
+            'request_time': review_request.request_time,
+            'status': display_status,
+            'status1': review_request.status1,
+            'status2': review_request.status2,
+            'progress': f"{completed_reviews_count}/{reviewers_count}",
+        })
+
+    merged_tasks.sort(key=lambda item: item['request_time'], reverse=True)
+    paginator = Paginator(merged_tasks, page_size)
     try:
         page_obj = paginator.page(page)
     except Exception:
         return Response({'error': 'Invalid page number'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # 构建返回数据
     tasks = []
-    for review_request in page_obj.object_list:
-        reviewers_count = review_request.reviewers.count()
-        completed_reviews_count = review_request.manual_reviews.filter(status='completed').count()
-        progress = f"{completed_reviews_count}/{reviewers_count}"
-
-        # 计算状态逻辑：根据 status2 决定显示哪个状态
-        if review_request.status2 == 'accepted':
-            display_status = review_request.status1  # 使用 status1
-        else:
-            display_status = review_request.status2  # 使用 status2
-
+    for item in page_obj.object_list:
         tasks.append({
-            'review_request_id': review_request.id,
-            'request_time': review_request.request_time.strftime('%Y-%m-%d %H:%M:%S'),
-            'status': display_status,  # 动态选择状态
-            'status1': review_request.status1,
-            'status2': review_request.status2,
-            'progress': progress
+            **item,
+            'request_time': item['request_time'].strftime('%Y-%m-%d %H:%M:%S'),
         })
 
     return Response({
@@ -495,7 +636,7 @@ def get_publisher_review_tasks(request):
         'total_pages': paginator.num_pages,
         'total_count': paginator.count,
         'has_next': page_obj.has_next(),
-        'has_previous': page_obj.has_previous()
+        'has_previous': page_obj.has_previous(),
     })
 
 
@@ -553,7 +694,7 @@ def get_reviewer_manual_request(request):
         return Response({'error': 'Only reviewers can view tasks'}, status=403)
 
     # 获取查询参数
-    status = request.query_params.get('status', '')
+    task_status = request.query_params.get('status', '')
     query = request.query_params.get('query', '')
     start_time = request.query_params.get('start_time', None)
     end_time = request.query_params.get('end_time', None)
@@ -564,53 +705,78 @@ def get_reviewer_manual_request(request):
     if page_size > 100:
         page_size = 100
 
-    # 构建查询条件
-    review_requests = ReviewRequest.objects.filter(reviewers=user).select_related(
-        'detection_result__detection_task', 'user'
-    ).prefetch_related('detection_result__detection_task__image_uploads')
-    review_requests = review_requests.order_by('-request_time')
+    merged_results = []
 
+    image_requests = ReviewRequest.objects.filter(reviewers=user).select_related('user')
     if query:
-        review_requests = review_requests.filter(user__username__startswith=query)
+        image_requests = image_requests.filter(user__username__startswith=query)
     if start_time:
-        review_requests = review_requests.filter(request_time__gte=start_time)
+        image_requests = image_requests.filter(request_time__gte=start_time)
     if end_time:
-        review_requests = review_requests.filter(request_time__lte=end_time)
+        image_requests = image_requests.filter(request_time__lte=end_time)
 
-    # 分页
-    paginator = Paginator(review_requests, page_size)
+    for review_request in image_requests:
+        manual_review = review_request.manual_reviews.filter(reviewer=user).first()
+        if not manual_review:
+            continue
+        if task_status and manual_review.status != task_status:
+            continue
+        merged_results.append({
+            'manual_review_id': manual_review.id,
+            'request_type': 'image',
+            'task_type': 'image',
+            'manual_review_time': manual_review.review_time,
+            'publisher_username': review_request.user.username,
+            'publisher_avatar': review_request.user.avatar.url if review_request.user.avatar else None,
+            'item_count': review_request.imgs.count(),
+            'status': manual_review.status,
+        })
+
+    resource_requests = ResourceReviewRequest.objects.filter(reviewers=user).select_related('user', 'detection_task')
+    if query:
+        resource_requests = resource_requests.filter(user__username__startswith=query)
+    if start_time:
+        resource_requests = resource_requests.filter(request_time__gte=start_time)
+    if end_time:
+        resource_requests = resource_requests.filter(request_time__lte=end_time)
+
+    for review_request in resource_requests:
+        manual_review = review_request.manual_reviews.filter(reviewer=user).first()
+        if not manual_review:
+            continue
+        if task_status and manual_review.status != task_status:
+            continue
+        merged_results.append({
+            'manual_review_id': manual_review.id,
+            'request_type': 'resource',
+            'task_type': review_request.task_type,
+            'manual_review_time': manual_review.review_time,
+            'publisher_username': review_request.user.username,
+            'publisher_avatar': review_request.user.avatar.url if review_request.user.avatar else None,
+            'item_count': review_request.selected_files.count(),
+            'status': manual_review.status,
+        })
+
+    merged_results.sort(key=lambda item: item['manual_review_time'], reverse=True)
+
+    paginator = Paginator(merged_results, page_size)
     try:
         page_obj = paginator.page(page)
     except Exception:
         return Response({'error': 'Invalid page number'}, status=400)
 
-    # 构建返回数据
     results = []
-    for review_request in page_obj.object_list:
-        publisher = review_request.user
-        image_count = review_request.imgs.count()
-        manual_review = review_request.manual_reviews.filter(reviewer=user).first()
-
-        if manual_review:
-            if status:
-                if manual_review.status == status:
-                    results.append({
-                        'manual_review_id': manual_review.id,
-                        'manual_review_time': manual_review.review_time.strftime('%Y-%m-%d %H:%M:%S'),
-                        'publisher_username': publisher.username,
-                        'publisher_avatar': publisher.avatar.url if publisher.avatar else None,
-                        'image_count': image_count,
-                        'status': manual_review.status
-                    })
-            else:
-                results.append({
-                    'manual_review_id': manual_review.id,
-                    'manual_review_time': manual_review.review_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'publisher_username': publisher.username,
-                    'publisher_avatar': publisher.avatar.url if publisher.avatar else None,
-                    'image_count': image_count,
-                    'status': manual_review.status
-                })
+    for item in page_obj.object_list:
+        results.append({
+            'manual_review_id': item['manual_review_id'],
+            'request_type': item['request_type'],
+            'task_type': item['task_type'],
+            'manual_review_time': item['manual_review_time'].strftime('%Y-%m-%d %H:%M:%S'),
+            'publisher_username': item['publisher_username'],
+            'publisher_avatar': item['publisher_avatar'],
+            'image_count': item['item_count'],
+            'status': item['status'],
+        })
 
     return Response({
         'results': results,
@@ -629,6 +795,37 @@ def get_review_detail(request, manual_review_id):
     user = User.objects.get(id=user_id)
     if user.role != 'reviewer':
         return Response({'error': 'Only reviewers can view review details'}, status=403)
+
+    request_type = request.query_params.get('request_type', 'image')
+
+    if request_type == 'resource':
+        try:
+            manual_review = ResourceManualReview.objects.select_related('review_request__detection_task').get(
+                id=manual_review_id,
+                reviewer=user,
+            )
+        except ResourceManualReview.DoesNotExist:
+            return Response({'error': 'ResourceManualReview not found'}, status=404)
+
+        review_request = manual_review.review_request
+        task = review_request.detection_task
+        selected_files = [
+            _serialize_review_resource_file(file)
+            for file in review_request.selected_files.all()
+        ]
+
+        return Response({
+            'request_type': 'resource',
+            'task_type': review_request.task_type,
+            'task_id': task.id,
+            'task_name': task.task_name,
+            'status': manual_review.status,
+            'selected_files': selected_files,
+            'reason': review_request.reason,
+            'detection_result_summary': task.text_detection_results,
+            'result_payload': manual_review.result_payload or {},
+            'conclusion': manual_review.conclusion,
+        })
 
     try:
         # 获取ManualReview对象
@@ -691,6 +888,7 @@ def get_review_detail(request, manual_review_id):
         })
 
     return Response({
+        'request_type': 'image',
         'image_urls': image_urls,
         'ai_detection_result': ai_detection_result,
         'count': len(image_ids),
@@ -758,9 +956,64 @@ def post_review(request, manual_review_id):
     user = User.objects.get(id=user_id)
     if not user.has_permission('review'):
         return Response({"错误": "该用户没有审核的权限"}, status=403)
-
     if user.role != 'reviewer':
         return Response({'error': 'Only reviewers can submit reviews'}, status=403)
+
+    request_type = request.data.get('request_type', request.query_params.get('request_type', 'image'))
+
+    if request_type == 'resource':
+        try:
+            manual_review = ResourceManualReview.objects.select_related('review_request').get(
+                id=manual_review_id,
+                reviewer=user,
+            )
+        except ResourceManualReview.DoesNotExist:
+            return Response({'error': 'ResourceManualReview not found'}, status=404)
+
+        payload = request.data.get('payload')
+        if payload is None:
+            payload = {
+                'final_decision': request.data.get('final_decision'),
+                'comment': request.data.get('comment', ''),
+                'steps': request.data.get('steps', []),
+            }
+        if not isinstance(payload, dict):
+            return Response({'error': 'payload must be an object'}, status=400)
+
+        manual_review.result_payload = payload
+        manual_review.conclusion = str(payload.get('comment') or request.data.get('comment') or '')
+        manual_review.status = 'completed'
+        manual_review.review_time = timezone.now()
+        manual_review.save(update_fields=['result_payload', 'conclusion', 'status', 'review_time'])
+
+        review_request = manual_review.review_request
+        total_count = review_request.reviewers.count()
+        completed_count = review_request.manual_reviews.filter(status='completed').count()
+        if completed_count == total_count:
+            review_request.status1 = 'completed'
+            review_request.review_end_time = timezone.now()
+        else:
+            review_request.status1 = 'in_progress'
+        review_request.save(update_fields=['status1', 'review_end_time'])
+
+        Log.objects.create(
+            user=request.user,
+            operation_type='manual_review',
+            related_model='ResourceManualReview',
+            related_id=manual_review_id,
+        )
+
+        send_notification(
+            receiver_id=review_request.user.id,
+            receiver_name=review_request.user.username,
+            sender_id=user.id,
+            sender_name=user.username,
+            category=Notification.R2P,
+            title='资源人工审核完成通知',
+            content=f'审稿人 {user.username} 已完成{review_request.task_type}任务人工审核',
+            url=f'/task/{review_request.id}?request_type=resource'
+        )
+        return Response({'message': 'Resource review submitted successfully'}, status=201)
 
     try:
         # 获取ManualReview对象

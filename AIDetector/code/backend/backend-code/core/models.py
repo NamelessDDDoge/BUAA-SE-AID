@@ -596,6 +596,67 @@ class ImageReview(models.Model):
     review_time = models.DateTimeField(default=timezone.localtime, db_index=True)  # 审核时间，添加索引
 
 
+class ResourceReviewRequest(models.Model):
+    TASK_TYPE_CHOICES = [
+        ('paper', 'Paper'),
+        ('review', 'Review'),
+    ]
+
+    detection_task = models.ForeignKey(
+        DetectionTask,
+        on_delete=models.CASCADE,
+        related_name='resource_review_requests',
+    )
+    task_type = models.CharField(max_length=20, choices=TASK_TYPE_CHOICES, db_index=True)
+    selected_files = models.ManyToManyField(FileManagement, related_name='resource_review_requests', blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='resource_review_requests')
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, db_index=True, null=True, blank=True)
+    request_time = models.DateTimeField(default=timezone.localtime, db_index=True)
+
+    status1 = models.CharField(
+        max_length=50,
+        choices=[('pending', 'Pending'), ('in_progress', 'In Progress'), ('completed', 'Completed')],
+        default='pending',
+    )
+    status2 = models.CharField(
+        max_length=50,
+        choices=[('pending', 'Pending'), ('refused', 'Refused'), ('accepted', 'Accepted')],
+        default='pending',
+    )
+
+    reason = models.TextField(blank=True, default='')
+    check_reason = models.TextField(blank=True, default='')
+    review_start_time = models.DateTimeField(null=True, blank=True)
+    review_end_time = models.DateTimeField(null=True, blank=True)
+    reviewers = models.ManyToManyField(User, related_name='resource_requests_to_review', blank=True)
+
+    def __str__(self):
+        return f"ResourceReviewRequest #{self.id} for task {self.detection_task_id}"
+
+
+class ResourceManualReview(models.Model):
+    review_request = models.ForeignKey(
+        ResourceReviewRequest,
+        on_delete=models.CASCADE,
+        related_name='manual_reviews',
+    )
+    reviewer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='resource_manual_reviews')
+    status = models.CharField(
+        max_length=50,
+        choices=[('undo', 'Undo'), ('completed', 'Completed')],
+        default='undo',
+    )
+    review_time = models.DateTimeField(default=timezone.localtime, db_index=True)
+    result_payload = models.JSONField(null=True, blank=True)
+    conclusion = models.TextField(blank=True, default='')
+
+    class Meta:
+        unique_together = ('review_request', 'reviewer')
+
+    def __str__(self):
+        return f"ResourceManualReview #{self.id} by {self.reviewer.username}"
+
+
 class Feedback(models.Model):
     manual_review = models.ForeignKey(ManualReview, on_delete=models.CASCADE, related_name="feedbacks")
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="feedbacks")

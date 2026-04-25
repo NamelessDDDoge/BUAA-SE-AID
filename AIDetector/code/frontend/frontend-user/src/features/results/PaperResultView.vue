@@ -151,7 +151,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'download'): void
-  (e: 'request-review', payload: { reviewers: number[]; selected_file_ids: number[] }): void
+  (e: 'request-review', payload: { reviewers: number[]; selected_file_ids: number[]; reason: string }): void
 }>()
 
 const overallEvaluation = computed(() => props.task?.results?.overall_evaluation || null)

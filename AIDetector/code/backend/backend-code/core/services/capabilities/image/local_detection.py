@@ -24,6 +24,23 @@ SUB_METHODS = (
 )
 
 
+def _normalize_task_parameters(detection_task):
+    cmd_block_size = detection_task.cmd_block_size
+    if not isinstance(cmd_block_size, int) or cmd_block_size < 2:
+        cmd_block_size = 64
+
+    urn_k = detection_task.urn_k
+    if not isinstance(urn_k, (int, float)):
+        urn_k = 0.3
+
+    return {
+        "cmd_block_size": cmd_block_size,
+        "urn_k": float(urn_k),
+        "if_use_llm": bool(detection_task.if_use_llm),
+        "method_switches": detection_task.method_switches,
+    }
+
+
 def execute_detection_task(detection_task, image_uploads):
     detection_results = []
     for image_upload in image_uploads:
@@ -75,17 +92,7 @@ def _create_batch_inputs(detection_task, batch_index, batch_drs):
             zip_file.write(source_path, arcname=arcname)
 
     with data_path.open("w", encoding="utf-8") as handle:
-        json.dump(
-            {
-                "cmd_block_size": detection_task.cmd_block_size,
-                "urn_k": detection_task.urn_k,
-                "if_use_llm": detection_task.if_use_llm,
-                "method_switches": detection_task.method_switches,
-            },
-            handle,
-            ensure_ascii=False,
-            indent=2,
-        )
+        json.dump(_normalize_task_parameters(detection_task), handle, ensure_ascii=False, indent=2)
 
     return batch_dir
 

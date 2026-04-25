@@ -176,6 +176,8 @@ const snackbar = useSnackbarStore()
 
 interface Task {
   manual_review_id: number
+  request_type: 'image' | 'resource'
+  task_type: 'image' | 'paper' | 'review'
   manual_review_time: string
   publisher_username: string
   publisher_avatar: string
@@ -186,7 +188,8 @@ interface Task {
 const headers = [
   { title: '头像', key: 'publisher_avatar', align: 'center', sortable: false },
   { title: '出版社', key: 'publisher_username', align: 'start' },
-  { title: '图片数量', key: 'image_count', align: 'start' },
+  { title: '任务类型', key: 'task_type', align: 'start' },
+  { title: '审核项数量', key: 'image_count', align: 'start' },
   { title: '状态', key: 'status', align: 'center' },
   { title: '提交时间', key: 'maual_review_time', align: 'center' },
   { title: '操作', key: 'actions', align: 'center', sortable: false },
@@ -257,7 +260,13 @@ const formatTime = (timestamp: string) => {
 }
 
 const goToTaskDetail = (task: Task) => {
-  router.push(`/task/detail/${task.manual_review_id}`)
+  router.push({
+    path: `/task/detail/${task.manual_review_id}`,
+    query: {
+      request_type: task.request_type,
+      task_type: task.task_type,
+    },
+  })
 }
 
 // 时间验证相关
@@ -358,10 +367,12 @@ const fetchTasks = async (page: number, pageSize: number) => {
       end_time: endTimeFilter
     }
     const response = await reviewerApi.getReviewerTasks(params)
-    const { results: taskList, current_page, total_pages, total_users } = response.data
+    const { results: taskList, current_page, total_pages, total_count, total_users } = response.data
     
     tasks.value = taskList.map((task: any) => ({
       manual_review_id: task.manual_review_id,
+      request_type: task.request_type || 'image',
+      task_type: task.task_type || 'image',
       manual_review_time: task.manual_review_time,
       publisher_username: task.publisher_username,
       publisher_avatar: task.publisher_avatar ? `${apiBaseUrl}${task.publisher_avatar}` : '',
@@ -371,7 +382,7 @@ const fetchTasks = async (page: number, pageSize: number) => {
     
     currentPage.value = current_page
     totalPages.value = total_pages
-    totalTasks.value = total_users
+    totalTasks.value = total_count ?? total_users ?? 0
   } catch (error) {
     console.error('获取任务列表失败:', error)
     snackbar.showMessage('获取任务列表失败', 'error')
