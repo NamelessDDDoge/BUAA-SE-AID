@@ -681,7 +681,7 @@ class UserActionLogGetView(APIView):
         operation_type = request.GET.get('operation_type', '')
         start_time = request.GET.get('startTime', None)
         end_time = request.GET.get('endTime', None)
-        organization_name = request.GET.get('organization', None)  # 新增组织筛选参数
+        organization_param = request.query_params.get('organization')
 
         # 获取所有日志记录并应用筛选条件
         logs = Log.objects.all().order_by('-operation_time')
@@ -690,9 +690,11 @@ class UserActionLogGetView(APIView):
             organization = user.organization
             logs = logs.filter(user__organization=organization)
         else:
-            organization_id = request.query_params.get('organization')
-            if organization_id:
-                logs = logs.filter(user__organization_id=organization_id)
+            if organization_param:
+                try:
+                    logs = logs.filter(user__organization_id=int(organization_param))
+                except (TypeError, ValueError):
+                    return JsonResponse({'error': 'Invalid organization parameter'}, status=400)
 
         if query:
             logs = logs.filter(user__username__startswith=query)
@@ -704,9 +706,6 @@ class UserActionLogGetView(APIView):
             logs = logs.filter(operation_time__gte=start_time)
         if end_time:
             logs = logs.filter(operation_time__lte=end_time)
-        if organization_name:
-            logs = logs.filter(user__organization__name__icontains=organization_name)  # 按组织名称模糊匹配
-
         paginator = Paginator(logs, page_size)  # 每页显示指定数量的日志
 
         try:
@@ -763,7 +762,7 @@ class UserActionLogDownloadView(APIView):
         operation_type = request.query_params.get('operation_type', '')
         start_time = request.query_params.get('startTime', None)
         end_time = request.query_params.get('endTime', None)
-        organization_name = request.query_params.get('organization', None)  # 新增组织筛选参数
+        organization_param = request.query_params.get('organization')
 
         # 将 query 转换为 int list
         if query:
@@ -781,9 +780,11 @@ class UserActionLogDownloadView(APIView):
             organization = user.organization
             logs = logs.filter(user__organization=organization)
         else:
-            organization_id = request.query_params.get('organization')
-            if organization_id:
-                logs = logs.filter(user__organization_id=organization_id)
+            if organization_param:
+                try:
+                    logs = logs.filter(user__organization_id=int(organization_param))
+                except (TypeError, ValueError):
+                    return Response({'error': 'Invalid organization parameter'}, status=400)
 
         if query_list:
             logs = logs.filter(user__id__in=query_list)  # 筛选所有匹配的 publisher ID
@@ -795,9 +796,6 @@ class UserActionLogDownloadView(APIView):
             logs = logs.filter(operation_time__gte=start_time)
         if end_time:
             logs = logs.filter(operation_time__lte=end_time)
-        if organization_name:
-            logs = logs.filter(user__organization__name__icontains=organization_name)  # 按组织名筛选
-
         # 创建CSV文件内容
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="user_action_logs.csv"'

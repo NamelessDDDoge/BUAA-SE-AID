@@ -2,9 +2,9 @@
   <v-container class="analytics-container">
     <v-row class="mb-6">
       <v-col cols="12" md="8">
-        <h1 class="text-h4 font-weight-bold">Analytics</h1>
+        <h1 class="text-h4 font-weight-bold">统计分析</h1>
         <div class="text-body-2 text-medium-emphasis mt-2">
-          Analytics now start from task types, then fan out into the existing organization and activity views.
+          从任务类型分布出发，结合组织与活跃度视图，汇总展示平台运行情况。
         </div>
       </v-col>
     </v-row>
@@ -65,7 +65,7 @@ onMounted(async () => {
     isOrganizationAdmin.value = userRes.data.admin_type === 'organization_admin'
     taskTypeCounts.value = taskSummaryRes.data.task_type_counts || taskTypeCounts.value
   } catch (error) {
-    console.error('Failed to load analytics context:', error)
+    console.error('加载统计分析上下文失败:', error)
   }
 })
 </script>

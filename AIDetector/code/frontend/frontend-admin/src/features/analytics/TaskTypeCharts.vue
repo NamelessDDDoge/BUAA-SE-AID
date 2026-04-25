@@ -2,7 +2,7 @@
   <v-card class="chart-card" elevation="3">
     <v-card-title class="text-h6 font-weight-medium">
       <v-icon color="primary" class="mr-2">mdi-chart-donut</v-icon>
-      Task Type Distribution
+      任务类型分布
     </v-card-title>
     <v-card-text>
       <div ref="chartRef" class="chart-container"></div>
@@ -38,9 +38,9 @@ const renderChart = () => {
         radius: ['45%', '70%'],
         avoidLabelOverlap: false,
         data: [
-          { value: props.counts.image, name: 'Image' },
-          { value: props.counts.paper, name: 'Paper' },
-          { value: props.counts.review, name: 'Review' },
+          { value: props.counts.image, name: '图像' },
+          { value: props.counts.paper, name: '论文' },
+          { value: props.counts.review, name: '评审' },
         ],
       },
     ],

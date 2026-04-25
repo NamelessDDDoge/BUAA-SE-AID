@@ -11,6 +11,7 @@ export default {
     operation_type?: string
     startTime?: string
     endTime?: string
+    organization?: number
   }) {
     return http.get('/user_action_log/download/', {
       params: {
