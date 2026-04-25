@@ -24,6 +24,7 @@ from core.services.orchestrators.resource_task_orchestrator import (
     create_resource_detection_task,
     run_resource_detection_task_async,
 )
+from core.utils.task_result_serializer import build_detection_task_status_payload
 
 
 REPO_TASK_7_REPORT = Path(__file__).resolve().parents[6] / "task_7_report.pdf"
@@ -85,6 +86,12 @@ class ResourceTaskFlowTests(TestCase):
             stored_path=f"uploads/{file_name}",
             linked_file=linked_file,
         )
+
+    def write_media_file(self, relative_path, content=b"resource-bytes"):
+        file_path = Path(self.temp_media) / relative_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(content)
+        return file_path
 
     @patch("core.views.views_dectection.start_resource_detection_task_thread")
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
@@ -198,6 +205,66 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(response.data["result_summary"], "论文检测已完成，疑似段落 1 段")
         self.assertEqual(response.data["results"]["result_type"], "paper")
         self.assertEqual(response.data["results"]["paragraph_results"], task.text_detection_results["paragraph_results"])
+
+    def test_task_status_payload_marks_missing_resource_file_unavailable(self):
+        file_record = self.create_file("missing-paper.pdf", "paper")
+        task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="paper",
+            task_name="Missing File Task",
+            status="completed",
+            text_detection_results={},
+        )
+        task.resource_files.add(file_record)
+
+        payload = build_detection_task_status_payload(task)
+        resource_file = payload["resource_files"][0]
+
+        self.assertEqual(resource_file["download_url"], f"/api/upload/{file_record.id}/download/")
+        self.assertFalse(resource_file["file_available"])
+        self.assertIn("当前服务器节点", resource_file["download_message"])
+
+    def test_download_uploaded_resource_returns_json_when_file_missing(self):
+        file_record = self.create_file("missing-review.txt", "review_file")
+
+        response = self.client.get(f"/api/upload/{file_record.id}/download/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("current server node", response.data["message"])
+
+    def test_org_admin_can_download_other_users_existing_resource(self):
+        other_user = User.objects.create_user(
+            username="other-resource-user",
+            email="other-resource-user@example.com",
+            password="pass123456",
+            role="publisher",
+            organization=self.organization,
+        )
+        admin_user = User.objects.create_user(
+            username="resource-org-admin",
+            email="resource-org-admin@example.com",
+            password="pass123456",
+            role="admin",
+            organization=self.organization,
+            is_staff=True,
+        )
+        file_record = FileManagement.objects.create(
+            user=other_user,
+            organization=self.organization,
+            file_name="shared-paper.pdf",
+            file_size=32,
+            file_type="application/pdf",
+            resource_type="paper",
+            stored_path="uploads/shared-paper.pdf",
+        )
+        self.write_media_file("uploads/shared-paper.pdf", b"shared resource")
+
+        self.client.force_authenticate(admin_user)
+        response = self.client.get(f"/api/upload/{file_record.id}/download/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("attachment", response["Content-Disposition"])
 
     def test_paper_results_endpoint_prefers_dedicated_tables_when_json_is_empty(self):
         task = DetectionTask.objects.create(

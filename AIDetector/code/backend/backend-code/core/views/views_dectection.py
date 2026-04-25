@@ -10,6 +10,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.fields.files import FieldFile
+from rest_framework.permissions import IsAdminUser
 from ..models import DetectionResult, ImageUpload, User, DetectionTask, FileManagement
 from datetime import datetime, timedelta
 from django.core.paginator import Paginator
@@ -762,12 +763,25 @@ class DetectionTaskDeleteView(APIView):
 
     def delete(self, request, task_id, *args, **kwargs):
         try:
-            task = DetectionTask.objects.get(pk=task_id, user=request.user)
+            task = DetectionTask.objects.get(pk=task_id)
         except DetectionTask.DoesNotExist:
             return Response(
                 {"detail": "Task not found or permission denied."},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+        if request.user != task.user:
+            if not request.user.is_staff:
+                return Response(
+                    {"detail": "Task not found or permission denied."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            if request.user.organization_id is not None and task.organization_id != request.user.organization_id:
+                return Response(
+                    {"detail": "Task not found or permission denied."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
         if task.status == "in_progress":
             return Response(

@@ -169,6 +169,7 @@ def get_paper_task_results_payload(task):
         {
             "image_id": result.image_upload_id,
             "page_number": result.image_upload.page_number,
+            "image_url": result.image_upload.image.url if result.image_upload.image else None,
             "status": result.status,
             "is_fake": result.is_fake,
             "confidence_score": result.confidence_score,

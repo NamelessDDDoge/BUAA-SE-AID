@@ -19,4 +19,12 @@ export default {
   getAllTasks(params: AdminTaskQuery) {
     return http.get('/get_all_user_tasks/', { params })
   },
+
+  getTaskDetail(taskId: number, params?: { organization?: string | number }) {
+    return http.get(`/get_detection_task_status/${taskId}/`, { params })
+  },
+
+  deleteTask(taskId: number) {
+    return http.delete(`/detection-task-delete/${taskId}/`)
+  },
 }

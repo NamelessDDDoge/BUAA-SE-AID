@@ -23,7 +23,7 @@
         <v-list-item v-if="isLoggedIn && userStore.admin_type === 'organization_admin'" 
           prepend-icon="mdi-account-circle" title="组织信息" value="organization_profile"
           @click="goToOrganizationProfile"></v-list-item>
-        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-folder" title="图像管理" value="files"
+        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-folder" title="资源管理" value="files"
           @click="goToFiles"></v-list-item>
         <v-list-item v-if="isLoggedIn" prepend-icon="mdi-account-group" title="用户管理" value="users"
           @click="goToUsers"></v-list-item>
@@ -77,7 +77,7 @@
       </v-btn>
       <v-btn v-if="isLoggedIn" to="/files" value="files">
         <v-icon>mdi-folder</v-icon>
-        <span>图像管理</span>
+        <span>资源管理</span>
       </v-btn>
       <v-btn v-if="isLoggedIn" to="/users" value="users">
         <v-icon>mdi-account-group</v-icon>

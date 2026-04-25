@@ -1,6 +1,8 @@
 from django.core.paginator import EmptyPage, Paginator
 from django.utils import timezone
 from django.conf import settings
+from django.http import FileResponse
+from django.shortcuts import redirect
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
@@ -11,6 +13,20 @@ from ..services import log_user_event
 from ..services.resources import save_uploaded_resource
 from ..services.resources.document_preprocessor import preprocess_document
 from .views_dectection import CustomPagination
+
+
+def _is_software_admin(user):
+    return user.email == 'admin@mail.com' or (user.is_staff and user.organization is None)
+
+
+def _can_access_file_record(user, file_management):
+    if file_management.user_id == user.id:
+        return True
+    if not user.is_staff:
+        return False
+    if _is_software_admin(user):
+        return True
+    return user.organization_id is not None and user.organization_id == file_management.organization_id
 
 
 @api_view(["POST"])
@@ -115,6 +131,39 @@ def get_extracted_images(request, file_id):
         "total": paginator.page.paginator.count,
         "images": image_list,
     })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def download_uploaded_resource(request, file_id):
+    try:
+        file_management = FileManagement.objects.select_related("user", "organization").get(id=file_id)
+    except FileManagement.DoesNotExist:
+        return Response({"message": "File not found"}, status=404)
+
+    if not _can_access_file_record(request.user, file_management):
+        return Response({"message": "Permission denied"}, status=403)
+
+    stored_path = (file_management.stored_path or "").strip()
+    if not stored_path:
+        return Response({"message": "File path is empty", "file_id": file_management.id}, status=404)
+
+    if stored_path.startswith(("http://", "https://")):
+        return redirect(stored_path)
+
+    file_path = stored_path if os.path.isabs(stored_path) else os.path.join(settings.MEDIA_ROOT, stored_path)
+    if not os.path.isfile(file_path):
+        return Response(
+            {
+                "message": "File is not available on the current server node. Sync the uploader's media/uploads directory to this deployment before downloading.",
+                "file_id": file_management.id,
+                "stored_path": stored_path,
+            },
+            status=404,
+        )
+
+    filename = file_management.file_name or os.path.basename(file_path)
+    return FileResponse(open(file_path, "rb"), as_attachment=True, filename=filename)
 
 
 @api_view(["GET"])

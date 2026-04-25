@@ -54,6 +54,7 @@ urlpatterns = [
     # 图片上传相关的URL
     path('upload/', upload_file, name='upload_file'),
     path('upload/<int:file_id>/', get_file_details, name='get_file_details'),
+    path('upload/<int:file_id>/download/', download_uploaded_resource, name='download_uploaded_resource'),
     path('upload/<int:file_id>/preview_text/', get_resource_text_preview, name='get_resource_text_preview'),
     path('upload/<int:file_id>/extract_images/', get_extracted_images, name='get_extracted_images'),
     path('upload/<int:file_id>/addTag/', add_file_tag, name='add_file_tag'),

@@ -1,4 +1,8 @@
+import os
+
+from django.conf import settings
 from django.db.models import Count, Q
+from django.urls import reverse
 from django.utils import timezone
 
 from ..models import DetectionResult, PaperDetectionResult, ReviewDetectionResult
@@ -54,12 +58,34 @@ def build_task_result_summary(task):
 
 
 def serialize_resource_file(file_record):
+    stored_path = (file_record.stored_path or "").strip()
+    download_url = None
+    file_available = False
+    download_message = None
+
+    if stored_path.startswith(("http://", "https://")):
+        download_url = stored_path
+        file_available = True
+    elif stored_path:
+        abs_path = stored_path if os.path.isabs(stored_path) else os.path.join(settings.MEDIA_ROOT, stored_path)
+        download_url = reverse("download_uploaded_resource", kwargs={"file_id": file_record.id})
+        file_available = os.path.isfile(abs_path)
+        if not file_available:
+            download_message = "文件不在当前服务器节点，需同步上传者所在机器的 media/uploads 目录后才能下载。"
+    else:
+        download_message = "文件路径为空，无法下载。"
+
     return {
         "file_id": file_record.id,
         "file_name": file_record.file_name,
         "resource_type": file_record.resource_type,
         "file_type": file_record.file_type,
         "file_size": file_record.file_size,
+        "linked_file_id": file_record.linked_file_id,
+        "stored_path": stored_path,
+        "download_url": download_url,
+        "file_available": file_available,
+        "download_message": download_message,
         "upload_time": timezone.localtime(file_record.upload_time),
     }
 
@@ -87,6 +113,7 @@ def build_task_results(task):
                 "image_id": result.image_upload_id,
                 "file_id": result.image_upload.file_management_id,
                 "page_number": result.image_upload.page_number,
+                "image_url": result.image_upload.image.url if result.image_upload.image else None,
                 "status": result.status,
                 "is_fake": result.is_fake,
                 "confidence_score": result.confidence_score,
@@ -125,6 +152,7 @@ def build_detection_task_status_payload(task):
         "is_running": task.status in {"pending", "in_progress"},
         "progress": build_task_progress(task),
         "resource_files": [serialize_resource_file(file_record) for file_record in resource_files],
+        "report_file_url": task.report_file.url if task.report_file else None,
         "results": results,
     }
 

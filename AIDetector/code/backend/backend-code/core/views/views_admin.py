@@ -17,7 +17,7 @@ from core.models import Log, User
 from rest_framework.decorators import api_view, permission_classes
 from collections import defaultdict
 from core.models import FileManagement, ImageUpload, DetectionResult, SubDetectionResult
-from ..utils.task_result_serializer import build_task_result_summary
+from ..utils.task_result_serializer import build_detection_task_status_payload, build_task_result_summary
 from rest_framework.permissions import IsAdminUser
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -903,29 +903,7 @@ def get_detection_task_status(request, task_id):
             else:
                 detection_task = DetectionTask.objects.get(id=task_id)
 
-        detection_results = DetectionResult.objects.filter(detection_task=detection_task)
-
-        # 收集任务相关的图像和状态信息
-        task_status = {
-            "task_id": detection_task.id,
-            "task_name": detection_task.task_name,
-            "status": detection_task.status,
-            "upload_time": timezone.localtime(detection_task.upload_time),
-            "completion_time": timezone.localtime(detection_task.completion_time),
-            "organization": detection_task.organization.name if detection_task.organization else None,
-            "detection_results": []
-        }
-
-        for result in detection_results:
-            task_status["detection_results"].append({
-                "image_id": result.image_upload.id,
-                "status": result.status,
-                "is_fake": result.is_fake,
-                "confidence_score": result.confidence_score,
-                "detection_time": timezone.localtime(result.detection_time),
-            })
-
-        return Response(task_status)
+        return Response(build_detection_task_status_payload(detection_task))
 
     except DetectionTask.DoesNotExist:
         return Response({"message": "Detection task not found"}, status=404)
