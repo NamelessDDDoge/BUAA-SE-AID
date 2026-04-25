@@ -29,7 +29,7 @@
           @click="goToUsers"></v-list-item>
         <v-list-item v-if="isLoggedIn" prepend-icon="mdi-clipboard-text-clock" title="日志记录" value="logs"
           @click="goToLogs"></v-list-item>
-        <v-list-item v-if="isLoggedIn && userStore.admin_type === 'organization_admin'" 
+        <v-list-item v-if="isLoggedIn" 
           prepend-icon="mdi-gavel" title="人工审核" value="reviewRequests"
           @click="goToReviews"></v-list-item>
         <v-divider class="my-2"></v-divider>
@@ -87,7 +87,7 @@
         <v-icon>mdi-clipboard-text-clock</v-icon>
         <span>日志记录</span>
       </v-btn>
-      <v-btn v-if="isLoggedIn && userStore.admin_type === 'organization_admin'" to="/reviews" value="reviews">
+      <v-btn v-if="isLoggedIn" to="/reviews" value="reviews">
         <v-icon>mdi-gavel</v-icon>
         <span>人工审核</span>
       </v-btn>

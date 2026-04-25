@@ -2,15 +2,15 @@
   <v-container class="page-shell">
     <v-row class="mb-6">
       <v-col cols="12" md="8">
-        <h1 class="text-h4 font-weight-bold">Review Operations</h1>
+        <h1 class="text-h4 font-weight-bold">人工审核</h1>
         <div class="text-body-2 text-medium-emphasis mt-2">
-          Review requests stay visible here, but the page now opens with a review-lane task perspective.
+          统一查看人工审核相关任务与审核申请，并支持管理员审批处理。
         </div>
       </v-col>
       <v-col cols="12" md="4">
         <v-text-field
           v-model="searchQuery"
-          label="Search Publisher"
+          label="搜索发布者"
           append-inner-icon="mdi-magnify"
           clearable
           density="compact"
@@ -27,13 +27,11 @@
       </v-col>
     </v-row>
 
-    <TaskSummaryTable :title="'Review Lane Tasks'" :headers="taskHeaders" :items="reviewTasks" :loading="loadingTasks" class="mb-6" />
-
     <v-card elevation="2" rounded="lg">
       <v-card-title class="d-flex align-center">
-        <span class="text-h6">Review Requests</span>
+        <span class="text-h6">审核申请</span>
         <v-spacer />
-        <span class="text-caption text-medium-emphasis">{{ totalRequests }} rows</span>
+        <span class="text-caption text-medium-emphasis">共 {{ totalRequests }} 条记录</span>
       </v-card-title>
       <v-data-table :headers="headers" :items="requests" :loading="loadingRequests" hide-default-footer>
         <template #item.state="{ item }">
@@ -45,7 +43,7 @@
       </v-data-table>
       <div class="d-flex align-center justify-center pa-4">
         <div class="d-flex align-center">
-          <span class="text-caption mr-2">Rows per page</span>
+          <span class="text-caption mr-2">每页显示</span>
           <v-select
             v-model="pageSize"
             :items="[5, 10, 20, 50, 100]"
@@ -62,7 +60,7 @@
 
     <v-dialog v-model="showReviewDialog" max-width="800">
       <v-card class="elevation-4">
-        <v-card-title class="text-h6 font-weight-bold">Review Request Detail</v-card-title>
+        <v-card-title class="text-h6 font-weight-bold">审核申请详情</v-card-title>
         <v-card-text>
           <div v-if="selectedRequest" class="d-flex flex-column ga-4">
             <div class="d-flex align-center">
@@ -79,12 +77,12 @@
 
             <div v-if="reviewDetails" class="d-flex flex-column ga-4">
               <div v-if="reviewDetails.reason">
-                <div class="text-subtitle-1 font-weight-bold mb-2">Reason</div>
+                <div class="text-subtitle-1 font-weight-bold mb-2">申请原因</div>
                 <div class="text-body-1">{{ reviewDetails.reason }}</div>
               </div>
 
               <div>
-                <div class="text-subtitle-1 font-weight-bold mb-2">Assigned Reviewers</div>
+                <div class="text-subtitle-1 font-weight-bold mb-2">指派审核人</div>
                 <div class="d-flex flex-wrap ga-4">
                   <div v-for="person in reviewDetails.persons" :key="person.id" class="d-flex align-center">
                     <v-avatar size="32" class="mr-2">
@@ -99,8 +97,8 @@
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn color="error" variant="text" :disabled="!selectedRequest || selectedRequest.state !== 'pending'" @click="handleReviewRequest(0)">Reject</v-btn>
-          <v-btn color="success" :disabled="!selectedRequest || selectedRequest.state !== 'pending'" @click="handleReviewRequest(1)">Approve</v-btn>
+          <v-btn color="error" variant="text" :disabled="!selectedRequest || selectedRequest.state !== 'pending'" @click="handleReviewRequest(0)">拒绝</v-btn>
+          <v-btn color="success" :disabled="!selectedRequest || selectedRequest.state !== 'pending'" @click="handleReviewRequest(1)">通过</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -110,15 +108,15 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import reviewApi from '@/api/review'
-import tasksApi from '@/api/tasks'
 import TaskTypeFilter from '@/features/tasks/TaskTypeFilter.vue'
-import TaskSummaryTable from '@/features/tasks/TaskSummaryTable.vue'
 import { useSnackbarStore } from '@/stores/snackbar'
 
 const snackbar = useSnackbarStore()
 
 interface ReviewRequest {
   id: number
+  taskName: string
+  taskType: string
   username: string
   avatar: string
   state: string
@@ -126,31 +124,23 @@ interface ReviewRequest {
 }
 
 const headers = [
-  { title: 'Publisher', key: 'username', align: 'start' as const },
-  { title: 'State', key: 'state', align: 'center' as const },
-  { title: 'Submitted', key: 'time', align: 'center' as const },
-  { title: 'Actions', key: 'actions', align: 'center' as const, sortable: false },
+  { title: '资源类型', key: 'taskType', align: 'center' as const },
+  { title: '资源名称', key: 'taskName', align: 'start' as const },
+  { title: '发布者', key: 'username', align: 'start' as const },
+  { title: '状态', key: 'state', align: 'center' as const },
+  { title: '提交时间', key: 'time', align: 'center' as const },
+  { title: '操作', key: 'actions', align: 'center' as const, sortable: false },
 ]
 
-const taskHeaders = [
-  { title: 'Task ID', key: 'task_id', align: 'center' as const },
-  { title: 'Task Name', key: 'task_name', align: 'start' as const },
-  { title: 'Type', key: 'task_type', align: 'center' as const },
-  { title: 'Status', key: 'status', align: 'center' as const },
-  { title: 'Publisher', key: 'username', align: 'start' as const },
-  { title: 'Uploaded', key: 'upload_time', align: 'center' as const },
-]
-
-const taskTypeFilter = ref('review')
+const taskTypeFilter = ref('image')
 const taskTypeOptions = [
-  { label: 'Review', value: 'review', color: 'teal' },
-  { label: 'Paper', value: 'paper', color: 'deep-orange' },
+  { label: '图像', value: 'image', color: 'primary' },
+  { label: '评审', value: 'review', color: 'teal' },
+  { label: '论文', value: 'paper', color: 'deep-orange' },
 ]
 
 const requests = ref<ReviewRequest[]>([])
-const reviewTasks = ref<any[]>([])
 const loadingRequests = ref(false)
-const loadingTasks = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const totalRequests = ref(0)
@@ -170,26 +160,16 @@ const getStateColor = (state: string) => ({
 }[state] || 'grey')
 
 const getStateName = (state: string) => ({
-  pending: 'Pending',
-  refused: 'Rejected',
-  accepted: 'Approved',
+  pending: '待审核',
+  refused: '已拒绝',
+  accepted: '已通过',
 }[state] || state)
 
-const fetchReviewTasks = async () => {
-  loadingTasks.value = true
-  try {
-    const response = await tasksApi.getAllTasks({
-      page: 1,
-      page_size: 6,
-      task_type: taskTypeFilter.value as 'paper' | 'review',
-    })
-    reviewTasks.value = response.data.tasks || []
-  } catch (error) {
-    console.error('Failed to load review-lane tasks:', error)
-  } finally {
-    loadingTasks.value = false
-  }
-}
+const taskTypeLabel = (taskType: string) => ({
+  image: '图像',
+  paper: '论文',
+  review: '评审',
+}[taskType] || taskType)
 
 const fetchRequests = async () => {
   loadingRequests.value = true
@@ -198,10 +178,13 @@ const fetchRequests = async () => {
       page: currentPage.value,
       page_size: pageSize.value,
       query: searchQuery.value || '',
+      task_type: taskTypeFilter.value,
     })
     const { requests: requestList, current_page, total_pages, total_requests } = response.data
     requests.value = requestList.map((request: any) => ({
       id: request.id,
+      taskName: request.task_name || '-',
+      taskType: taskTypeLabel(request.task_type),
       username: request.username,
       avatar: request.avatar ? import.meta.env.VITE_API_URL + request.avatar : '',
       state: request.state,
@@ -212,7 +195,7 @@ const fetchRequests = async () => {
     totalRequests.value = total_requests
   } catch (error) {
     console.error('Failed to fetch review requests:', error)
-    snackbar.showMessage('Failed to fetch review requests.', 'error')
+    snackbar.showMessage('获取审核申请失败', 'error')
   } finally {
     loadingRequests.value = false
   }
@@ -226,7 +209,7 @@ const openReviewDialog = async (request: ReviewRequest) => {
     showReviewDialog.value = true
   } catch (error) {
     console.error('Failed to fetch review request detail:', error)
-    snackbar.showMessage('Failed to fetch review request detail.', 'error')
+    snackbar.showMessage('获取审核申请详情失败', 'error')
   }
 }
 
@@ -237,13 +220,13 @@ const handleReviewRequest = async (choice: number) => {
       choice,
       reason: rejectReason.value,
     })
-    snackbar.showMessage(choice === 1 ? 'Review request approved.' : 'Review request rejected.', 'success')
+    snackbar.showMessage(choice === 1 ? '审核申请已通过' : '审核申请已拒绝', 'success')
     showReviewDialog.value = false
     rejectReason.value = ''
     await fetchRequests()
   } catch (error) {
     console.error('Failed to handle review request:', error)
-    snackbar.showMessage('Failed to handle the review request.', 'error')
+    snackbar.showMessage('处理审核申请失败', 'error')
   }
 }
 
@@ -258,10 +241,12 @@ const handlePageSizeChange = (size: number) => {
   fetchRequests()
 }
 
-watch(taskTypeFilter, fetchReviewTasks)
+watch(taskTypeFilter, () => {
+  currentPage.value = 1
+  fetchRequests()
+})
 
 onMounted(async () => {
-  await fetchReviewTasks()
   await fetchRequests()
 })
 </script>

@@ -1303,6 +1303,7 @@ def get_all_review_requests(request):
     # 获取查询参数
     query = request.query_params.get('query', '')
     status = request.query_params.get('status', '')
+    task_type = request.query_params.get('task_type', '')
     organization_id = request.query_params.get('organization', None)
     page = int(request.query_params.get('page', 1))
     page_size = int(request.query_params.get('page_size', 10))
@@ -1323,6 +1324,8 @@ def get_all_review_requests(request):
         review_requests = review_requests.filter(user__username__startswith=query)
     if status:
         review_requests = review_requests.filter(status2=status)
+    if task_type:
+        review_requests = review_requests.filter(detection_result__detection_task__task_type=task_type)
 
     # 分页
     paginator = Paginator(review_requests, page_size)
@@ -1335,6 +1338,8 @@ def get_all_review_requests(request):
     for req in page_obj.object_list:
         request_data.append({
             "id": req.id,
+            "task_name": req.detection_result.detection_task.task_name if req.detection_result and req.detection_result.detection_task else '',
+            "task_type": req.detection_result.detection_task.task_type if req.detection_result and req.detection_result.detection_task else '',
             "username": req.user.username,
             "avatar": req.user.avatar.url if req.user.avatar else None,
             "state": req.status2,
