@@ -219,7 +219,7 @@ def download_task_report(request, task_id):
     if task.status != "completed":
         return Response({"detail": "Task not completed yet."}, status=400)
 
-    report_name = ensure_task_report_file(task)
+    report_name = ensure_task_report_file(task, force=True)
     task.refresh_from_db(fields=["report_file"])
     abs_path = os.path.join(settings.MEDIA_ROOT, report_name)
 
@@ -271,7 +271,7 @@ def download_image_report(request, image_id):
     if task.status != "completed":
         return Response({"detail": "Task not completed yet."}, status=400)
 
-    report_name = ensure_task_report_file(task)
+    report_name = ensure_task_report_file(task, force=True)
     task.refresh_from_db(fields=["report_file"])
     abs_path = os.path.join(settings.MEDIA_ROOT, report_name)
 
