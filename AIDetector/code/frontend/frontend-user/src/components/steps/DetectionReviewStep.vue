@@ -384,12 +384,17 @@ const submitReview = async () => {
       ...detectionResult.value.fakeImages.filter((img: Image) => img.selected).map((img: Image) => img.image_id),
       ...detectionResult.value.realImages.filter((img: Image) => img.selected).map((img: Image) => img.image_id)
     ]
-    await publisher.dispatchAnnual({
+    const response = await publisher.dispatchAnnual({
       image_ids: reviewImages,
       reviewers: selectedPeopleList.value,
       reason: reviewReason.value.trim(),
     })
     snackbar.showMessage('已提交人工复查任务，请等待管理员审核', 'success')
+    const reviewRequestId = response?.data?.review_request_id
+    if (reviewRequestId) {
+      router.push(`/task/${reviewRequestId}`)
+      return
+    }
     router.push('/annual')
   } catch (error: any) {
     let message = '提交人工复查任务失败'

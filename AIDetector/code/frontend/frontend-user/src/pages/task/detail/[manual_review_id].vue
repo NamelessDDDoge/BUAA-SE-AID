@@ -18,6 +18,10 @@
         {{ resourceReason || '请根据系统结果完成简要专家复核。' }}
       </v-alert>
 
+      <div class="d-flex mb-4" style="gap:8px">
+        <v-btn color="primary" variant="outlined" prepend-icon="mdi-download" @click="downloadCombinedReport">下载综合鉴伪报告</v-btn>
+      </div>
+
       <v-card variant="outlined" class="mb-4">
         <v-card-title class="text-subtitle-1">待审核资源</v-card-title>
         <v-card-text>
@@ -29,6 +33,7 @@
                 <div class="d-flex ga-2">
                   <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
                   <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
+                  <v-btn size="small" variant="text" prepend-icon="mdi-file-document-outline" @click="openExtractDialog(file)">查看提取文本</v-btn>
                 </div>
               </template>
             </v-list-item>
@@ -92,6 +97,9 @@
                     </div>
                   </v-card-text>
                 </v-card>
+                <div class="ml-4 d-flex" style="gap:8px">
+                  <v-btn color="primary" variant="outlined" prepend-icon="mdi-download" @click="downloadCombinedReport">下载综合鉴伪报告</v-btn>
+                </div>
               </div>
 
               <!-- 右侧任务信息 -->
@@ -221,6 +229,29 @@
           </div>
         </div>
       </div>
+
+      <div class="content-wrapper d-flex pa-2 justify-center" v-if="originalFiles.length">
+        <div class="content-container">
+          <v-card variant="outlined" class="w-100">
+            <v-card-title class="text-subtitle-1">原始文件</v-card-title>
+            <v-card-text>
+              <v-list density="compact">
+                <v-list-item v-for="file in originalFiles" :key="file.id || file.file_id">
+                  <v-list-item-title>{{ file.file_name }}</v-list-item-title>
+                  <v-list-item-subtitle>{{ file.resource_type }} · {{ file.file_type }}</v-list-item-subtitle>
+                  <template #append>
+                    <div class="d-flex ga-2">
+                      <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
+                      <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
+                      <v-btn size="small" variant="text" prepend-icon="mdi-file-document-outline" @click="openExtractDialog(file)">查看提取文本</v-btn>
+                    </div>
+                  </template>
+                </v-list-item>
+              </v-list>
+            </v-card-text>
+          </v-card>
+        </div>
+      </div>
     </div>
 
     <!-- 添加提示对话框 -->
@@ -250,8 +281,29 @@
         </v-card-title>
         <v-card-text>
           <v-alert v-if="previewError" type="warning" variant="tonal" class="mb-4">{{ previewError }}</v-alert>
-          <v-progress-linear v-if="previewLoading" indeterminate color="primary" class="mb-4" />
-          <pre v-else class="file-preview">{{ previewText }}</pre>
+          <iframe
+            v-if="previewUrl"
+            :src="previewUrl"
+            class="file-iframe"
+            title="源文件预览"
+          />
+          <div v-else class="text-medium-emphasis">当前文件无法内嵌预览，请下载查看源文件。</div>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+    <!-- 提取文本弹窗 -->
+    <v-dialog v-model="showExtractDialog" max-width="900px">
+      <v-card>
+        <v-toolbar flat>
+          <v-toolbar-title>{{ extractDialogTitle || '提取文本' }}</v-toolbar-title>
+          <v-spacer />
+          <v-btn icon @click="showExtractDialog = false"><v-icon>mdi-close</v-icon></v-btn>
+        </v-toolbar>
+        <v-card-text style="max-height:70vh; overflow:auto;">
+          <v-progress-linear v-if="extractLoading" indeterminate color="primary" class="mb-4" />
+          <v-alert v-if="extractError" type="warning" variant="tonal" class="mb-4">{{ extractError }}</v-alert>
+          <pre v-if="extracted_text" class="file-preview">{{ extracted_text }}</pre>
+          <div v-else-if="!extractLoading" class="text-grey">无提取文本</div>
         </v-card-text>
       </v-card>
     </v-dialog>
@@ -303,13 +355,13 @@ const resourceTaskType = ref<'paper' | 'review'>('paper')
 const resourceTaskName = ref('')
 const resourceReason = ref('')
 const resourceFiles = ref<Array<{ id?: number; file_id?: number; file_name: string; resource_type: string; file_type: string; file_url?: string | null }>>([])
+const originalFiles = ref<Array<{ id?: number; file_id?: number; file_name: string; resource_type: string; file_type: string; file_url?: string | null }>>([])
 const resourceDecision = ref('')
 const resourceSteps = ref('')
 const resourceComment = ref('')
 const previewDialog = ref(false)
-const previewLoading = ref(false)
 const previewTitle = ref('')
-const previewText = ref('')
+const previewUrl = ref('')
 const previewError = ref('')
 const resourceDecisionOptions = computed(() => {
   if (resourceTaskType.value === 'review') {
@@ -325,6 +377,12 @@ const resourceDecisionOptions = computed(() => {
     { title: '整体风险较低', value: 'low_ai_risk' },
   ]
 })
+
+const extracted_text = ref('')
+const extractDialogTitle = ref('')
+const extractLoading = ref(false)
+const extractError = ref('')
+const showExtractDialog = ref(false)
 
 interface dimension {
   method: string,
@@ -380,6 +438,7 @@ onMounted(async () => {
       resourceTaskName.value = response.task_name || ''
       resourceReason.value = response.reason || ''
       resourceFiles.value = response.selected_files || []
+      originalFiles.value = response.original_files || response.selected_files || []
       const existingPayload = response.result_payload || {}
       resourceDecision.value = existingPayload.final_decision || ''
       resourceComment.value = existingPayload.comment || response.conclusion || ''
@@ -404,6 +463,9 @@ onMounted(async () => {
     ])
     fetchMaskImage()
     fetchDetectionResults()
+
+    // set extracted text and combined report for image-type requests
+    originalFiles.value = response.original_files || []
 
   } catch (error) {
     snackbar.showMessage('获取任务详情失败', 'error')
@@ -472,24 +534,63 @@ const downloadFile = (file: { file_name: string; file_url?: string | null }) => 
   document.body.removeChild(link)
 }
 
-const previewFile = async (file: { id?: number; file_id?: number; file_name: string }) => {
-  const fileId = file.file_id || file.id
-  if (!fileId) return
+const previewFile = async (file: { id?: number; file_id?: number; file_name: string; file_url?: string | null }) => {
   previewDialog.value = true
-  previewLoading.value = true
   previewTitle.value = file.file_name
-  previewText.value = ''
+  previewUrl.value = ''
   previewError.value = ''
+  const url = getFileUrl(file)
+  if (!url) {
+    previewError.value = '当前文件无法预览，请下载查看源文件。'
+    return
+  }
+  previewUrl.value = url
+}
+
+const openExtractDialog = async (file: { id?: number; file_id?: number; file_name: string; file_url?: string | null }) => {
+  const fileId = file.file_id || file.id
+  if (!fileId) {
+    snackbar.showMessage('文件缺少ID，无法获取提取文本', 'error')
+    return
+  }
+  showExtractDialog.value = true
+  extractDialogTitle.value = `提取文本 - ${file.file_name || '未命名文件'}`
+  extractLoading.value = true
+  extractError.value = ''
+  extracted_text.value = ''
   try {
     const response = await uploadApi.getResourceTextPreview(fileId)
-    previewText.value = response.data?.text_content || '暂无可预览文本。'
+    extracted_text.value = response.data?.text_content || ''
     if (response.data?.text_truncated) {
-      previewError.value = '文件较长，当前仅展示前 60000 字。'
+      extractError.value = '文件较长，当前仅展示前 60000 字。'
+    }
+    if (!extracted_text.value) {
+      extractError.value = extractError.value || '当前文件暂无可展示文本。'
     }
   } catch (error: any) {
-    previewError.value = error?.response?.data?.message || '当前文件暂不支持文本预览，请下载查看。'
+    extractError.value = error?.response?.data?.message || '获取提取文本失败。'
   } finally {
-    previewLoading.value = false
+    extractLoading.value = false
+  }
+}
+
+const downloadCombinedReport = async () => {
+  try {
+    const response = await reviewer.downloadCombinedTaskReport(
+      manual_review_id.value,
+      requestType.value as 'image' | 'resource',
+    )
+    const blob = new Blob([response.data], { type: 'application/pdf' })
+    const objectUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = `manual_review_${manual_review_id.value}_task_report.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(objectUrl)
+  } catch (error) {
+    snackbar.showMessage('下载综合鉴伪报告失败', 'error')
   }
 }
 
@@ -765,14 +866,13 @@ watch(() => currentDrawingDimension.value, (newVal, oldVal) => {
 .task-detail {
   position: relative;
   min-height: 100vh;
-  max-height: 100vh;
   background-color: rgb(var(--v-theme-surface));
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .main-content {
-  height: calc(100vh - 80px);
-  overflow: hidden;
+  min-height: calc(100vh - 80px);
+  overflow: visible;
   background-color: rgb(var(--v-theme-surface));
 }
 
@@ -1098,6 +1198,12 @@ watch(() => currentDrawingDimension.value, (newVal, oldVal) => {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: inherit;
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+}
+
+.file-iframe {
+  width: 100%;
+  min-height: 65vh;
+  border: 0;
 }
 </style>

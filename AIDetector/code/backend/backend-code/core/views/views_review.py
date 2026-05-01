@@ -9,7 +9,7 @@ from ..models import ReviewRequest, ManualReview, DetectionResult, User, Detecti
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from ..models import (
     ReviewRequest,
     DetectionTask,
@@ -23,6 +23,7 @@ from ..models import (
 from core.util import send_notification
 from core.models import Notification
 import uuid
+from ..utils.task_result_serializer import build_task_result_summary
 
 
 def _serialize_review_resource_file(file):
@@ -34,6 +35,33 @@ def _serialize_review_resource_file(file):
         'file_size': file.file_size,
         'file_type': file.file_type,
         'file_url': file.stored_path if file.stored_path.startswith('/') else f"/media/{file.stored_path}" if file.stored_path else None,
+    }
+
+
+def _serialize_file_management(file):
+    # Generic serializer for FileManagement used by admin/reviewer endpoints
+    if not file:
+        return None
+    return {
+        'id': file.id,
+        'file_name': file.file_name,
+        'file_size': file.file_size,
+        'file_type': file.file_type,
+        'resource_type': file.resource_type,
+        'file_url': file.stored_path if file.stored_path.startswith('/') else f"/media/{file.stored_path}" if file.stored_path else None,
+    }
+
+
+def _serialize_reviewer_progress(manual_review, total_count, completed_count):
+    reviewer = manual_review.reviewer
+    return {
+        'id': reviewer.id,
+        'username': reviewer.username,
+        'avatar': reviewer.avatar.url if reviewer.avatar else None,
+        'status': manual_review.status,
+        'total_count': total_count,
+        'completed_count': completed_count,
+        'review_time': manual_review.review_time.strftime('%Y-%m-%d %H:%M:%S') if manual_review.review_time else None,
     }
 
 
@@ -463,6 +491,10 @@ def get_request_detail(request, reviewRequest_id):
         manual_reviews = resource_request.manual_reviews.all()
         total_reviewers = resource_request.reviewers.count()
         completed_reviews_count = manual_reviews.filter(status='completed').count()
+        reviewer_progress = [
+            _serialize_reviewer_progress(manual_review, 1, 1 if manual_review.status == 'completed' else 0)
+            for manual_review in manual_reviews.select_related('reviewer')
+        ]
         status_payload = {
             'done': completed_reviews_count,
             'process': total_reviewers - completed_reviews_count,
@@ -477,7 +509,11 @@ def get_request_detail(request, reviewRequest_id):
             'task_type': resource_request.task_type,
             'task_id': resource_request.detection_task_id,
             'selected_files': selected_files,
+            'original_files': [ _serialize_file_management(f) for f in resource_request.detection_task.resource_files.all() ],
+            'extracted_text': resource_request.detection_task.text_detection_results,
+            'combined_report': build_task_result_summary(resource_request.detection_task),
             'status': status_payload,
+            'reviewers': reviewer_progress,
             'reason': resource_request.reason,
             'ai_detection_result': {
                 'result_summary': resource_request.detection_task.text_detection_results,
@@ -531,6 +567,10 @@ def get_request_detail(request, reviewRequest_id):
     # 计算状态
     total_reviewers = review_request.reviewers.count()
     completed_reviews_count = manual_reviews.filter(status='completed').count()
+    reviewer_progress = [
+        _serialize_reviewer_progress(manual_review, manual_review.imgs.count(), manual_review.img_reviews.count())
+        for manual_review in manual_reviews.select_related('reviewer').prefetch_related('imgs', 'img_reviews')
+    ]
     status = {
         'done': completed_reviews_count,
         'process': total_reviewers - completed_reviews_count
@@ -541,6 +581,10 @@ def get_request_detail(request, reviewRequest_id):
         'images': images,
         'ai_detection_result': ai_detection_result,
         'status': status,
+        'original_files': [ _serialize_file_management(f) for f in detection_task.resource_files.all() ],
+        'extracted_text': detection_task.text_detection_results,
+        'combined_report': build_task_result_summary(detection_task),
+        'reviewers': reviewer_progress,
         # 'reviewers_results': reviewers_results
     })
 
@@ -681,6 +725,49 @@ def get_reviewer_request_detail(request, reviewRequest_id):
         'image_urls': image_urls,
         'ai_detection_result': ai_detection_result,
         'status': review_request.status1,
+        'status2': review_request.status2,
+        'original_files': [ _serialize_file_management(f) for f in detection_task.resource_files.all() ],
+        'extracted_text': detection_task.text_detection_results,
+        'combined_report': build_task_result_summary(detection_task),
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def get_admin_review_request_detail(request, reviewRequest_id):
+    """管理员查看任意 ReviewRequest 的详情（包含原始文件、提取文本和综合报告）"""
+    try:
+        review_request = ReviewRequest.objects.get(id=reviewRequest_id)
+    except ReviewRequest.DoesNotExist:
+        return Response({'error': 'ReviewRequest not found'}, status=404)
+
+    detection_result = review_request.detection_result
+    if not detection_result:
+        return Response({'error': 'No detection result found for the review request'}, status=404)
+
+    detection_task = detection_result.detection_task
+    if not detection_task:
+        return Response({'error': 'No detection task found for the review request'}, status=404)
+
+    images = [
+        {'img_id': img.id, 'img_url': img.image.url}
+        for img in review_request.imgs.all()
+    ]
+
+    ai_detection_result = {
+        'is_fake': detection_result.is_fake,
+        'confidence_score': detection_result.confidence_score,
+        'detection_time': detection_result.detection_time.strftime('%Y-%m-%d %H:%M:%S') if detection_result.detection_time else None,
+    }
+
+    return Response({
+        'request_type': 'image',
+        'images': images,
+        'ai_detection_result': ai_detection_result,
+        'original_files': [ _serialize_file_management(f) for f in detection_task.resource_files.all() ],
+        'extracted_text': detection_task.text_detection_results,
+        'combined_report': build_task_result_summary(detection_task),
+        'status1': review_request.status1,
         'status2': review_request.status2,
     })
 
@@ -892,7 +979,10 @@ def get_review_detail(request, manual_review_id):
         'image_urls': image_urls,
         'ai_detection_result': ai_detection_result,
         'count': len(image_ids),
-        'reviewers_results': reviewers_results
+        'reviewers_results': reviewers_results,
+        'original_files': [ _serialize_file_management(f) for f in detection_task.resource_files.all() ],
+        'extracted_text': detection_task.text_detection_results,
+        'combined_report': build_task_result_summary(detection_task),
     })
 
 

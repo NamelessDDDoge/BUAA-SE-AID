@@ -16,5 +16,9 @@ export default {
 
     getResourceTextPreview(fileId: number) {
         return http.get(`/upload/${fileId}/preview_text/`)
+    },
+
+    downloadTaskReportAdmin(taskId: number) {
+        return http.get(`/admin/tasks/${taskId}/report/`, { responseType: 'blob' })
     }
 }

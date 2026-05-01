@@ -1,676 +1,801 @@
 <template>
-  <div class="task-detail pa-4">
-    <!-- 返回按钮 -->
-    <div class="d-flex align-center mb-6">
-      <v-btn icon="mdi-arrow-left" variant="text" @click="router.back()" class="mr-2 return-btn">
-        <v-icon>mdi-arrow-left</v-icon>
-      </v-btn>
-      <span class="text-h6 font-weight-medium">返回检测历史</span>
-    </div>
-
-    <!-- 主要内容区域 -->
-    <div class="main-content rounded-lg">
-      <!-- 顶部信息区域 -->
-      <div class="info-section pa-6">
-        <div class="content-wrapper d-flex justify-center">
-          <div class="content-container">
-            <div class="info-content d-flex align-center justify-space-between pa-4">
-              <!-- 左侧进度和标签 -->
-              <div class="d-flex align-center" style="min-width: 320px">
-                <div class="progress-circle mr-3 elevation-1">
-                  <!-- <span class="text-h5 font-weight-bold primary--text">{{ taskData?.progress }}%</span> -->
-                  <span class="text-h5 font-weight-bold primary--text">{{ formatNumber(AI_detection) }}</span>
-                  <span class="text-caption">为假</span>
-                </div>
-                <v-btn color="primary" variant="elevated" prepend-icon="mdi-download" @click="handleDownloadReport"
-                  class="ml-4">
-                  下载人工审核报告
-                </v-btn>
-                <!-- 添加的v-card文本区域 -->
-                <v-card class="ml-4 pa-2 elevation-1" flat rounded="lg" width="250">
-                  <v-card-title class="pa-2 pb-1 text-subtitle-2 font-weight-bold">AI 检测结果</v-card-title>
-                  <v-card-text class="pa-2 pt-1">
-                    <!-- 造假维度列表 -->
-                    <div v-for="(dimension, index) in detection_results" :key="index"
-                      class="d-flex justify-space-between text-body-2 text-grey">
-                      <span class="font-weight-medium">{{ convert(index) }}:</span>
-                      <span class="text-primary">{{ dimension.probability.toFixed(2) }}</span> <!-- 占位符分数 -->
-                    </div>
-                  </v-card-text>
-                </v-card>
-              </div>
-
-
-              <!-- 右侧任务信息 -->
-              <div class="task-stats d-flex align-center">
-                <div class="stat-item mr-4">
-                  <div class="text-subtitle-1 d-flex justify-center">
-                    <v-chip variant="flat" size="x-large" class="unprocessed-chip font-weight-medium px-3"
-                      style="min-width: 80px">
-                      未处理
-                    </v-chip>
-                  </div>
-                  <div class="text-h6 font-weight-bold">{{ process }}份</div>
-                </div>
-                <div class="stat-item">
-                  <div class="text-subtitle-1 d-flex justify-center">
-                    <v-chip variant="flat" size="x-large" class="sent-chip font-weight-medium px-3"
-                      style="min-width: 80px">
-                      已发送
-                    </v-chip>
-                  </div>
-                  <div class="text-h6 font-weight-bold">{{ done }}份</div>
-                </div>
-              </div>
-            </div>
-          </div>
+  <div class="publisher-progress-page">
+    <div class="page-shell">
+      <div class="hero-bar">
+        <div>
+          <div class="eyebrow">Publisher Review Progress</div>
+          <h1>人工审核进度</h1>
+          <p>查看已发送人数、已完成结果、原始文件和每位审核员的处理情况。</p>
+        </div>
+        <div class="hero-actions">
+          <v-btn variant="tonal" prepend-icon="mdi-arrow-left" @click="goBack">返回</v-btn>
+          <v-btn color="primary" prepend-icon="mdi-download" @click="handleDownloadReport">下载人工审核报告</v-btn>
         </div>
       </div>
 
-      <!-- 分割线 -->
-      <v-divider></v-divider>
-
-      <!-- 主要内容区域 -->
-      <div class="content-wrapper d-flex pa-2 justify-center">
-        <div class="content-container d-flex" style="gap: 12px;">
-          <!-- 图片列表 -->
-          <div class="image-list rounded-lg elevation-1"
-            style="background-color: rgb(var(--v-theme-surface)); padding: 20px;">
-            <div class="text-h6 font-weight-medium text-center mb-4" style="white-space: nowrap;">图片列表</div>
-            <div class="image-grid">
-              <div v-for="(image, index) in images" :key="index" class="image-grid-item"
-                :class="{ 'active': currentImageIndex === index }" @click="handleImageSelect(index)">
-                <v-img :src="getImageUrl(image.img_url)" cover width="100%" height="100%" class="rounded-lg"></v-img>
+      <v-row class="overview-grid" dense>
+        <v-col cols="12" md="4">
+          <v-card class="glass-card progress-card" rounded="xl" elevation="0">
+            <div class="progress-ring">
+              <div>
+                <div class="progress-value">{{ formatNumber(aiDetection) }}</div>
+                <div class="progress-label">AI 判定为假</div>
               </div>
             </div>
-          </div>
+            <div class="progress-meta">
+              <v-chip color="primary" variant="tonal">{{ statusText }}</v-chip>
+              <v-chip color="teal" variant="tonal">{{ done }} 已完成</v-chip>
+              <v-chip color="amber" variant="tonal">{{ process }} 待完成</v-chip>
+            </div>
+            <v-progress-linear :model-value="progressPercent" height="12" rounded color="primary" class="mt-4" />
+            <div class="text-caption text-medium-emphasis mt-2">完成率 {{ progressPercent.toFixed(0) }}%</div>
+          </v-card>
+        </v-col>
 
-          <!-- 图片预览区域 -->
-          <div class="preview-section">
-            <div class="preview-box">
-              <v-img v-if="currentImage" :src="getImageUrl(currentImage.img_url)" contain height="100%"
-                class="rounded-lg"></v-img>
-              <span v-else class="text-h4">PIC</span>
-              <div class="preview-controls">
-                <v-btn icon="mdi-chevron-left" variant="flat" @click="handlePrevImage"
-                  :disabled="currentImageIndex <= 0" class="control-btn" color="black" size="x-large"></v-btn>
-                <v-btn icon="mdi-chevron-right" variant="flat" @click="handleNextImage"
-                  :disabled="currentImageIndex >= images.length - 1" class="control-btn" color="black"
-                  size="x-large"></v-btn>
+        <v-col cols="12" md="4">
+          <v-card class="glass-card summary-card" rounded="xl" elevation="0">
+            <div class="card-title">任务摘要</div>
+            <div class="summary-list">
+              <div class="summary-row"><span>请求编号</span><strong>{{ reviewRequestId }}</strong></div>
+              <div class="summary-row"><span>当前图片</span><strong>{{ currentImageIndex + 1 }} / {{ images.length || 0 }}</strong></div>
+              <div class="summary-row"><span>审核员</span><strong>{{ reviewers.length }}</strong></div>
+              <div class="summary-row"><span>文件数</span><strong>{{ originalFiles.length || images.length || 0 }}</strong></div>
+            </div>
+          </v-card>
+        </v-col>
+
+        <v-col cols="12" md="4">
+          <v-card class="glass-card summary-card" rounded="xl" elevation="0">
+            <div class="card-title">检测概览</div>
+            <div class="dimension-mini" v-for="(dimension, index) in detectionResults" :key="index">
+              <span>{{ convert(index) }}</span>
+              <strong>{{ dimension.probability.toFixed(2) }}</strong>
+            </div>
+          </v-card>
+        </v-col>
+      </v-row>
+
+      <v-row class="workspace-grid" dense>
+        <v-col cols="12" lg="3">
+          <v-card class="glass-card side-panel" rounded="xl" elevation="0">
+            <div class="card-title">原始文件</div>
+            <div class="file-list">
+              <div v-for="file in originalFiles" :key="file.id || file.file_id" class="file-item">
+                <div class="file-main">
+                  <div class="file-name">{{ file.file_name }}</div>
+                  <div class="file-meta">{{ file.resource_type }} · {{ file.file_type }}</div>
+                </div>
+                <div class="file-actions">
+                  <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
+                  <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
+                  <v-btn
+                    v-if="requestType === 'resource'"
+                    size="small"
+                    variant="text"
+                    prepend-icon="mdi-file-document-outline"
+                    @click="openExtractDialog(file)"
+                  >
+                    查看提取文本
+                  </v-btn>
+                </div>
+              </div>
+              <div v-if="!originalFiles.length" class="empty-state">暂无原始文件</div>
+            </div>
+          </v-card>
+        </v-col>
+
+        <v-col cols="12" lg="6">
+          <v-card class="glass-card preview-panel" rounded="xl" elevation="0">
+            <div class="card-title d-flex align-center justify-space-between">
+              <span>图片工作区</span>
+              <v-chip variant="tonal" color="primary">{{ currentImageIndex + 1 }} / {{ images.length || 0 }}</v-chip>
+            </div>
+
+            <div class="image-stage">
+              <div class="image-strip">
+                <button
+                  v-for="(image, index) in images"
+                  :key="image.img_id"
+                  class="thumb-btn"
+                  :class="{ active: currentImageIndex === index }"
+                  @click="handleImageSelect(index)"
+                >
+                  <img :src="getImageUrl(image.img_url)" alt="thumbnail" />
+                </button>
+              </div>
+
+              <div class="stage-main">
+                <div class="stage-frame">
+                  <img v-if="currentImage" :src="getImageUrl(currentImage.img_url)" alt="preview" class="stage-image" />
+                  <div v-else class="empty-state">暂无图片</div>
+                  <div class="stage-nav">
+                    <v-btn icon="mdi-chevron-left" variant="flat" @click="handlePrevImage" :disabled="currentImageIndex <= 0" />
+                    <v-btn icon="mdi-chevron-right" variant="flat" @click="handleNextImage" :disabled="currentImageIndex >= images.length - 1" />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          </v-card>
+        </v-col>
 
-          <!-- 右侧人工审核区域 -->
-          <div class="review-section rounded-lg elevation-1 pa-4">
-            <div class="review-header">
-              <div class="text-h6 font-weight-medium text-center mb-4">人工审核</div>
-              <div class="reviewer-info mt-4">
-                <template v-if="review_results.length > 0">
-                  <div v-for="(review, index) in review_results" :key="index"
-                    class="reviewer-item d-flex align-center pa-3 mb-4 rounded" style="min-height: 64px;">
-                    <v-avatar size="40" class="mr-3" color="primary">
-                      <v-img v-if="review.avatar" :src="getImageUrl(review.avatar)" cover></v-img>
-                      <span v-else class="text-h6">{{ review.username.charAt(0) }}</span>
-                    </v-avatar>
-                    <div class="flex-grow-1">
-                      <div class="text-body-1 font-weight-medium">{{ review.username }}</div>
-                      <div class="text-caption text-grey mt-1">结果：{{ getResult(review.result) }}</div>
+        <v-col cols="12" lg="3">
+          <v-card class="glass-card side-panel" rounded="xl" elevation="0">
+            <div class="card-title d-flex align-center justify-space-between">
+              <span>审核员进度</span>
+              <v-chip variant="tonal" color="secondary">{{ reviewers.length }} 人</v-chip>
+            </div>
+            <div class="review-list">
+              <template v-if="reviewers.length">
+                <button class="reviewer-card" v-for="review in reviewers" :key="review.id" :class="{ inactive: review.status !== 'completed' }" @click="review.status === 'completed' && handleViewDetail(review)">
+                  <div class="reviewer-avatar">
+                    <img v-if="review.avatar" :src="getImageUrl(review.avatar)" alt="avatar" />
+                    <span v-else>{{ review.username.charAt(0) }}</span>
+                  </div>
+                  <div class="reviewer-body">
+                    <div class="reviewer-name">{{ review.username }}</div>
+                    <div class="reviewer-result-row">
+                      <v-chip size="small" variant="tonal" :color="review.status === 'completed' ? 'teal' : 'amber'">
+                        {{ review.status === 'completed' ? '已完成' : '进行中' }}
+                      </v-chip>
+                      <span>{{ review.completed_count }}/{{ review.total_count }}</span>
                     </div>
-                    <v-btn variant="text" density="comfortable" class="details-btn" color="primary"
-                      @click="handleViewDetail(review)">
-                      查看详情
-                      <v-icon size="16" class="ml-1">mdi-chevron-right</v-icon>
-                    </v-btn>
                   </div>
-                </template>
-                <template v-else>
-                  <div class="d-flex flex-column align-center justify-center" style="height: 200px;">
-                    <v-icon size="48" color="grey" class="mb-4">mdi-information-outline</v-icon>
-                    <div class="text-body-1 text-grey">暂无人工审核结果</div>
-                  </div>
-                </template>
-              </div>
+                  <v-icon size="18">mdi-chevron-right</v-icon>
+                </button>
+              </template>
+              <div v-else class="empty-state">暂无人工审核结果</div>
             </div>
-          </div>
-
-
-        </div>
-      </div>
+          </v-card>
+        </v-col>
+      </v-row>
     </div>
 
-    <!-- 添加详情弹窗 -->
     <v-dialog v-model="showDetailDialog" fullscreen :scrim="false" transition="dialog-bottom-transition">
       <v-card>
-        <v-toolbar dark color="primary">
-          <v-btn icon dark @click="showDetailDialog = false">
-            <v-icon>mdi-close</v-icon>
-          </v-btn>
+        <v-toolbar color="primary" theme="dark">
+          <v-btn icon @click="showDetailDialog = false"><v-icon>mdi-close</v-icon></v-btn>
           <v-toolbar-title>检测详情</v-toolbar-title>
-          <v-spacer></v-spacer>
         </v-toolbar>
-        <result-component v-if="showDetailDialog" :task-id="taskData?.id"
-          :imageUrl="getImageUrl(images[currentImageIndex].img_url)" :reasons="reasons" :result="result"
-          :scores="scores" :ai_detection="AI_detection" :annotations="annotations" />
+        <result-component
+          v-if="showDetailDialog"
+          :task-id="taskId === null ? undefined : String(taskId)"
+          :imageUrl="getImageUrl(images[currentImageIndex]?.img_url || '')"
+          :reasons="reasons"
+          :result="result"
+          :scores="scores"
+          :ai_detection="aiDetection"
+          :annotations="annotations"
+        />
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="previewDialog" max-width="1100">
+      <v-card>
+        <v-toolbar flat>
+          <v-toolbar-title>{{ previewTitle }}</v-toolbar-title>
+          <v-spacer />
+          <v-btn icon @click="previewDialog = false"><v-icon>mdi-close</v-icon></v-btn>
+        </v-toolbar>
+        <v-card-text>
+          <v-alert v-if="previewError" type="warning" variant="tonal" class="mb-4">{{ previewError }}</v-alert>
+          <iframe v-if="previewUrl" :src="previewUrl" class="file-iframe" title="源文件预览" />
+          <div v-else class="empty-state">当前文件无法内嵌预览，请下载查看源文件。</div>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-if="requestType === 'resource'" v-model="showExtractDialog" max-width="900">
+      <v-card>
+        <v-toolbar flat>
+          <v-toolbar-title>{{ extractDialogTitle || '提取文本' }}</v-toolbar-title>
+          <v-spacer />
+          <v-btn icon @click="showExtractDialog = false"><v-icon>mdi-close</v-icon></v-btn>
+        </v-toolbar>
+        <v-card-text style="max-height:70vh; overflow:auto;">
+          <v-progress-linear v-if="extractLoading" indeterminate color="primary" class="mb-4" />
+          <v-alert v-if="extractError" type="warning" variant="tonal" class="mb-4">{{ extractError }}</v-alert>
+          <pre v-if="extractedText" class="text-block">{{ extractedText }}</pre>
+          <div v-else-if="!extractLoading" class="empty-state">无提取文本</div>
+        </v-card-text>
       </v-card>
     </v-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useTheme } from 'vuetify'
-import { useUserStore } from '@/stores/user'
-import { useSnackbarStore } from '@/stores/snackbar'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import ResultComponent from '@/components/result.vue'
 import publisher from '@/api/publisher'
+import uploadApi from '@/api/upload'
+import { useSnackbarStore } from '@/stores/snackbar'
 
-const router = useRouter()
-const route = useRoute()
-const theme = useTheme()
-const userStore = useUserStore()
-const snackbar = useSnackbarStore()
-
-const review_request_id = computed(() => (route.params as RouteParams & { review_request_id: number }).review_request_id)
-
-interface Task {
-  id: string
-  publishTime: string
-  reviewer: string
-  progress: number
-  publisherId: string
-}
-
-interface Image {
-  img_id: string
-  img_url: string
-  thumbnail: string
-  reviewStatus: string
-  reviewComment?: string
-}
-
-interface Review {
-  id: number,
-  username: string,
-  avatar: string,
-  result: boolean
-}
-
-// 定义路由参数的类型
 interface RouteParams {
-  id: string
+  review_request_id: string
 }
 
-interface dimension {
-  method: string,
+interface ImageItem {
+  img_id: number
+  img_url: string
+}
+
+interface ReviewerItem {
+  id: number
+  username: string
+  avatar: string
+  status: 'undo' | 'completed'
+  total_count: number
+  completed_count: number
+  review_time?: string | null
+}
+
+interface OriginalFileItem {
+  id?: number
+  file_id?: number
+  file_name: string
+  resource_type: string
+  file_type: string
+  file_url?: string | null
+}
+
+interface DimensionItem {
+  method: string
   probability: number
 }
 
+const router = useRouter()
+const route = useRoute()
+const snackbar = useSnackbarStore()
 
-const taskData = ref<Task | null>(null)
-const images = ref<Image[]>([])
+const reviewRequestId = computed(() => Number((route.params as RouteParams).review_request_id))
+
+const taskId = ref<number | null>(null)
+const requestType = ref<'image' | 'resource'>('image')
+const images = ref<ImageItem[]>([])
+const originalFiles = ref<OriginalFileItem[]>([])
 const currentImageIndex = ref(0)
 const done = ref(0)
 const process = ref(0)
-const AI_detection = ref(0)
-const review_results = ref<Review[]>([])
+const aiDetection = ref(0)
+const reviewers = ref<ReviewerItem[]>([])
 const reasons = ref<string[]>([])
 const result = ref(false)
 const scores = ref<number[]>([])
-const annotations = ref<Array<Array<{ points: { x: number; y: number; }[]; color: string; }>>>([])
-const detection_results = ref<dimension[]>([])
+const annotations = ref<Array<Array<{ points: { x: number; y: number }[]; color: string }>>>([])
+const detectionResults = ref<DimensionItem[]>([])
 
+const previewDialog = ref(false)
+const previewTitle = ref('')
+const previewUrl = ref('')
+const previewError = ref('')
+const extractedText = ref('')
+const extractDialogTitle = ref('')
+const extractLoading = ref(false)
+const extractError = ref('')
+const showExtractDialog = ref(false)
+const showDetailDialog = ref(false)
 
-const currentImage = computed(() => {
-  return images.value[currentImageIndex.value]
+const statusText = computed(() => {
+  if (process.value === 0 && done.value === 0) return '待审核'
+  if (process.value > 0) return '审核中'
+  return '已完成'
 })
 
-const convert = (index: number) => {
-  switch (index) {
-    case 0:
-      return '高斯模糊'
-    case 1:
-      return '亮度/对比度调节'
-    case 2:
-      return '智能修复'
-    case 3:
-      return '暴力覆盖'
-    case 4:
-      return '同图复制'
-    case 5:
-      return '重叠切割'
-    case 6:
-      return '跨图拼接'
+const progressPercent = computed(() => {
+  const total = done.value + process.value
+  return total > 0 ? (done.value / total) * 100 : 0
+})
+
+const currentImage = computed(() => images.value[currentImageIndex.value] || null)
+
+const goBack = () => router.back()
+
+const loadRequestDetail = async () => {
+  try {
+    const imageResponse = (await publisher.getRequestDetail({ review_request_id: reviewRequestId.value, request_type: 'image' })).data
+    requestType.value = imageResponse.request_type || 'image'
+    return imageResponse
+  } catch {
+    const resourceResponse = (await publisher.getRequestDetail({ review_request_id: reviewRequestId.value, request_type: 'resource' })).data
+    requestType.value = resourceResponse.request_type || 'resource'
+    return resourceResponse
   }
 }
 
+const getImageUrl = (url: string) => `${import.meta.env.VITE_API_URL || ''}${url}`
 
-// 获取检测结果
-const fetchDetectionResults = async () => {
+const getFileUrl = (file: OriginalFileItem) => {
+  if (!file.file_url) return ''
+  return /^https?:\/\//.test(file.file_url) ? file.file_url : `${import.meta.env.VITE_API_URL || ''}${file.file_url}`
+}
+
+const formatNumber = (value: number) => `${(value * 100).toFixed(2)}%`
+
+const convert = (index: number) => {
+  const labels = ['高斯模糊', '亮度/对比度调节', '智能修复', '暴力覆盖', '同图复制', '重叠切割', '跨图拼接']
+  return labels[index] || `维度${index + 1}`
+}
+
+const downloadFile = (file: OriginalFileItem) => {
+  const url = getFileUrl(file)
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = file.file_name
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+const previewFile = (file: OriginalFileItem) => {
+  previewDialog.value = true
+  previewTitle.value = file.file_name
+  previewUrl.value = ''
+  previewError.value = ''
+  const url = getFileUrl(file)
+  if (!url) {
+    previewError.value = '当前文件无法预览，请下载查看源文件。'
+    return
+  }
+  previewUrl.value = url
+}
+
+const openExtractDialog = async (file: OriginalFileItem) => {
+  if (requestType.value !== 'resource') {
+    return
+  }
+  const fileId = file.file_id || file.id
+  if (!fileId) {
+    snackbar.showMessage('文件缺少ID，无法获取提取文本', 'error')
+    return
+  }
+  showExtractDialog.value = true
+  extractDialogTitle.value = `提取文本 - ${file.file_name}`
+  extractLoading.value = true
+  extractError.value = ''
+  extractedText.value = ''
   try {
-    const id = await (await publisher.getDetectionID({ img_id: currentImage.value.img_id })).data.
-      detection_result_id
-    const response = (await publisher.getSingleImageResult(id)).data
-    detection_results.value = response.sub_methods
-  } catch (error) {
+    const response = await uploadApi.getResourceTextPreview(fileId)
+    extractedText.value = response.data?.text_content || ''
+    if (response.data?.text_truncated) {
+      extractError.value = '文件较长，当前仅展示前 60000 字。'
+    }
+    if (!extractedText.value) {
+      extractError.value = extractError.value || '当前文件暂无可展示文本。'
+    }
+  } catch (error: any) {
+    extractError.value = error?.response?.data?.message || '获取提取文本失败。'
+  } finally {
+    extractLoading.value = false
+  }
+}
+
+const fetchDetectionResults = async () => {
+  if (!currentImage.value) return
+  try {
+    const detectionId = (await publisher.getDetectionID({ img_id: currentImage.value.img_id })).data.detection_result_id
+    detectionResults.value = (await publisher.getSingleImageResult(detectionId)).data.sub_methods || []
+  } catch {
     snackbar.showMessage('获取检测结果失败', 'error')
   }
 }
 
-const fetchReview = async (img: Image) => {
+const fetchReviewDetail = async (review: ReviewerItem) => {
+  if (!currentImage.value) return
   try {
-    review_results.value = (await publisher.getImageReviewAll({ review_request_id: review_request_id.value, img_id: img.img_id })).data.reviewers_results
-  } catch (error) {
-    snackbar.showMessage('获取人工审核结果失败', 'error')
-  }
-}
-
-const fetchReviewDetail = async (review: Review) => {
-  try {
-    const response = (await publisher.getImageReviewDetail({ review_request_id: review_request_id.value, img_id: currentImage.value.img_id, reviewer_id: review.id })).data
-    reasons.value = response.reasons
+    const response = (await publisher.getImageReviewDetail({
+      review_request_id: reviewRequestId.value,
+      img_id: currentImage.value.img_id,
+      reviewer_id: review.id,
+    })).data
+    reasons.value = response.reasons || []
     result.value = response.result
-    scores.value = response.scores
-    annotations.value = response.points
-    console.log(annotations.value)
-  } catch (error) {
+    scores.value = response.scores || []
+    annotations.value = response.points || []
+  } catch {
     snackbar.showMessage('获取人工审核详情失败', 'error')
   }
 }
 
-const handleImageSelect = (index: number) => {
+const handleImageSelect = async (index: number) => {
   currentImageIndex.value = index
-  fetchReview(currentImage.value)
-  fetchDetectionResults()
-}
-
-const getResult = (result: boolean) => {
-  if (result === true) {
-    return '假'
-  } else {
-    return '真'
-  }
+  await fetchDetectionResults()
 }
 
 const handlePrevImage = () => {
-  if (currentImageIndex.value > 0) {
-    currentImageIndex.value--
-  }
+  if (currentImageIndex.value > 0) handleImageSelect(currentImageIndex.value - 1)
 }
 
 const handleNextImage = () => {
-  if (currentImageIndex.value < images.value.length - 1) {
-    currentImageIndex.value++
-  }
+  if (currentImageIndex.value < images.value.length - 1) handleImageSelect(currentImageIndex.value + 1)
 }
 
-const getImageUrl = (url: string) => {
-  return import.meta.env.VITE_API_URL + url
-}
-
-
-// 添加弹窗控制变量
-const showDetailDialog = ref(false)
-
-const formatNumber = (result: number) => {
-  return `${(result * 100).toFixed(2)}%`
-}
-
-// 修改查看详情按钮的点击事件
-const handleViewDetail = (review: Review) => {
+const handleViewDetail = async (review: ReviewerItem) => {
+  await fetchReviewDetail(review)
   showDetailDialog.value = true
-  fetchReviewDetail(review)
 }
 
 const handleDownloadReport = async () => {
   try {
-    const response = await publisher.downloadReviewReport({ review_request_id: review_request_id.value })
-    // 打印response.data（Blob对象）的类型和大小
-    console.log('Downloaded data is a Blob. Type:', response.data.type, 'Size:', response.data.size);
-
-    // 确保response.data是一个Blob对象
+    const response = await publisher.downloadReviewReport({ review_request_id: reviewRequestId.value })
     if (!(response.data instanceof Blob)) {
-      console.error('Expected Blob data, but received:', response.data);
-      snackbar.showMessage('下载失败：未收到文件数据', 'error');
-      return;
+      snackbar.showMessage('下载失败：未收到文件数据', 'error')
+      return
     }
-
-    const blob = response.data
-
-    // 检查Blob类型是否为PDF
-    if (blob.type !== 'application/pdf') {
-      console.warn('Downloaded Blob type is not application/pdf:', blob.type);
-      snackbar.showMessage('下载的文件不是PDF格式', 'warning');
-      return;
-    }
-
-    // 创建一个 Blob URL
-    const url = window.URL.createObjectURL(blob)
-    // 创建一个下载链接
+    const url = window.URL.createObjectURL(response.data)
     const link = document.createElement('a')
     link.href = url
-    link.download = `人工审核报告_${review_request_id.value}.pdf`
-    link.target = '_blank' // 在新标签页打开
+    link.download = `人工审核报告_${reviewRequestId.value}.pdf`
     document.body.appendChild(link)
     link.click()
-    // 清理
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
     snackbar.showMessage('报告下载成功', 'success')
-  } catch (error) {
+  } catch {
     snackbar.showMessage('报告下载失败', 'error')
   }
 }
 
 onMounted(async () => {
-  // 先检查权限
-  //const hasPermission = await checkTaskPermission()
-  const hasPermission = true
-  if (!hasPermission) return
   try {
-    const response = (await publisher.getRequestDetail({ review_request_id: review_request_id.value })).data
-    done.value = response.status.done
-    process.value = response.status.process
-    AI_detection.value = response.ai_detection_result.confidence_score
-    images.value = response.images
-    review_results.value = (await publisher.getImageReviewAll({ review_request_id: review_request_id.value, img_id: images.value[0].img_id })).data.reviewers_results
-    currentImageIndex.value = 0
-    fetchDetectionResults()
-  } catch (error) {
+    const response = await loadRequestDetail()
+    done.value = response.status?.done || 0
+    process.value = response.status?.process || 0
+    aiDetection.value = response.ai_detection_result?.confidence_score || 0
+    taskId.value = response.task_id || null
+    images.value = response.images || []
+    originalFiles.value = response.original_files || []
+    reviewers.value = response.reviewers || []
+    if (response.extracted_text) {
+      extractedText.value = typeof response.extracted_text === 'string'
+        ? response.extracted_text
+        : JSON.stringify(response.extracted_text, null, 2)
+    }
+    if (images.value.length > 0) {
+      currentImageIndex.value = 0
+      await fetchDetectionResults()
+    }
+  } catch {
     snackbar.showMessage('获取人工审核结果失败', 'error')
   }
 })
 </script>
 
 <style scoped>
-.task-detail {
-  position: relative;
+.publisher-progress-page {
   min-height: 100vh;
-  max-height: 100vh;
-  background-color: rgb(var(--v-theme-surface));
-  overflow: hidden;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.12), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.10), transparent 24%),
+    linear-gradient(180deg, rgba(248, 250, 252, 1), rgba(241, 245, 249, 1));
 }
 
-.main-content {
-  height: calc(100vh - 80px);
-  overflow: hidden;
-  background-color: rgb(var(--v-theme-surface));
+.page-shell {
+  max-width: 1600px;
+  margin: 0 auto;
 }
 
-.info-section {
-  background-color: rgb(var(--v-theme-surface));
-  padding: 16px 0;
+.hero-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 28px 28px 24px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+  margin-bottom: 20px;
 }
 
-.info-content {
-  width: 100%;
-  background-color: rgb(var(--v-theme-surface));
-  min-height: 160px;
-  padding: 12px 16px !important;
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.55);
+  margin-bottom: 10px;
 }
 
-.progress-circle {
-  width: clamp(100px, 8vw, 130px);
-  height: clamp(100px, 8vw, 130px);
+.hero-bar h1 {
+  font-size: clamp(2rem, 3vw, 3rem);
+  line-height: 1.05;
+  margin: 0 0 10px;
+  color: rgb(15, 23, 42);
+}
+
+.hero-bar p {
+  margin: 0;
+  color: rgba(15, 23, 42, 0.72);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+}
+
+.progress-card,
+.summary-card,
+.side-panel,
+.preview-panel {
+  height: 100%;
+  padding: 20px;
+}
+
+.card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: rgb(15, 23, 42);
+  margin-bottom: 16px;
+}
+
+.progress-ring {
+  width: 170px;
+  height: 170px;
   border-radius: 50%;
-  border: 5px solid rgb(var(--v-theme-primary));
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  border: 10px solid rgba(59, 130, 246, 0.15);
+  box-shadow: inset 0 0 0 8px rgba(255, 255, 255, 0.8);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.85));
+}
+
+.progress-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: rgb(29, 78, 216);
+  text-align: center;
+}
+
+.progress-label {
+  font-size: 0.95rem;
+  text-align: center;
+  color: rgba(15, 23, 42, 0.6);
+}
+
+.progress-meta {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background-color: rgb(var(--v-theme-surface));
-}
-
-.progress-circle .text-h5 {
-  font-size: clamp(1.8rem, 2vw, 2.5rem) !important;
-  line-height: 1.2;
-}
-
-.progress-circle .text-caption {
-  font-size: 1rem !important;
-  margin-top: 4px;
-}
-
-.task-list {
-  width: clamp(360px, 30vw, 420px);
-  padding: 0 12px;
-}
-
-.task-item {
-  width: 100%;
-  margin-bottom: 12px;
-}
-
-.task-item .v-progress-linear {
-  width: clamp(260px, 25vw, 340px) !important;
-  height: 10px !important;
-}
-
-.task-item .text-h6 {
-  white-space: nowrap;
-}
-
-.image-list {
-  width: clamp(100px, 8vw, 120px);
-  height: calc(100vh - 380px);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.image-grid {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 8px;
-  align-items: center;
-  margin-top: -8px;
-}
-
-.image-grid-item {
-  width: 80px;
-  height: 80px;
-  cursor: pointer;
-  border-radius: 4px;
-  overflow: hidden;
-  transition: border-color 0.2s ease;
-  border: 2px solid transparent;
-  flex-shrink: 0;
-}
-
-.image-grid-item:hover {
-  border-color: rgba(var(--v-theme-primary), 0.5);
-}
-
-.image-grid-item.active {
-  border-color: rgb(var(--v-theme-primary));
-}
-
-.content-wrapper {
-  width: 100%;
-  display: flex;
   justify-content: center;
+  margin-top: 18px;
 }
 
-.content-container {
-  width: 100%;
-  max-width: min(1200px, 95vw);
-  display: flex;
-  justify-content: center;
+.summary-list,
+.file-list,
+.review-list {
+  display: grid;
+  gap: 12px;
 }
 
-.preview-section {
-  flex: 1;
-  min-width: 0;
-  max-width: min(800px, 60vw);
-  margin: 0 12px;
+.summary-row,
+.file-item,
+.reviewer-card {
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(248, 250, 252, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.18);
 }
 
-.preview-box {
-  position: relative;
-  height: calc(100vh - 380px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: transparent;
-  overflow: hidden;
-}
-
-.preview-box .v-img {
-  max-width: 800px;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.preview-controls {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 100%;
+.summary-row {
   display: flex;
   justify-content: space-between;
-  padding: 0 16px;
+  gap: 12px;
 }
 
-.control-btn {
-  opacity: 0.7;
-  transition: opacity 0.2s ease !important;
+.summary-row span {
+  color: rgba(15, 23, 42, 0.64);
 }
 
-.control-btn:hover {
-  opacity: 1;
-  transform: none;
+.dimension-mini {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
-.review-section {
-  width: clamp(260px, 20vw, 300px);
-  padding: 20px;
-  background-color: rgb(var(--v-theme-surface));
-  height: calc(100vh - 380px);
-  overflow-y: auto;
+.dimension-mini:last-child {
+  border-bottom: none;
+}
+
+.file-main {
+  margin-bottom: 10px;
+}
+
+.file-name,
+.reviewer-name {
+  font-weight: 700;
+  color: rgb(15, 23, 42);
+}
+
+.file-meta,
+.reviewer-result {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.6);
+}
+
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reviewer-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+
+.reviewer-card.inactive {
+  opacity: 0.72;
+  cursor: default;
+}
+
+.reviewer-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  overflow: hidden;
   flex-shrink: 0;
-  position: relative;
+  background: linear-gradient(135deg, rgb(59, 130, 246), rgb(14, 165, 233));
+  color: white;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
 }
 
-.review-header {
-  position: sticky;
-  top: 0;
-  background-color: rgb(var(--v-theme-surface));
-  z-index: 1;
-  padding-bottom: 8px;
-  margin-bottom: 8px;
+.reviewer-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.reviewer-item {
-  position: relative;
-  padding: 12px;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-  background-color: rgba(var(--v-theme-surface), 0.5);
-  border: 1px solid rgba(var(--v-theme-primary), 0.1);
+.reviewer-body {
+  flex: 1;
+  min-width: 0;
 }
 
-.reviewer-item:hover {
-  background-color: rgba(var(--v-theme-primary), 0.05);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+.reviewer-result-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.62);
 }
 
-.details-btn {
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  white-space: nowrap;
+.reviewer-result.fake {
+  color: rgb(220, 38, 38);
 }
 
-.reviewer-item:hover .details-btn {
-  opacity: 1;
+.reviewer-result.real {
+  color: rgb(22, 163, 74);
 }
 
-.unprocessed-chip {
-  background-color: rgba(244, 67, 54, 0.1) !important;
-  color: rgb(244, 67, 54) !important;
+.image-stage {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 14px;
 }
 
-.sent-chip {
-  background-color: rgba(76, 175, 80, 0.1) !important;
-  color: rgb(76, 175, 80) !important;
+.image-strip {
+  max-height: 74vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding-right: 4px;
 }
 
-/* 滚动条样式 */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
+.thumb-btn {
+  width: 84px;
+  height: 84px;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  overflow: hidden;
+  padding: 0;
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(var(--v-theme-primary), 0.2);
-  border-radius: 3px;
+.thumb-btn.active {
+  border-color: rgb(29, 78, 216);
+  box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.12);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--v-theme-primary), 0.4);
+.thumb-btn img,
+.stage-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
-.task-stats {
-  min-width: 320px;
-  justify-content: center;
+.stage-main {
+  min-width: 0;
 }
 
-.stat-item {
-  min-width: 120px;
+.stage-frame {
+  position: relative;
+  height: min(68vh, 760px);
+  border-radius: 24px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(241,245,249,0.95));
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  display: grid;
+  place-items: center;
 }
 
-.stat-item .text-h6 {
-  font-size: 1.8rem !important;
-  text-align: center;
-  margin-top: 8px;
+.stage-image {
+  object-fit: contain;
+}
+
+.stage-nav {
+  position: absolute;
+  inset: auto 16px 16px auto;
+  display: flex;
+  gap: 10px;
+}
+
+.empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 140px;
+  color: rgba(15, 23, 42, 0.58);
+}
+
+.file-iframe {
+  width: 100%;
+  min-height: 70vh;
+  border: 0;
+  border-radius: 16px;
+}
+
+.text-block {
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  line-height: 1.65;
+  margin: 0;
 }
 
 @media (max-width: 1280px) {
-  .task-stats {
-    min-width: clamp(280px, 25vw, 320px);
+  .image-stage {
+    grid-template-columns: 1fr;
   }
 
-  .stat-item {
-    min-width: clamp(100px, 10vw, 120px);
+  .image-strip {
+    grid-template-columns: repeat(auto-fill, minmax(84px, 84px));
+    grid-auto-flow: column;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
-  .stat-item .text-h6 {
-    font-size: clamp(1.4rem, 1.5vw, 1.8rem) !important;
+  .stage-frame {
+    height: min(60vh, 640px);
   }
 }
 
 @media (max-width: 960px) {
-  .content-container {
-    flex-wrap: wrap;
+  .hero-bar {
+    flex-direction: column;
+  }
+
+  .hero-actions {
     justify-content: flex-start;
   }
-
-  .preview-section {
-    max-width: 100%;
-    order: -1;
-  }
-
-  .image-list,
-  .review-section {
-    height: auto;
-    min-height: 300px;
-  }
-}
-
-/* 添加弹窗过渡动画样式 */
-.dialog-bottom-transition-enter-active,
-.dialog-bottom-transition-leave-active {
-  transition: transform 0.2s ease-in-out;
-}
-
-.dialog-bottom-transition-enter-from,
-.dialog-bottom-transition-leave-to {
-  transform: translateY(100%);
 }
 </style>

@@ -1,7 +1,9 @@
 import csv
+import os
 from rest_framework_simplejwt.tokens import RefreshToken
 from core.models import PublisherReviewerRelationship, ImageReview, Organization
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, FileResponse
+from django.conf import settings
 from ..models import DetectionTask, ManualReview
 from rest_framework.permissions import IsAuthenticated
 from datetime import timedelta
@@ -26,6 +28,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.core.exceptions import ObjectDoesNotExist
 from core.util import send_notification
 from core.models import Notification
+from ..utils.report_generator import ensure_task_report_file
 
 
 def _is_software_admin(user):
@@ -1444,6 +1447,17 @@ def get_review_request_detail_admin(request, reviewRequest_id):
                     'avatar': reviewer.avatar.url if reviewer.avatar else None,
                 })
 
+            # attach detection task related fields when available
+            detection_task = getattr(review_request, 'detection_task', None)
+            extracted_text = None
+            combined_report = None
+            if detection_task:
+                extracted_text = detection_task.text_detection_results if hasattr(detection_task, 'text_detection_results') else None
+                try:
+                    combined_report = build_task_result_summary(detection_task)
+                except Exception:
+                    combined_report = None
+
             return Response({
                 'request_type': 'resource',
                 'task_type': review_request.task_type,
@@ -1453,6 +1467,8 @@ def get_review_request_detail_admin(request, reviewRequest_id):
                 'persons': persons,
                 'reason': review_request.reason,
                 'organization': review_request.organization.name if review_request.organization else None,
+                'extracted_text': extracted_text,
+                'combined_report': combined_report,
             })
         except ResourceReviewRequest.DoesNotExist:
             return Response({'error': 'ResourceReviewRequest not found'}, status=404)
@@ -1492,16 +1508,66 @@ def get_review_request_detail_admin(request, reviewRequest_id):
                 "avatar": reviewer.avatar.url if reviewer.avatar else None,
             })
 
+        # try to include detection task summary fields
+        extracted_text = None
+        combined_report = None
+        try:
+            detection_task = review_request.detection_result.detection_task if review_request.detection_result else None
+            if detection_task:
+                extracted_text = getattr(detection_task, 'text_detection_results', None)
+                try:
+                    combined_report = build_task_result_summary(detection_task)
+                except Exception:
+                    combined_report = None
+        except Exception:
+            detection_task = None
+
         return Response({
             "request_type": "image",
+            "task_id": detection_task.id if detection_task else None,
+            "task_name": detection_task.task_name if detection_task else None,
+            "original_files": [
+                _serialize_admin_resource_file(file)
+                for file in detection_task.resource_files.all()
+            ] if detection_task else [],
             "imgs": imgs,
             "persons": persons,
             "reason": review_request.reason,
             "organization": review_request.organization.name if review_request.organization else None,
+            "extracted_text": extracted_text,
+            "combined_report": combined_report,
         })
 
     except ReviewRequest.DoesNotExist:
         return Response({"error": "ReviewRequest not found"}, status=404)
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def download_task_report_admin(request, task_id):
+    """
+    管理员下载综合鉴伪报告（PDF）
+    """
+    if _is_software_admin(request.user):
+        task = DetectionTask.objects.filter(id=task_id).first()
+    else:
+        task = DetectionTask.objects.filter(id=task_id, organization=request.user.organization).first()
+
+    if not task:
+        return Response({"detail": "Task not found."}, status=404)
+
+    if task.status != "completed":
+        return Response({"detail": "Task not completed yet."}, status=400)
+
+    report_name = ensure_task_report_file(task, force=True)
+    task.refresh_from_db(fields=["report_file"])
+    abs_path = os.path.join(settings.MEDIA_ROOT, report_name)
+
+    return FileResponse(
+        open(abs_path, "rb"),
+        as_attachment=True,
+        filename=f"task_{task.id}_report.pdf",
+    )
 
 
 @api_view(['GET'])
@@ -1546,8 +1612,14 @@ def get_review_request_detail(request, manual_review_id):
             'task_id': review_request.detection_task_id,
             'task_name': review_request.detection_task.task_name if review_request.detection_task else None,
             'selected_files': selected_files,
+            'original_files': [
+                _serialize_admin_resource_file(file)
+                for file in review_request.detection_task.resource_files.all()
+            ] if review_request.detection_task else [],
             'persons': persons,
             'reason': review_request.reason,
+            'extracted_text': review_request.detection_task.text_detection_results if review_request.detection_task else None,
+            'combined_report': build_task_result_summary(review_request.detection_task) if review_request.detection_task else None,
             'result_payload': manual_review.result_payload or {},
             'conclusion': manual_review.conclusion,
         })
@@ -1579,14 +1651,85 @@ def get_review_request_detail(request, manual_review_id):
         })
 
     # 构建返回数据
+    detection_task = None
+    extracted_text = None
+    combined_report = None
+    if review_request.detection_result:
+        detection_task = getattr(review_request.detection_result, 'detection_task', None)
+    if detection_task:
+        extracted_text = getattr(detection_task, 'text_detection_results', None)
+        try:
+            combined_report = build_task_result_summary(detection_task)
+        except Exception:
+            combined_report = None
+
     response_data = {
         "request_type": "image",
+        "task_id": detection_task.id if detection_task else None,
+        "task_name": detection_task.task_name if detection_task else None,
+        "original_files": [
+            _serialize_admin_resource_file(file)
+            for file in detection_task.resource_files.all()
+        ] if detection_task else [],
         "imgs": imgs,
         "persons": persons,
         "reason": review_request.reason,
+        "extracted_text": extracted_text,
+        "combined_report": combined_report,
     }
 
     return Response(response_data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def download_reviewer_task_report(request, manual_review_id):
+    """
+    reviewer 下载其被分配任务对应的综合鉴伪报告（PDF）
+    """
+    user = request.user
+    if user.role != 'reviewer':
+        return Response({'error': 'Only reviewers can download task report'}, status=403)
+
+    request_type = request.query_params.get('request_type', 'image')
+
+    if request_type == 'resource':
+        try:
+            manual_review = ResourceManualReview.objects.select_related('review_request__detection_task').get(
+                id=manual_review_id,
+                reviewer=user,
+            )
+        except ResourceManualReview.DoesNotExist:
+            return Response({'error': 'ResourceManualReview not found'}, status=404)
+        task = manual_review.review_request.detection_task
+    else:
+        try:
+            manual_review = ManualReview.objects.select_related('review_request__detection_result__detection_task').get(
+                id=manual_review_id,
+                reviewer=user,
+            )
+        except ManualReview.DoesNotExist:
+            return Response({'error': 'ManualReview not found'}, status=404)
+
+        review_request = manual_review.review_request
+        detection_result = review_request.detection_result if review_request else None
+        task = detection_result.detection_task if detection_result else None
+
+    if not task:
+        return Response({"detail": "Task not found."}, status=404)
+
+    if task.status != "completed":
+        return Response({"detail": "Task not completed yet."}, status=400)
+
+    report_name = ensure_task_report_file(task, force=True)
+    task.refresh_from_db(fields=["report_file"])
+    abs_path = os.path.join(settings.MEDIA_ROOT, report_name)
+
+    return FileResponse(
+        open(abs_path, "rb"),
+        as_attachment=True,
+        filename=f"task_{task.id}_report.pdf",
+    )
 
 
 @api_view(['POST'])

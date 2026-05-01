@@ -96,17 +96,67 @@
                       <div class="d-flex ga-2">
                         <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
                         <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
+                        <v-btn
+                          v-if="reviewDetails.request_type === 'resource'"
+                          size="small"
+                          variant="text"
+                          prepend-icon="mdi-file-document-outline"
+                          @click="openExtractDialog(file)"
+                        >
+                          查看提取文本
+                        </v-btn>
                       </div>
                     </template>
                   </v-list-item>
                 </v-list>
               </div>
 
+              <div v-if="reviewDetails.original_files?.length">
+                <div class="text-subtitle-1 font-weight-bold mb-2">原始文件</div>
+                <v-list density="compact">
+                  <v-list-item v-for="file in reviewDetails.original_files" :key="file.id || file.file_id">
+                    <v-list-item-title>{{ file.file_name }}</v-list-item-title>
+                    <v-list-item-subtitle>{{ file.resource_type }} · {{ file.file_type }}</v-list-item-subtitle>
+                    <template #append>
+                      <div class="d-flex ga-2">
+                        <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
+                        <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
+                        <v-btn
+                          v-if="reviewDetails.request_type === 'resource'"
+                          size="small"
+                          variant="text"
+                          prepend-icon="mdi-file-document-outline"
+                          @click="openExtractDialog(file)"
+                        >
+                          查看提取文本
+                        </v-btn>
+                      </div>
+                    </template>
+                  </v-list-item>
+                </v-list>
+              </div>
+
+              <div class="d-flex ga-2" v-if="reviewDetails.task_id">
+                <v-btn
+                  size="small"
+                  variant="outlined"
+                  color="primary"
+                  prepend-icon="mdi-download"
+                  :disabled="!reviewDetails.task_id"
+                  @click="downloadCombinedReport"
+                >下载综合鉴伪报告</v-btn>
+              </div>
+
               <div v-if="reviewDetails.imgs?.length">
                 <div class="text-subtitle-1 font-weight-bold mb-2">图像</div>
                 <v-row>
                   <v-col v-for="img in reviewDetails.imgs" :key="img.id" cols="4">
-                    <v-img :src="getImageUrl(img.url)" height="80" cover class="rounded" />
+                    <v-card variant="tonal" class="pa-2">
+                      <v-img :src="getImageUrl(img.url)" height="80" cover class="rounded" />
+                      <div class="d-flex justify-end mt-2">
+                        <v-btn size="small" variant="text" prepend-icon="mdi-download" @click="downloadImage(img)">下载</v-btn>
+                      </div>
+                    </v-card>
                   </v-col>
                 </v-row>
               </div>
@@ -142,11 +192,34 @@
         </v-card-title>
         <v-card-text>
           <v-alert v-if="previewError" type="warning" variant="tonal" class="mb-4">{{ previewError }}</v-alert>
-          <v-progress-linear v-if="previewLoading" indeterminate color="primary" class="mb-4" />
-          <pre v-else class="file-preview">{{ previewText }}</pre>
+          <iframe
+            v-if="previewUrl"
+            :src="previewUrl"
+            class="file-iframe"
+            title="源文件预览"
+          />
+          <div v-else class="text-medium-emphasis">当前文件无法内嵌预览，请使用下载按钮查看源文件。</div>
         </v-card-text>
       </v-card>
     </v-dialog>
+    <!-- 提取文本弹窗 -->
+    <v-dialog v-model="showExtractDialog" max-width="900">
+      <v-card>
+        <v-toolbar flat>
+          <v-toolbar-title>{{ extractDialogTitle || '提取文本' }}</v-toolbar-title>
+          <v-spacer />
+          <v-btn icon @click="showExtractDialog = false"><v-icon>mdi-close</v-icon></v-btn>
+        </v-toolbar>
+        <v-card-text style="max-height:70vh; overflow:auto;">
+          <v-progress-linear v-if="extractLoading" indeterminate color="primary" class="mb-4" />
+          <v-alert v-if="extractError" type="warning" variant="tonal" class="mb-4">{{ extractError }}</v-alert>
+          <pre v-if="extracted_text" class="file-preview">{{ extracted_text }}</pre>
+          <div v-else-if="!extractLoading" class="text-grey">无提取文本</div>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
+    <!-- 综合鉴伪报告弹窗 -->
   </v-container>
 </template>
 
@@ -198,11 +271,15 @@ const searchQuery = ref('')
 const showReviewDialog = ref(false)
 const selectedRequest = ref<ReviewRequest | null>(null)
 const reviewDetails = ref<any>(null)
+const extracted_text = ref('')
+const extractDialogTitle = ref('')
+const extractLoading = ref(false)
+const extractError = ref('')
+const showExtractDialog = ref(false)
 const rejectReason = ref('')
 const previewDialog = ref(false)
-const previewLoading = ref(false)
 const previewTitle = ref('')
-const previewText = ref('')
+const previewUrl = ref('')
 const previewError = ref('')
 
 const getImageUrl = (url: string) => import.meta.env.VITE_API_URL + url
@@ -230,22 +307,73 @@ const downloadFile = (file: any) => {
   document.body.removeChild(link)
 }
 
+const downloadImage = (image: any) => {
+  const url = getImageUrl(image.url)
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = image.file_name || image.name || `image_${image.id || 'download'}`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
 const previewFile = async (file: any) => {
   previewDialog.value = true
-  previewLoading.value = true
   previewTitle.value = file.file_name
-  previewText.value = ''
+  previewUrl.value = ''
   previewError.value = ''
+  const url = getFileUrl(file)
+  if (!url) {
+    previewError.value = '当前文件无法预览，请下载查看。'
+    return
+  }
+  previewUrl.value = url
+}
+
+const downloadCombinedReport = async () => {
+  if (!reviewDetails.value?.task_id) return
   try {
-    const response = await reviewApi.getResourceTextPreview(file.file_id || file.id)
-    previewText.value = response.data?.text_content || '暂无可预览文本。'
+    const response = await reviewApi.downloadTaskReportAdmin(reviewDetails.value.task_id)
+    const blob = new Blob([response.data], { type: 'application/pdf' })
+    const objectUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = `task_${reviewDetails.value.task_id}_report.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(objectUrl)
+  } catch (error) {
+    console.error('Failed to download task report:', error)
+    snackbar.showMessage('下载综合鉴伪报告失败。', 'error')
+  }
+}
+
+const openExtractDialog = async (file: any) => {
+  const fileId = file.file_id || file.id
+  if (!fileId) {
+    snackbar.showMessage('文件缺少ID，无法获取提取文本。', 'error')
+    return
+  }
+  showExtractDialog.value = true
+  extractDialogTitle.value = `提取文本 - ${file.file_name || '未命名文件'}`
+  extractLoading.value = true
+  extractError.value = ''
+  extracted_text.value = ''
+  try {
+    const response = await reviewApi.getResourceTextPreview(fileId)
+    extracted_text.value = response.data?.text_content || ''
     if (response.data?.text_truncated) {
-      previewError.value = '文件较长，当前仅展示前 60000 字。'
+      extractError.value = '文件较长，当前仅展示前 60000 字。'
+    }
+    if (!extracted_text.value) {
+      extractError.value = extractError.value || '当前文件暂无可展示文本。'
     }
   } catch (error: any) {
-    previewError.value = error?.response?.data?.message || '当前文件暂不支持预览，请下载查看。'
+    extractError.value = error?.response?.data?.message || '获取提取文本失败。'
   } finally {
-    previewLoading.value = false
+    extractLoading.value = false
   }
 }
 
@@ -356,6 +484,12 @@ onMounted(async () => {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: inherit;
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+}
+
+.file-iframe {
+  width: 100%;
+  min-height: 65vh;
+  border: 0;
 }
 </style>

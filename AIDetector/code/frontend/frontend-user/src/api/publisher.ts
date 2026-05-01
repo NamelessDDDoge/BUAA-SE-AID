@@ -114,8 +114,10 @@ export default {
   },
 
   //publisher端返回人工审核表头
-  getRequestDetail(data: any) {
-    return http.get(`/get_request_detail/${data.review_request_id}/`)
+  getRequestDetail(data: { review_request_id: number | string; request_type?: 'image' | 'resource' }) {
+    return http.get(`/get_request_detail/${data.review_request_id}/`, {
+      params: data.request_type ? { request_type: data.request_type } : undefined,
+    })
   },
 
   //publisher获取单个图片的所有人工审核结果
