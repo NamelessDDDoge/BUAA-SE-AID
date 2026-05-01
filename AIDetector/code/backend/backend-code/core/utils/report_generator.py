@@ -644,14 +644,14 @@ def _draw_report_pairs(c, y, pairs, *, height, margin, theme):
         value_lines = _wrap_report_text(rendered_value, font=REPORT_FONT_NAME, size=9, max_width=360)
         block_height = max(34, 18 + len(value_lines) * 11 + 4)
         y = _ensure_report_space(c, y, height, margin, needed_height=block_height + 6)
-        _draw_round_box(c, margin, y + 4, 515, block_height, fill=theme["soft"], stroke=theme["border"], radius=10)
+        _draw_round_box(c, margin, y, 515, block_height, fill=theme["soft"], stroke=theme["border"], radius=10)
         c.setFont(REPORT_FONT_BOLD_NAME, 10)
         _set_fill(c, theme["muted"])
-        c.drawString(margin + 12, y + block_height - 12, f"{label_text}：")
+        c.drawString(margin + 12, y - 12, f"{label_text}：")
         _draw_wrapped_value(
             c,
             margin + 110,
-            y + block_height - 24,
+            y - 24,
             rendered_value,
             width=515 - 122,
             font=REPORT_FONT_NAME,
