@@ -367,15 +367,16 @@ def _draw_summary_blocks(c, y, *, width, height, margin, theme, items):
 
 def _draw_section_header(c, y, *, title, theme, height, margin, subtitle=None):
     y = _ensure_report_space(c, y, height, margin, needed_height=50)
-    _draw_rule(c, margin, y, 28, color=theme["accent"], thickness=4)
+    title_offset = 6
+    _draw_rule(c, margin, y - title_offset, 28, color=theme["accent"], thickness=4)
     c.setFont(REPORT_FONT_BOLD_NAME, 15)
     _set_fill(c, theme["text"])
-    c.drawString(margin + 36, y - 6, title)
+    c.drawString(margin + 36, y - 6 - title_offset, title)
     if subtitle:
         c.setFont(REPORT_FONT_NAME, 9)
         _set_fill(c, theme["muted"])
-        c.drawRightString(margin + 460, y - 6, subtitle)
-    return y - 26
+        c.drawRightString(margin + 460, y - 6 - title_offset, subtitle)
+    return y - 26 - title_offset
 
 
 def _draw_key_value_block(c, y_top, label, value, *, width, theme, label_x, value_x, label_font_size=9, value_font_size=9, leading=11, max_lines=None):
@@ -627,11 +628,11 @@ def _draw_report_text_block(c, y, text, *, height, margin, max_chars=46, leading
     y = _ensure_report_space(c, y, height, margin, needed_height=line_count * leading + 10)
     if theme:
         block_height = max(line_count * leading + 10, 24)
-        _draw_round_box(c, margin, y + 4, 515, block_height, fill=theme["soft"], stroke=theme["border"], radius=10)
+        _draw_round_box(c, margin, y, 515, block_height, fill=theme["soft"], stroke=theme["border"], radius=10)
         _set_fill(c, theme["text"])
-        text_y = y + block_height - 16
-        y = _draw_multiline(c, margin + 12, text_y, normalized_text, max_chars=max_chars, leading=leading, size=size)
-        return y - 8
+        text_y = y - 16
+        _draw_multiline(c, margin + 12, text_y, normalized_text, max_chars=max_chars, leading=leading, size=size)
+        return y - block_height - 8
     return _draw_multiline(c, margin + 12, y, normalized_text, max_chars=max_chars, leading=leading, size=size) - 8
 
 
@@ -662,19 +663,34 @@ def _draw_report_pairs(c, y, pairs, *, height, margin, theme):
     return y
 
 
-def _draw_report_items(c, y, items, *, height, margin, theme, start_index=1):
+def _is_effectively_empty_item(item):
+    if item is None:
+        return True
+    if isinstance(item, str):
+        return _clean_report_text(item) in {"", "-", "无"}
+    if isinstance(item, dict):
+        return all(_clean_report_text(value) in {"", "-", "无"} for value in item.values())
+    if isinstance(item, (list, tuple, set)):
+        return len(item) == 0
+    return False
+
+
+def _draw_report_items(c, y, items, *, height, margin, theme, start_index=1, max_lines_overrides=None):
+    if items and all(_is_effectively_empty_item(item) for item in items):
+        items = []
     if not items:
         card_height = 44
         y = _ensure_report_space(c, y, height, margin, needed_height=card_height + 6)
-        _draw_round_box(c, margin, y + 6, 515, card_height, fill=theme["soft"], stroke=theme["border"], radius=10)
+        _draw_round_box(c, margin, y, 515, card_height, fill=theme["soft"], stroke=theme["border"], radius=10)
         c.setFont(REPORT_FONT_NAME, 9)
         _set_fill(c, theme["text"])
-        c.drawString(margin + 46, y + card_height - 18, "无")
+        c.drawString(margin + 46, y - 18, "无")
         return y - card_height - 4
 
     value_col_x_offset = 112
     inner_width = 515 - value_col_x_offset - 12
     long_text_fields = {"text", "review_text", "reference", "summary", "evidence", "forgery_reason", "explanation", "authenticity_reason", "key_findings", "suggestions"}
+    max_lines_overrides = max_lines_overrides or {}
 
     for index, item in enumerate(items, start=start_index):
         if isinstance(item, dict):
@@ -685,7 +701,11 @@ def _draw_report_items(c, y, items, *, height, margin, theme, start_index=1):
             row_heights = []
             for field_key, _label, value in content_rows:
                 wrap_width = inner_width - 40 if field_key in long_text_fields else inner_width
-                line_count = len(_wrap_report_text(value, font=REPORT_FONT_NAME, size=9, max_width=wrap_width))
+                lines = _wrap_report_text(value, font=REPORT_FONT_NAME, size=9, max_width=wrap_width)
+                override_max_lines = max_lines_overrides.get(field_key)
+                if override_max_lines is not None:
+                    lines = lines[:override_max_lines]
+                line_count = len(lines)
                 if field_key in long_text_fields:
                     row_heights.append(max(44, 20 + line_count * 12 + 8))
                 else:
@@ -697,15 +717,17 @@ def _draw_report_items(c, y, items, *, height, margin, theme, start_index=1):
             card_height = max(54, 18 + len(item_lines) * 12)
 
         y = _ensure_report_space(c, y, height, margin, needed_height=card_height + 6)
-        _draw_round_box(c, margin, y + 6, 515, card_height, fill=theme["soft"], stroke=theme["border"], radius=10)
-        _draw_badge(c, margin + 12, y + 2, f"{index}", fill=theme["primary"], size=8)
+        _draw_round_box(c, margin, y, 515, card_height, fill=theme["soft"], stroke=theme["border"], radius=10)
+        _draw_badge(c, margin + 12, y - 6, f"{index}", fill=theme["primary"], size=8)
         if isinstance(item, dict):
-            content_y = y + 6 - 12
+            content_y = y - 12
             for row_index, (field_key, label, value) in enumerate(content_rows):
                 row_height = row_heights[row_index]
                 row_width = 515 - 54 - (40 if field_key in long_text_fields else 0)
                 max_lines = None
-                if field_key not in {"text", "review_text"}:
+                if field_key in max_lines_overrides:
+                    max_lines = max_lines_overrides.get(field_key)
+                elif field_key not in {"text", "review_text"}:
                     max_lines = 4 if field_key in long_text_fields else 2
                 _draw_key_value_block(
                     c,
@@ -726,7 +748,7 @@ def _draw_report_items(c, y, items, *, height, margin, theme, start_index=1):
             _draw_wrapped_value(
                 c,
                 margin + 46,
-                y + card_height - 14,
+                y - 14,
                 rendered_item,
                 width=515 - 58,
                 font=REPORT_FONT_NAME,
@@ -825,6 +847,7 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
         height=height,
         margin=margin,
         theme=theme,
+        max_lines_overrides={"text": 8},
     )
 
     y = _draw_report_section_title(c, y, title="基本确认 AI 段落", height=height, margin=margin, theme=theme, subtitle="被系统确认的高风险段落")
@@ -892,28 +915,39 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
         margin=margin,
         theme=theme,
     )
+    findings = data_authenticity_results.get("findings")
+    if isinstance(findings, dict):
+        findings = [findings]
+    elif isinstance(findings, (str, int, float, bool)):
+        findings = [findings]
+    elif not isinstance(findings, list):
+        findings = []
     y = _draw_report_items(
         c,
         y,
-        data_authenticity_results.get("findings") or [],
+        findings,
         height=height,
         margin=margin,
         theme=theme,
+        max_lines_overrides={"evidence": 6, "summary": 6},
     )
 
     y = _draw_report_section_title(c, y, title="整篇论文综合评价", height=height, margin=margin, theme=theme, subtitle="综合风险与证据摘要")
-    y = _draw_report_pairs(
+    y = _draw_report_items(
         c,
         y,
         [
-            ("风险评分", overall_evaluation.get("risk_score")),
-            ("风险等级", overall_evaluation.get("risk_level")),
-            ("综合结论", overall_evaluation.get("summary")),
-            ("证据摘要", overall_evaluation.get("evidence")),
+            {
+                "authenticity_score": overall_evaluation.get("risk_score"),
+                "authenticity_label": overall_evaluation.get("risk_level"),
+                "summary": overall_evaluation.get("summary"),
+                "evidence": overall_evaluation.get("evidence"),
+            }
         ],
         height=height,
         margin=margin,
         theme=theme,
+        max_lines_overrides={"summary": 6, "evidence": 6},
     )
 
     y = _draw_report_section_title(c, y, title="论文图片检测", height=height, margin=margin, theme=theme, subtitle="图像级检测结果概览")
