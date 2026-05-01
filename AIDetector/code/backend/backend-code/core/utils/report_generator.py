@@ -148,6 +148,7 @@ REPORT_FIELD_LABELS = {
     "summary": "总结",
     "evidence": "证据摘要",
     "is_fake": "是否造假",
+    "method": "方法",
 }
 
 
@@ -187,6 +188,21 @@ REPORT_THEME = {
         "danger": colors.HexColor("#C2410C"),
         "title": "同行评审检测报告 / Review Detection Report",
         "subtitle": "从模板化倾向、内容错误风险和与论文相关度三个维度评估 Review 质量。",
+    },
+    "image": {
+        "primary": colors.HexColor("#166534"),
+        "secondary": colors.HexColor("#16A34A"),
+        "accent": colors.HexColor("#4ADE80"),
+        "soft": colors.HexColor("#F0FDF4"),
+        "soft_alt": colors.HexColor("#DCFCE7"),
+        "border": colors.HexColor("#BBF7D0"),
+        "text": colors.HexColor("#052E16"),
+        "muted": colors.HexColor("#4B5563"),
+        "success": colors.HexColor("#166534"),
+        "warning": colors.HexColor("#B45309"),
+        "danger": colors.HexColor("#B91C1C"),
+        "title": "图像鉴伪检测报告 / Image Forensic Report",
+        "subtitle": "从模型判定、EXIF 线索与辅助可视化角度评估图像真实性。",
     },
 }
 
@@ -424,6 +440,24 @@ def _draw_metric_badges(c, y, items, *, theme):
     return baseline - 18
 
 
+def _draw_image_preview_card(c, y, *, image_path, title, theme, width=515, height=150, margin=40, image_size=120):
+    y = _ensure_report_space(c, y, A4[1], margin, needed_height=height + 6)
+    _draw_round_box(c, margin, y, width, height, fill=theme["soft"], stroke=theme["border"], radius=12)
+    c.setFont(REPORT_FONT_BOLD_NAME, 10)
+    _set_fill(c, theme["muted"])
+    c.drawString(margin + 12, y - 16, title)
+
+    if image_path and os.path.exists(image_path):
+        img_x = margin + 12
+        img_top = y - 30
+        img_y = img_top - image_size
+        c.drawImage(ImageReader(image_path), img_x, img_y, width=image_size, height=image_size, preserveAspectRatio=True)
+    else:
+        # Leave the preview area blank when no image is available.
+        pass
+    return y - height - 8
+
+
 def _resolve_label_color(theme, value):
     text = str(value or "")
     if any(token in text for token in ("高", "严重", "异常", "假", "危险", "不相关", "低")):
@@ -447,120 +481,101 @@ def generate_detection_task_report(task: DetectionTask) -> str:
     """
     生成 PDF 报告（中文），返回相对路径，并写入 task.report_file
     """
-    # 生成路径
-    rel_path = f"reports/task_{task.id}_report.pdf"
-    abs_path = os.path.join(settings.MEDIA_ROOT, rel_path)
-    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    theme = _get_theme("image")
+    c, rel_path, width, height, margin = _create_report_canvas(task)
 
-    # 画布
-    c = canvas.Canvas(abs_path, pagesize=A4)
-    W, H = A4
-    MARGIN = 40
-
-    # ────────────────────────── 封面页 ──────────────────────────
     c.bookmarkPage("cover")
     c.addOutlineEntry("任务概览", "cover", level=0)
-
-    y = H - 120
-    c.setFont(REPORT_FONT_BOLD_NAME, 40)
-    c.drawCentredString(W / 2, y, '“听泉鉴图”图像造假检测报告')
-    y -= 80
-
-    c.setFont(REPORT_FONT_NAME, 24)
-    c.drawString(MARGIN, y, f"任务编号：{task.id}")
-    y -= 40
-    c.drawString(MARGIN, y, f"任务名称：{task.task_name}")
-    y -= 40
-    c.drawString(MARGIN, y, f"用户：{task.user.username}")
-    y -= 40
-
-    create_time = timezone.localtime(task.upload_time).strftime("%Y-%m-%d %H:%M")
-    finish_time = task.completion_time and timezone.localtime(task.completion_time).strftime("%Y-%m-%d %H:%M")
-    c.drawString(MARGIN, y, f"创建时间：{create_time}")
-    y -= 40
-    if finish_time:
-        c.drawString(MARGIN, y, f"完成时间：{finish_time}")
-        y -= 40
-
-    # 参数
-    y -= 10
-    c.setFont(REPORT_FONT_BOLD_NAME, 24)
-    c.drawString(MARGIN, y, "检测参数")
-    y -= 36
-    c.setFont(REPORT_FONT_NAME, 22)
-    c.drawString(MARGIN, y, f"cmd_block_size：{task.cmd_block_size}")
-    y -= 36
-    c.drawString(MARGIN, y, f"urn_k：{task.urn_k}")
-    y -= 36
-    c.drawString(MARGIN, y, f"使用大语言模型：{'是' if task.if_use_llm else '否'}")
-
-    c.showPage()
+    _draw_report_title_page(
+        c,
+        title=theme["title"],
+        task=task,
+        width=width,
+        height=height,
+        margin=margin,
+        metadata_lines=[
+            f"任务编号：{task.id}",
+            f"任务名称：{task.task_name}",
+            f"用户：{task.user.username}",
+            f"创建时间：{timezone.localtime(task.upload_time).strftime('%Y-%m-%d %H:%M')}",
+            f"完成时间：{timezone.localtime(task.completion_time).strftime('%Y-%m-%d %H:%M') if task.completion_time else '-'}",
+            f"cmd_block_size：{task.cmd_block_size}",
+            f"urn_k：{task.urn_k}",
+            f"使用大语言模型：{'是' if task.if_use_llm else '否'}",
+        ],
+        theme=theme,
+        report_kind_label="IMAGE FORENSIC REPORT",
+    )
 
     # ─────────────────────── 每张图片一页 ──────────────────────
-    for idx, dr in enumerate(
-            task.detection_results.select_related("image_upload").prefetch_related("sub_results").order_by("id"),
-            start=1
-    ):
+    for dr in task.detection_results.select_related("image_upload").prefetch_related("sub_results").order_by("id"):
         page_label = f"图片 {dr.image_upload.id}"
         c.bookmarkPage(f"img_{dr.image_upload.id}")
         c.addOutlineEntry(page_label, f"img_{dr.image_upload.id}", level=1)
 
-        y = H - MARGIN
-        c.setFont(REPORT_FONT_BOLD_NAME, 14)
-        c.drawString(MARGIN, y, page_label)
-        y -= 25
+        y = height - margin
+        y = _draw_report_section_title(c, y, title=page_label, height=height, margin=margin, theme=theme, subtitle="图像级综合判定")
 
-        # 原图
-        orig_path = dr.image_upload.image.path
-        # if os.path.exists(orig_path):
-        #     c.drawImage(ImageReader(orig_path), MARGIN, y-280, width=220, height=220, preserveAspectRatio=True)
-        # orig_path = dr.image_upload.image.path
-        if os.path.exists(orig_path):
-            # 调整原图的位置，确保与其他部分内容不重叠
-            c.drawImage(ImageReader(orig_path), MARGIN, y - 100, width=100, height=100, preserveAspectRatio=True)
-            # 更新 y 坐标，确保图像与后续内容的间距
-            y -= 100  # 图片高度 + 适当的间距
-        # 总体结论
-        c.setFont(REPORT_FONT_NAME, 11)
-        c.drawString(MARGIN, y - 20, f"判定：{'造假' if dr.is_fake else '真实'}")
-        c.drawString(MARGIN, y - 45, f"造假概率：{dr.confidence_score:.2f}")
-        y -= 70
+        orig_path = dr.image_upload.image.path if dr.image_upload and dr.image_upload.image else ""
+        y = _draw_image_preview_card(c, y, image_path=orig_path, title="原始图像预览", theme=theme, margin=margin)
+        y = _draw_report_items(
+            c,
+            y,
+            [
+                {
+                    "label": "造假" if dr.is_fake else "真实",
+                    "confidence_score": dr.confidence_score,
+                    "status": dr.status,
+                }
+            ],
+            height=height,
+            margin=margin,
+            theme=theme,
+        )
 
-        # LLM 结果
         if task.if_use_llm:
-            y -= 10
-            c.setFont(REPORT_FONT_BOLD_NAME, 11)
-            c.drawString(MARGIN, y, "大语言模型分析：")
-            y -= 18
-            y = _draw_multiline(c, MARGIN + 15, y, dr.llm_judgment or "无", max_chars=50)
-            y -= 110
-            if dr.llm_image and os.path.exists(dr.llm_image.path):
-                c.drawImage(ImageReader(dr.llm_image.path), MARGIN + 90, y, width=100, height=100,
-                            preserveAspectRatio=True)
-            y -= 10
+            y = _draw_report_section_title(c, y, title="大语言模型分析", height=height, margin=margin, theme=theme)
+            y = _draw_report_items(
+                c,
+                y,
+                [{"explanation": dr.llm_judgment or "无"}],
+                height=height,
+                margin=margin,
+                theme=theme,
+                max_lines_overrides={"explanation": 8},
+            )
+            llm_image_path = dr.llm_image.path if dr.llm_image else ""
+            if llm_image_path:
+                y = _draw_image_preview_card(c, y, image_path=llm_image_path, title="LLM 可视化", theme=theme, margin=margin)
 
-        # ELA 与 EXIF
         if dr.ela_image and os.path.exists(dr.ela_image.path):
-            c.drawString(MARGIN, y, "ELA 可视化：")
-            c.drawImage(ImageReader(dr.ela_image.path), MARGIN + 90, y - 100, width=100, height=100,
-                        preserveAspectRatio=True)
-            y -= 10
-        exif_txt = f"EXIF：Photoshop 痕迹 [{'有' if dr.exif_photoshop else '无'}]   时间修改 [{'有' if dr.exif_time_modified else '无'}]"
-        c.drawString(MARGIN, y - 110, exif_txt)
-        y -= 130
+            y = _draw_report_section_title(c, y, title="ELA 可视化", height=height, margin=margin, theme=theme)
+            y = _draw_image_preview_card(c, y, image_path=dr.ela_image.path, title="ELA 结果", theme=theme, margin=margin)
 
-        # 子方法
-        c.setFont(REPORT_FONT_BOLD_NAME, 11)
-        c.drawString(MARGIN, y, "深度学习检测方法：")
-        y -= 20
-        for sub in dr.sub_results.all():
-            y = _check_and_create_new_page(c, y, H, MARGIN)  # 调用检查函数
-            c.setFont(REPORT_FONT_NAME, 10)
-            c.drawString(MARGIN + 10, y, f"{sub.method}  造假概率：{sub.probability:.2f}")
-            if sub.mask_image and os.path.exists(sub.mask_image.path):
-                c.drawImage(ImageReader(sub.mask_image.path), MARGIN + 220, y - 40, width=60, height=60,
-                            preserveAspectRatio=True)
-            y -= 70
+        exif_txt = f"EXIF：Photoshop 痕迹 [{'有' if dr.exif_photoshop else '无'}]   时间修改 [{'有' if dr.exif_time_modified else '无'}]"
+        y = _draw_report_items(
+            c,
+            y,
+            [{"explanation": exif_txt}],
+            height=height,
+            margin=margin,
+            theme=theme,
+            max_lines_overrides={"explanation": 4},
+        )
+
+        if dr.sub_results.exists():
+            y = _draw_report_section_title(c, y, title="深度学习检测方法", height=height, margin=margin, theme=theme)
+            y = _draw_report_items(
+                c,
+                y,
+                [
+                    {"method": sub.method, "probability": sub.probability}
+                    for sub in dr.sub_results.all()
+                ],
+                height=height,
+                margin=margin,
+                theme=theme,
+            )
 
         c.showPage()
 

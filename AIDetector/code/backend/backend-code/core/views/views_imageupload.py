@@ -97,7 +97,8 @@ def get_extracted_images(request, file_id):
     except FileManagement.DoesNotExist:
         return Response({"message": "File not found"}, status=404)
 
-    if file_management.resource_type != "image":
+    allowed_types = {"image", "paper", "review_paper", "review_file"}
+    if file_management.resource_type not in allowed_types:
         return Response(
             {
                 "message": "Current file type has no extracted images",
