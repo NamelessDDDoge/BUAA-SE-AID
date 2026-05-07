@@ -319,7 +319,7 @@ const loadPaperTextPreview = async (resourceFileId: number) => {
     const response = await uploadApi.getResourceTextPreview(resourceFileId)
     paperEditableText.value = response?.data?.text_content || ''
     if (response?.data?.text_truncated) {
-      paperTextPreviewError.value = '提取文本过长，当前为截断预览（前 60000 字）。'
+      paperTextPreviewError.value = '提取文本过长，当前为截断预览（前 6000000 字）。'
     }
   } catch (error: any) {
     paperEditableText.value = ''
@@ -345,7 +345,7 @@ const loadReviewTextPreview = async (resourceFileId: number) => {
     const response = await uploadApi.getResourceTextPreview(resourceFileId)
     reviewEditableText.value = response?.data?.text_content || ''
     if (response?.data?.text_truncated) {
-      reviewTextPreviewError.value = '提取文本过长，当前为截断预览（前 60000 字）。'
+      reviewTextPreviewError.value = '提取文本过长，当前为截断预览（前 6000000 字）。'
     }
   } catch (error: any) {
     reviewEditableText.value = ''
@@ -362,7 +362,7 @@ const loadReviewPaperTextPreview = async (resourceFileId: number) => {
     const response = await uploadApi.getResourceTextPreview(resourceFileId)
     reviewPaperEditableText.value = response?.data?.text_content || ''
     if (response?.data?.text_truncated) {
-      reviewPaperTextPreviewError.value = '提取文本过长，当前为截断预览（前 60000 字）。'
+      reviewPaperTextPreviewError.value = '提取文本过长，当前为截断预览（前 6000000 字）。'
     }
   } catch (error: any) {
     reviewPaperEditableText.value = ''

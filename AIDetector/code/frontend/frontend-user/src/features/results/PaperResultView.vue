@@ -56,56 +56,8 @@
       </v-card-text>
     </v-card>
 
-    <v-card v-if="referenceResults.length" elevation="2" rounded="lg">
-      <v-card-title class="d-flex align-center ga-2">
-        <v-icon color="indigo">mdi-book-search-outline</v-icon>
-        <span class="text-h6">参考文献真实性分析</span>
-      </v-card-title>
-      <v-card-text>
-        <v-list lines="three">
-          <v-list-item v-for="(refItem, idx) in referenceResults" :key="`ref-${idx}`" class="mb-2">
-            <v-list-item-title>
-              [{{ (refItem.reference_index ?? 0) + 1 }}]
-              <v-chip size="x-small" class="ml-2" :color="referenceLabelColor(refItem.authenticity_label)">
-                {{ refItem.authenticity_label || 'unknown' }}
-              </v-chip>
-              <v-chip size="x-small" class="ml-2" color="primary" variant="tonal">
-                真实性分 {{ Number(refItem.authenticity_score || 0).toFixed(2) }}
-              </v-chip>
-            </v-list-item-title>
-            <v-list-item-subtitle style="white-space: pre-wrap;">{{ refItem.reference }}</v-list-item-subtitle>
-            <div class="text-caption text-medium-emphasis mt-1">{{ refItem.authenticity_reason || '暂无说明' }}</div>
-          </v-list-item>
-        </v-list>
-      </v-card-text>
-    </v-card>
-
-    <v-card v-if="dataAuthenticity" elevation="2" rounded="lg">
-      <v-card-title class="d-flex align-center ga-2">
-        <v-icon color="teal">mdi-chart-bell-curve-cumulative</v-icon>
-        <span class="text-h6">数据真实性分析</span>
-      </v-card-title>
-      <v-card-text>
-        <v-alert type="info" variant="tonal" class="mb-3">
-          {{ dataAuthenticity.summary || '暂无数据真实性摘要。' }}
-        </v-alert>
-        <v-list v-if="(dataAuthenticity.findings || []).length" lines="two">
-          <v-list-item v-for="(finding, idx) in dataAuthenticity.findings" :key="`finding-${idx}`" class="mb-2">
-            <v-list-item-title>
-              第 {{ (finding.paragraph_index ?? 0) + 1 }} 段
-              <v-chip size="x-small" class="ml-2" :color="riskLevelColor(finding.risk_level)">
-                {{ finding.risk_level || 'unknown' }}
-              </v-chip>
-            </v-list-item-title>
-            <v-list-item-subtitle>{{ finding.claim_text || '-' }}</v-list-item-subtitle>
-            <div class="text-caption text-medium-emphasis mt-1">{{ finding.reason || '-' }}</div>
-          </v-list-item>
-        </v-list>
-      </v-card-text>
-    </v-card>
-    
     <!-- 论文段落检测结果展示 -->
-    <v-card v-if="task?.results?.paragraph_results?.length" class="mt-4" elevation="2" rounded="lg">
+    <v-card v-if="task?.results?.paragraph_results?.length" elevation="2" rounded="lg">
       <v-card-title class="d-flex align-center ga-2">
         <v-icon color="primary">mdi-text-box-search-outline</v-icon>
         <span class="text-h6">论文段落检测结果</span>
@@ -137,6 +89,30 @@
         </v-list>
       </v-card-text>
     </v-card>
+
+    <v-card v-if="referenceResults.length" elevation="2" rounded="lg">
+      <v-card-title class="d-flex align-center ga-2">
+        <v-icon color="indigo">mdi-book-search-outline</v-icon>
+        <span class="text-h6">参考文献真实性分析</span>
+      </v-card-title>
+      <v-card-text>
+        <v-list lines="three">
+          <v-list-item v-for="(refItem, idx) in referenceResults" :key="`ref-${idx}`" class="mb-2">
+            <v-list-item-title>
+              [{{ (refItem.reference_index ?? 0) + 1 }}]
+              <v-chip size="x-small" class="ml-2" :color="referenceLabelColor(refItem.authenticity_label)">
+                {{ refItem.authenticity_label || 'unknown' }}
+              </v-chip>
+              <v-chip size="x-small" class="ml-2" color="primary" variant="tonal">
+                真实性分 {{ Number(refItem.authenticity_score || 0).toFixed(2) }}
+              </v-chip>
+            </v-list-item-title>
+            <v-list-item-subtitle style="white-space: pre-wrap;">{{ refItem.reference }}</v-list-item-subtitle>
+            <div class="text-caption text-medium-emphasis mt-1">{{ refItem.authenticity_reason || '暂无说明' }}</div>
+          </v-list-item>
+        </v-list>
+      </v-card-text>
+    </v-card>
   </div>
 </template>
 
@@ -157,7 +133,6 @@ const emit = defineEmits<{
 const overallEvaluation = computed(() => props.task?.results?.overall_evaluation || null)
 const confirmedParagraphs = computed(() => props.task?.results?.confirmed_ai_paragraphs || [])
 const referenceResults = computed(() => props.task?.results?.reference_results || [])
-const dataAuthenticity = computed(() => props.task?.results?.data_authenticity_results || null)
 
 const overallRiskType = computed(() => {
   const level = String(overallEvaluation.value?.risk_level || '').toLowerCase()
@@ -178,13 +153,6 @@ const referenceLabelColor = (label?: string) => {
   if (label === 'high_risk' || label === 'missing') return 'error'
   if (label === 'uncertain') return 'warning'
   if (label === 'likely_authentic') return 'success'
-  return 'grey'
-}
-
-const riskLevelColor = (level?: string) => {
-  if (level === 'high') return 'error'
-  if (level === 'medium') return 'warning'
-  if (level === 'low') return 'success'
   return 'grey'
 }
 

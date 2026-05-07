@@ -106,3 +106,13 @@ temp/
 *.tar
 *.gz
 *.7z
+"AIDetector/code/frontend/frontend-admin/.eslintrc-auto-import.json" 
+"AIDetector/code/frontend/frontend-admin/src/auto-imports.d.ts" 
+"AIDetector/code/frontend/frontend-admin/src/components.d.ts" 
+"AIDetector/code/frontend/frontend-admin/src/typed-router.d.ts" 
+"AIDetector/code/frontend/frontend-user/.eslintrc-auto-import.json" 
+"AIDetector/code/frontend/frontend-user/src/auto-imports.d.ts" 
+"AIDetector/code/frontend/frontend-user/src/components.d.ts" 
+"AIDetector/code/frontend/frontend-user/src/typed-router.d.ts" 
+"AIDetector/code/frontend/frontend-admin/package-lock.json" 
+"AIDetector/code/frontend/frontend-user/package-lock.json" 

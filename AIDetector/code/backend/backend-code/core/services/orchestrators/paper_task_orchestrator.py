@@ -20,6 +20,7 @@ from ..resources.document_preprocessor import (
     extract_document_paragraphs,
     extract_document_references,
     split_text_into_segments,
+    parse_document_sections,
 )
 from ..resources.text_sanitizer import sanitize_text_content
 from ..resources.image_extraction_service import create_image_uploads_for_resource
@@ -55,12 +56,28 @@ def run_paper_detection_task(task_id, api_key=None):
     override_text = _get_text_override(detection_task)
     if override_text:
         sanitized_text = sanitize_text_content(override_text)
+        sections = parse_document_sections(sanitized_text)
+        core_text = sections.get("abstract", "") + "\n\n" + sections.get("body", "") + "\n\n" + sections.get("acknowledgements", "")
+        core_text = core_text.strip()
+        
+        if not core_text:
+            core_text = sanitized_text
+            
         processed_document = {
             "text_content": sanitized_text,
-            "paragraphs": extract_document_paragraphs(sanitized_text),
+            "paragraphs": extract_document_paragraphs(core_text),  # 对齐前端的paragraph_count
+            "sections": sections,
             "references": extract_document_references(sanitized_text),
-            "segments": split_text_into_segments(sanitized_text),
+            "segments": split_text_into_segments(core_text),
         }
+    else:
+        # 对齐未修改覆盖文本时的 paragraph_count，确保它只包含发送给 AI 检测的段落
+        processed_document["paragraphs"] = extract_document_paragraphs(
+            processed_document["sections"].get("abstract", "") + "\n\n" + 
+            processed_document["sections"].get("body", "") + "\n\n" + 
+            processed_document["sections"].get("acknowledgements", "")
+        )
+        
     paragraph_results = analyze_text_segments(processed_document["segments"], api_key=api_key)
     confirmed_ai_paragraphs = [
         {

@@ -14,6 +14,7 @@ from ..resources.document_preprocessor import (
     extract_document_paragraphs,
     extract_document_references,
     split_text_into_segments,
+    parse_document_sections,
 )
 from ..resources.text_sanitizer import sanitize_text_content
 
@@ -202,11 +203,17 @@ def _mark_review_task_failed(detection_task, message):
 
 
 def _build_document_from_text(text_content):
+    sections = parse_document_sections(text_content)
+    core_text = sections.get("abstract", "") + "\n\n" + sections.get("body", "")
+    if not core_text.strip():
+        core_text = text_content
+        
     return {
         "text_content": text_content,
         "paragraphs": extract_document_paragraphs(text_content),
+        "sections": sections,
         "references": extract_document_references(text_content),
-        "segments": split_text_into_segments(text_content),
+        "segments": split_text_into_segments(core_text),
     }
 
 

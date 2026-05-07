@@ -203,7 +203,7 @@ def get_resource_text_preview(request, file_id):
 
     processed = preprocess_document(file_path)
     text_content = processed.get("text_content") or ""
-    max_chars = 60000
+    max_chars = 6000000  # 增加到 600 万字，避免因为截断导致用户上传截断后的 override_text
     truncated = len(text_content) > max_chars
     preview_text = text_content[:max_chars]
 
