@@ -275,19 +275,34 @@ def extract_document_paragraphs(text_content):
     if not raw_text:
         return []
 
-    # 统一将 \r\n 替换为 \n
     normalized_text = re.sub(r"\r\n?", "\n", raw_text)
-    
-    # 遇到任何换行符就划分为一段
     paragraphs = []
-    for line in normalized_text.split('\n'):
-        cleaned_line = line.strip()
-        if cleaned_line:
-            # 清理可能残留的多余空格
-            cleaned_line = re.sub(r"\s+", " ", cleaned_line)
-            paragraphs.append(cleaned_line)
+    current_parts = []
 
-    return paragraphs
+    for raw_line in normalized_text.split("\n"):
+        cleaned_line = re.sub(r"\s+", " ", raw_line.strip())
+        if not cleaned_line:
+            if current_parts:
+                paragraphs.append(" ".join(current_parts).strip())
+                current_parts = []
+            continue
+
+        if not current_parts:
+            current_parts.append(cleaned_line)
+            continue
+
+        previous_line = current_parts[-1]
+        if _should_start_new_paragraph(previous_line, cleaned_line):
+            paragraphs.append(" ".join(current_parts).strip())
+            current_parts = [cleaned_line]
+            continue
+
+        current_parts.append(cleaned_line)
+
+    if current_parts:
+        paragraphs.append(" ".join(current_parts).strip())
+
+    return [paragraph for paragraph in paragraphs if paragraph]
 
 
 def parse_document_sections(text_content):
@@ -385,3 +400,92 @@ def _hard_split_text(text, max_len):
     if stripped:
         chunks.append(stripped)
     return chunks
+
+
+def _should_start_new_paragraph(previous_line, current_line):
+    if not previous_line.strip():
+        return True
+    if _looks_like_reference_item(current_line):
+        return True
+    if _looks_like_heading(current_line):
+        return True
+    if _looks_like_list_item(current_line) and not _looks_like_sentence_continuation(previous_line, current_line):
+        return True
+    if re.search(r'[。！？!?；;:：.]["”’)\]]*$', previous_line) and _looks_like_sentence_start(current_line):
+        return True
+    return False
+
+
+def _looks_like_reference_item(line):
+    return bool(re.match(r'^(\[\d+\]|\(\d+\)|\d+\.)\s*\S', line))
+
+
+def _looks_like_list_item(line):
+    return bool(
+        re.match(
+            r'^(?:[-*•]|(?:\d+|[A-Za-z]|[IVXLCDMivxlcdm]+)[\.\)])\s+\S',
+            line,
+        )
+    )
+
+
+def _looks_like_heading(line):
+    stripped = line.strip()
+    normalized = stripped.lower()
+    normalized = re.sub(r'^[\dIVXLCDMivxlcdm]+[\.\s]*', '', normalized).strip()
+    if normalized in {
+        "abstract",
+        "introduction",
+        "background",
+        "method",
+        "methods",
+        "experiment",
+        "experiments",
+        "results",
+        "discussion",
+        "conclusion",
+        "acknowledgements",
+        "acknowledgments",
+        "references",
+        "bibliography",
+        "摘要",
+        "引言",
+        "导言",
+        "绪论",
+        "方法",
+        "实验",
+        "结果",
+        "结论",
+        "致谢",
+        "参考文献",
+        "参考书目",
+    }:
+        return True
+    if len(stripped) > 60:
+        return False
+    if re.search(r'[。！？!?；;:：,，]', stripped):
+        return False
+    return bool(re.match(r'^[A-Z][A-Z0-9\s\-]{2,}$', stripped))
+
+
+def _looks_like_sentence_start(line):
+    stripped = line.lstrip()
+    if not stripped:
+        return False
+    first_char = stripped[0]
+    if "\u4e00" <= first_char <= "\u9fff":
+        return True
+    return first_char.isupper() or first_char.isdigit() or first_char in {'"', "'", "“", "‘", "(", "["}
+
+
+def _looks_like_sentence_continuation(previous_line, current_line):
+    prev = previous_line.rstrip()
+    cur = current_line.lstrip()
+    if prev.endswith("-"):
+        return True
+    if not cur:
+        return False
+    first_char = cur[0]
+    if first_char.islower():
+        return True
+    return first_char in {",", ".", ";", ":", ")", "]"}

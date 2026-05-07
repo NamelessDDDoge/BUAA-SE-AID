@@ -13,7 +13,10 @@ from core.models import (
     ReviewDetectionResult,
     User,
 )
-from core.services.resources.document_preprocessor import preprocess_document
+from core.services.resources.document_preprocessor import (
+    extract_document_paragraphs,
+    preprocess_document,
+)
 from core.services.resources.text_sanitizer import sanitize_json_like
 from core.tasks import run_paper_detection, run_review_detection
 
@@ -181,6 +184,46 @@ class ResourcePreprocessingTests(TestCase):
         self.assertNotIn("\x00", result["text_content"])
         self.assertTrue(all("\x00" not in segment for segment in result["segments"]))
         self.assertTrue(all("\x00" not in paragraph for paragraph in result["paragraphs"]))
+
+    def test_extract_document_paragraphs_merges_soft_wrapped_lines_within_same_paragraph(self):
+        text = (
+            "This is a long paragraph line that was wrapped by the source document\n"
+            "but should still stay in the same paragraph after preprocessing.\n"
+            "It continues here on a third line.\n\n"
+            "This is the second real paragraph."
+        )
+
+        paragraphs = extract_document_paragraphs(text)
+
+        self.assertEqual(len(paragraphs), 2)
+        self.assertEqual(
+            paragraphs[0],
+            (
+                "This is a long paragraph line that was wrapped by the source document "
+                "but should still stay in the same paragraph after preprocessing. "
+                "It continues here on a third line."
+            ),
+        )
+        self.assertEqual(paragraphs[1], "This is the second real paragraph.")
+
+    def test_extract_document_paragraphs_keeps_reference_items_as_separate_paragraphs(self):
+        text = (
+            "References\n"
+            "[1] First reference entry\n"
+            "continued on the next line\n"
+            "[2] Second reference entry"
+        )
+
+        paragraphs = extract_document_paragraphs(text)
+
+        self.assertEqual(
+            paragraphs,
+            [
+                "References",
+                "[1] First reference entry continued on the next line",
+                "[2] Second reference entry",
+            ],
+        )
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
     @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
