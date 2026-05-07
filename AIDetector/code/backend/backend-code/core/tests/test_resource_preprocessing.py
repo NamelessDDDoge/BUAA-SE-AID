@@ -219,6 +219,47 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(task.paper_detection_result.reference_results.count(), 0)
         mock_image_detection.assert_not_called()
 
+    @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
+    @patch("core.services.capabilities.reference_check_service.assess_reference_authenticity")
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
+    def test_run_paper_detection_accepts_authenticity_score_reference_payload(
+        self,
+        mock_post,
+        mock_assess_reference_authenticity,
+        mock_image_detection,
+    ):
+        mock_post.return_value.json.return_value = {"data": {"prob": 0.18, "details": {"source": "mock"}}}
+        mock_post.return_value.raise_for_status.return_value = None
+        mock_assess_reference_authenticity.return_value = {
+            "authenticity_score": 0.91,
+            "authenticity_label": "likely_real",
+            "authenticity_reason": "Reference metadata looks internally consistent.",
+        }
+        file_record = self.create_text_file(
+            "paper-with-references.txt",
+            "Abstract\nA short abstract paragraph.\nReferences\n[1] Example reference entry.",
+        )
+        task = DetectionTask.objects.create(
+            user=self.user,
+            organization=self.organization,
+            task_type="paper",
+            task_name="Paper With References",
+            status="pending",
+        )
+        task.resource_files.add(file_record)
+
+        result = run_paper_detection(task.id)
+
+        task.refresh_from_db()
+        self.assertEqual(result, "Paper detection finished")
+        self.assertEqual(task.status, "completed")
+        self.assertEqual(task.error_message, "")
+        self.assertEqual(len(task.text_detection_results["reference_results"]), 1)
+        self.assertEqual(task.text_detection_results["reference_results"][0]["authenticity_score"], 0.91)
+        self.assertEqual(task.text_detection_results["reference_results"][0]["authenticity_label"], "likely_real")
+        self.assertEqual(task.paper_detection_result.reference_results.count(), 1)
+        mock_image_detection.assert_not_called()
+
     @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_review_detection_returns_relevance_matches(self, mock_post):
         mock_post.return_value.json.return_value = {"data": {"prob": 0.34, "details": {"source": "mock"}}}
