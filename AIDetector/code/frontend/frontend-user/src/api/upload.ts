@@ -10,6 +10,25 @@ export default {
     })
   },
 
+  listZipDocumentEntries(data: any) {
+    return http.post('/upload/zip_entries/', data, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      timeout: 60000,
+    })
+  },
+
+  uploadZipDocumentEntry(data: any, onUploadProgress?: (progressEvent: any) => void) {
+    return http.post('/upload/zip_entry/', data, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      onUploadProgress,
+      timeout: 60000,
+    })
+  },
+
   getExtractedImages(data: any) {
     return http.get(`/upload/${data.file_id}/extract_images/?page=${data.page_number}&page_size=${data.page_size}`)
   },

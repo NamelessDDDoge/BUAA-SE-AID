@@ -21,8 +21,8 @@ def save_uploaded_resource(*, user, uploaded_file, detection_type, review_role="
         raise ValueError("File size exceeds 100MB limit")
 
     allowed_image_ext = {".png", ".jpg", ".jpeg", ".pdf", ".zip"}
-    allowed_paper_ext = {".docx", ".pdf", ".zip"}
-    allowed_review_ext = {".docx", ".pdf", ".txt", ".zip"}
+    allowed_paper_ext = {".docx", ".pdf", ".txt"}
+    allowed_review_ext = {".docx", ".pdf", ".txt"}
 
     linked_paper_file = None
     if detection_type == "image":
@@ -30,17 +30,17 @@ def save_uploaded_resource(*, user, uploaded_file, detection_type, review_role="
             raise ValueError("Unsupported image file format")
     elif detection_type == "paper":
         if file_ext not in allowed_paper_ext:
-            raise ValueError("Unsupported paper file format")
+            raise ValueError("Unsupported paper file format. ZIP uploads must select a document entry first.")
     else:
         if review_role not in {"paper", "review"}:
             raise ValueError("review_role must be paper or review")
 
         if review_role == "paper":
             if file_ext not in allowed_paper_ext:
-                raise ValueError("Unsupported review-paper file format")
+                raise ValueError("Unsupported review-paper file format. ZIP uploads must select a document entry first.")
         else:
             if file_ext not in allowed_review_ext:
-                raise ValueError("Unsupported review file format")
+                raise ValueError("Unsupported review file format. ZIP uploads must select a document entry first.")
             if not linked_paper_file_id:
                 raise ValueError("Review upload must include linked_paper_file_id")
 
@@ -84,6 +84,9 @@ def save_uploaded_resource(*, user, uploaded_file, detection_type, review_role="
 
     return {
         "file_id": file_management.id,
+        "file_name": file_management.file_name,
+        "file_size": file_management.file_size,
+        "file_type": file_management.file_type,
         "file_url": file_url,
         "detection_type": detection_type,
         "resource_type": resource_type,

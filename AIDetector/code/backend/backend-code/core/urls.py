@@ -53,6 +53,8 @@ urlpatterns = [
 
     # 图片上传相关的URL
     path('upload/', upload_file, name='upload_file'),
+    path('upload/zip_entries/', list_zip_document_entries, name='list_zip_document_entries'),
+    path('upload/zip_entry/', upload_zip_document_entry, name='upload_zip_document_entry'),
     path('upload/<int:file_id>/', get_file_details, name='get_file_details'),
     path('upload/<int:file_id>/download/', download_uploaded_resource, name='download_uploaded_resource'),
     path('upload/<int:file_id>/preview_text/', get_resource_text_preview, name='get_resource_text_preview'),

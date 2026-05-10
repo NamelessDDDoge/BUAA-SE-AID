@@ -14,8 +14,11 @@
         <v-card-text class="d-flex align-center">
           <v-icon color="primary" class="mr-2">mdi-file-document</v-icon>
           <div class="flex-grow-1">
-            <div class="text-body-2">{{ file.name }}</div>
-            <div class="text-caption text-grey">{{ formatFileSize(file.size) }}</div>
+            <div class="text-body-2">{{ displayName || file.name }}</div>
+            <div class="text-caption text-grey">
+              {{ formatFileSize(displaySize ?? file.size) }}
+            </div>
+            <div v-if="displayHint" class="text-caption text-primary">{{ displayHint }}</div>
           </div>
           <v-btn icon="mdi-close" variant="text" @click="emit('clear')" />
         </v-card-text>
@@ -44,6 +47,9 @@ defineProps<{
   file: File | null
   uploading: boolean
   uploadProgress: number
+  displayName?: string
+  displaySize?: number
+  displayHint?: string
 }>()
 
 const emit = defineEmits<{
@@ -57,8 +63,10 @@ const inputRef = ref<HTMLInputElement | null>(null)
 const triggerInput = () => inputRef.value?.click()
 
 const handleSelect = (event: Event) => {
-  const file = (event.target as HTMLInputElement).files?.[0]
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
   if (file) emit('select', file)
+  target.value = ''
 }
 
 const handleDrop = (event: DragEvent) => {

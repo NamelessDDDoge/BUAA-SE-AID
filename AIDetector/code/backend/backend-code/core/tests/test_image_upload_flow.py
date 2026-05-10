@@ -1,5 +1,7 @@
 import shutil
+import struct
 import zipfile
+import zlib
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -28,6 +30,78 @@ def build_zip_uploaded_file(name="bundle.zip"):
         archive.writestr("folder/inside.png", image_buffer.getvalue())
         archive.writestr("notes.txt", b"ignore me")
     return SimpleUploadedFile(name, zip_buffer.getvalue(), content_type="application/zip")
+
+
+def build_document_zip_uploaded_file(name="documents.zip"):
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as archive:
+        archive.writestr("paper/main.pdf", b"%PDF-1.4 selected paper")
+        archive.writestr("review/review.txt", b"review text")
+        archive.writestr("image.png", b"not a document")
+    return SimpleUploadedFile(name, zip_buffer.getvalue(), content_type="application/zip")
+
+
+def build_gbk_named_document_zip_uploaded_file(name="gbk-documents.zip"):
+    return SimpleUploadedFile(
+        name,
+        build_raw_stored_zip_entry("论文/终稿.docx".encode("gbk"), b"fake docx"),
+        content_type="application/zip",
+    )
+
+
+def build_raw_stored_zip_entry(raw_filename, payload):
+    crc = zlib.crc32(payload) & 0xFFFFFFFF
+    file_size = len(payload)
+    name_size = len(raw_filename)
+
+    local_header = struct.pack(
+        "<IHHHHHIIIHH",
+        0x04034B50,
+        20,
+        0,
+        0,
+        0,
+        crc,
+        file_size,
+        file_size,
+        name_size,
+        0,
+    ) + raw_filename + payload
+
+    central_directory = struct.pack(
+        "<IHHHHHHIIIHHHHHII",
+        0x02014B50,
+        20,
+        20,
+        0,
+        0,
+        0,
+        0,
+        crc,
+        file_size,
+        file_size,
+        name_size,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ) + raw_filename
+
+    end_record = struct.pack(
+        "<IHHHHIIH",
+        0x06054B50,
+        0,
+        0,
+        1,
+        1,
+        len(central_directory),
+        len(local_header),
+        0,
+    )
+
+    return local_header + central_directory + end_record
 
 
 def build_pdf_uploaded_file(name="paper-images.pdf", payload=b"%PDF-1.4 fake image bundle"):
@@ -102,6 +176,68 @@ class UploadFileFlowTests(TestCase):
         file_record = FileManagement.objects.get(pk=response.data["file_id"])
         self.assertEqual(file_record.resource_type, "paper")
         self.assertEqual(ImageUpload.objects.filter(file_management=file_record).count(), 0)
+
+    def test_list_zip_document_entries_returns_supported_documents(self):
+        response = self.client.post(
+            "/api/upload/zip_entries/",
+            {
+                "context": "paper",
+                "file": build_document_zip_uploaded_file(),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        entry_names = {entry["entry_name"] for entry in response.data["entries"]}
+        self.assertIn("paper/main.pdf", entry_names)
+        self.assertIn("review/review.txt", entry_names)
+        self.assertNotIn("image.png", entry_names)
+
+    def test_list_zip_document_entries_decodes_gbk_chinese_names(self):
+        response = self.client.post(
+            "/api/upload/zip_entries/",
+            {
+                "context": "paper",
+                "file": build_gbk_named_document_zip_uploaded_file(),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["entries"][0]["entry_name"], "论文/终稿.docx")
+        self.assertEqual(response.data["entries"][0]["display_name"], "终稿.docx")
+
+    def test_upload_zip_document_entry_saves_selected_file_as_paper(self):
+        response = self.client.post(
+            "/api/upload/zip_entry/",
+            {
+                "detection_type": "paper",
+                "context": "paper",
+                "entry_name": "paper/main.pdf",
+                "file": build_document_zip_uploaded_file(),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        file_record = FileManagement.objects.get(pk=response.data["file_id"])
+        self.assertEqual(file_record.resource_type, "paper")
+        self.assertEqual(file_record.file_name, "main.pdf")
+        self.assertFalse(file_record.stored_path.endswith(".zip"))
+
+    def test_upload_zip_document_entry_rejects_unsupported_context(self):
+        response = self.client.post(
+            "/api/upload/zip_entry/",
+            {
+                "detection_type": "image",
+                "context": "paper",
+                "entry_name": "paper/main.pdf",
+                "file": build_document_zip_uploaded_file(),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
 
     def test_upload_image_zip_extracts_embedded_images_only(self):
         response = self.client.post(

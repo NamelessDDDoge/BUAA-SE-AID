@@ -17,8 +17,11 @@
             <v-card-text class="d-flex align-center">
               <v-icon color="primary" class="mr-2">mdi-file-document</v-icon>
               <div class="flex-grow-1">
-                <div class="text-body-2">{{ paperFile.name }}</div>
-                <div class="text-caption text-grey">{{ formatFileSize(paperFile.size) }}</div>
+                <div class="text-body-2">{{ paperDisplayName || paperFile.name }}</div>
+                <div class="text-caption text-grey">
+                  {{ formatFileSize(paperDisplaySize ?? paperFile.size) }}
+                </div>
+                <div v-if="paperDisplayHint" class="text-caption text-primary">{{ paperDisplayHint }}</div>
               </div>
               <v-btn icon="mdi-close" variant="text" @click="emit('clear-paper')" />
             </v-card-text>
@@ -38,8 +41,11 @@
             <v-card-text class="d-flex align-center">
               <v-icon color="primary" class="mr-2">mdi-file-document-edit-outline</v-icon>
               <div class="flex-grow-1">
-                <div class="text-body-2">{{ reviewFile.name }}</div>
-                <div class="text-caption text-grey">{{ formatFileSize(reviewFile.size) }}</div>
+                <div class="text-body-2">{{ reviewDisplayName || reviewFile.name }}</div>
+                <div class="text-caption text-grey">
+                  {{ formatFileSize(reviewDisplaySize ?? reviewFile.size) }}
+                </div>
+                <div v-if="reviewDisplayHint" class="text-caption text-primary">{{ reviewDisplayHint }}</div>
               </div>
               <v-btn icon="mdi-close" variant="text" @click="emit('clear-review')" />
             </v-card-text>
@@ -71,6 +77,12 @@ defineProps<{
   reviewFile: File | null
   uploading: boolean
   uploadProgress: number
+  paperDisplayName?: string
+  paperDisplaySize?: number
+  paperDisplayHint?: string
+  reviewDisplayName?: string
+  reviewDisplaySize?: number
+  reviewDisplayHint?: string
 }>()
 
 const emit = defineEmits<{
@@ -88,13 +100,17 @@ const triggerPaperInput = () => paperInputRef.value?.click()
 const triggerReviewInput = () => reviewInputRef.value?.click()
 
 const handlePaperSelect = (event: Event) => {
-  const file = (event.target as HTMLInputElement).files?.[0]
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
   if (file) emit('select-paper', file)
+  target.value = ''
 }
 
 const handleReviewSelect = (event: Event) => {
-  const file = (event.target as HTMLInputElement).files?.[0]
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
   if (file) emit('select-review', file)
+  target.value = ''
 }
 
 const handlePaperDrop = (event: DragEvent) => {

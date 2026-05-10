@@ -12,6 +12,10 @@ from ..models import DetectionTask, FileManagement, ImageUpload, ResourceReviewR
 from ..services import log_user_event
 from ..services.resources import save_uploaded_resource
 from ..services.resources.document_preprocessor import extract_document_paragraphs, preprocess_document
+from ..services.resources.zip_document_service import (
+    build_uploaded_file_from_zip_entry,
+    list_document_entries,
+)
 from .views_dectection import CustomPagination
 
 
@@ -119,6 +123,21 @@ def _join_result_text(items, text_key="text"):
     return "\n\n".join(parts)
 
 
+def _resolve_zip_upload_context(detection_type, review_role, requested_context=""):
+    if detection_type == "paper":
+        resolved_context = "paper"
+    elif detection_type == "review" and review_role == "paper":
+        resolved_context = "review-paper"
+    elif detection_type == "review" and review_role == "review":
+        resolved_context = "review-file"
+    else:
+        raise ValueError("ZIP document selection only supports paper and Review uploads")
+
+    if requested_context and requested_context != resolved_context:
+        raise ValueError("ZIP upload context does not match detection_type/review_role")
+    return resolved_context
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def upload_file(request):
@@ -155,6 +174,78 @@ def upload_file(request):
         "message": "File uploaded successfully",
         **upload_result,
     })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def list_zip_document_entries(request):
+    user = User.objects.get(id=request.user.id)
+    if not user.has_permission("upload"):
+        return Response({"message": "Current user has no upload permission"}, status=403)
+
+    uploaded_file = request.FILES.get("file")
+    context = request.data.get("context", "")
+
+    try:
+        entries = list_document_entries(uploaded_file, context)
+    except ValueError as exc:
+        return Response({"message": str(exc)}, status=400)
+
+    return Response(
+        {
+            "message": "ZIP entries loaded successfully",
+            "zip_name": uploaded_file.name if uploaded_file else "",
+            "context": context,
+            "count": len(entries),
+            "entries": entries,
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upload_zip_document_entry(request):
+    user = User.objects.get(id=request.user.id)
+    if not user.has_permission("upload"):
+        return Response({"message": "Current user has no upload permission"}, status=403)
+
+    detection_type = request.data.get("detection_type", "image")
+    review_role = request.data.get("review_role", "")
+    linked_paper_file_id = request.data.get("linked_paper_file_id")
+    context = request.data.get("context", "")
+    entry_name = request.data.get("entry_name", "")
+    uploaded_zip = request.FILES.get("file")
+
+    try:
+        resolved_context = _resolve_zip_upload_context(detection_type, review_role, context)
+        extracted_file = build_uploaded_file_from_zip_entry(uploaded_zip, entry_name, resolved_context)
+        upload_result = save_uploaded_resource(
+            user=user,
+            uploaded_file=extracted_file,
+            detection_type=detection_type,
+            review_role=review_role,
+            linked_paper_file_id=linked_paper_file_id,
+        )
+    except ValueError as exc:
+        return Response({"message": str(exc)}, status=400)
+    except FileNotFoundError as exc:
+        return Response({"message": str(exc)}, status=404)
+
+    log_user_event(
+        user=request.user,
+        operation_type="upload",
+        related_model="FileManagement",
+        related_id=upload_result["file_id"],
+    )
+
+    return Response(
+        {
+            "message": "ZIP entry uploaded successfully",
+            "source_zip_name": uploaded_zip.name if uploaded_zip else "",
+            "selected_entry_name": entry_name,
+            **upload_result,
+        }
+    )
 
 
 @api_view(["GET"])

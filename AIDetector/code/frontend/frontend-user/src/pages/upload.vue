@@ -19,6 +19,9 @@
           :file="mainFiles[0] || null"
           :uploading="uploading"
           :upload-progress="uploadProgress"
+          :display-name="paperDisplayName"
+          :display-size="paperDisplaySize"
+          :display-hint="paperDisplayHint"
           @select="handlePaperFile"
           @clear="clearMainFiles"
           @submit="submitUpload"
@@ -30,6 +33,12 @@
           :review-file="reviewFile"
           :uploading="uploading"
           :upload-progress="uploadProgress"
+          :paper-display-name="reviewPaperDisplayName"
+          :paper-display-size="reviewPaperDisplaySize"
+          :paper-display-hint="reviewPaperDisplayHint"
+          :review-display-name="reviewFileDisplayName"
+          :review-display-size="reviewFileDisplaySize"
+          :review-display-hint="reviewFileDisplayHint"
           @select-paper="handleReviewPaper"
           @select-review="handleReviewFile"
           @clear-paper="clearReviewPaper"
@@ -88,6 +97,65 @@
     :initial-selection="taskSelectionInitialSelection"
     @confirm="confirmTaskSelection"
   />
+
+  <v-dialog v-model="zipSelectionDialog" max-width="820" persistent>
+    <v-card rounded="lg">
+      <v-card-title class="d-flex align-center justify-space-between">
+        <span class="text-h6">选择 ZIP 内文件</span>
+        <v-btn icon="mdi-close" variant="text" :disabled="zipSelectionLoading" @click="closeZipSelectionDialog" />
+      </v-card-title>
+
+      <v-card-subtitle class="pb-2">
+        {{ zipSelectionSourceName }} 已解压读取，请选择一个 {{ zipSelectionTargetLabel }}（支持 {{ zipSelectionAllowedLabel }}）。
+      </v-card-subtitle>
+
+      <v-card-text>
+        <v-alert v-if="zipSelectionError" type="error" variant="tonal" class="mb-4">
+          {{ zipSelectionError }}
+        </v-alert>
+
+        <div v-if="zipSelectionLoading" class="py-8 text-center">
+          <v-progress-circular indeterminate color="primary" />
+          <div class="text-body-2 text-medium-emphasis mt-3">正在读取 ZIP 目录...</div>
+        </div>
+
+        <v-radio-group v-else v-model="selectedZipEntryName" hide-details>
+          <v-list v-if="zipEntryOptions.length" lines="two" class="zip-entry-list">
+            <v-list-item
+              v-for="entry in zipEntryOptions"
+              :key="entry.entry_name"
+              :active="selectedZipEntryName === entry.entry_name"
+              @click="selectedZipEntryName = entry.entry_name"
+            >
+              <template #prepend>
+                <v-radio :value="entry.entry_name" color="primary" />
+              </template>
+              <v-list-item-title>{{ entry.display_name || entry.file_name }}</v-list-item-title>
+              <v-list-item-subtitle>
+                {{ entry.entry_name }} · {{ formatFileSize(entry.file_size) }} · {{ entry.file_ext.toUpperCase() }}
+              </v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+
+          <v-alert v-else type="warning" variant="tonal">
+            ZIP 中没有找到可用于当前入口的 PDF / DOCX / TXT 文件。
+          </v-alert>
+        </v-radio-group>
+      </v-card-text>
+
+      <v-card-actions class="px-6 pb-6">
+        <v-spacer />
+        <v-btn variant="text" :disabled="zipSelectionLoading" @click="closeZipSelectionDialog">取消</v-btn>
+        <v-btn
+          color="primary"
+          :disabled="zipSelectionLoading || !selectedZipEntryName"
+          @click="confirmZipSelection"
+        >
+          确认选择
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup lang="ts">
@@ -127,6 +195,23 @@ interface PendingDetectionPayload {
 }
 
 type TaskSelectionContext = 'image' | 'paper-image'
+type ZipSelectionTarget = 'paper' | 'review-paper' | 'review-file'
+
+interface ZipDocumentEntry {
+  entry_name: string
+  file_name: string
+  display_name: string
+  display_path?: string
+  file_ext: string
+  file_size: number
+  compressed_size?: number
+  content_type?: string
+}
+
+interface ZipSelectionState {
+  zipFile: File
+  entry: ZipDocumentEntry
+}
 
 const router = useRouter()
 const snackbar = useSnackbarStore()
@@ -135,6 +220,9 @@ const detectionType = ref<DetectionType>('image')
 const mainFiles = ref<File[]>([])
 const reviewPaperFile = ref<File | null>(null)
 const reviewFile = ref<File | null>(null)
+const paperZipSelection = ref<ZipSelectionState | null>(null)
+const reviewPaperZipSelection = ref<ZipSelectionState | null>(null)
+const reviewFileZipSelection = ref<ZipSelectionState | null>(null)
 
 const uploading = ref(false)
 const submittingDetection = ref(false)
@@ -162,6 +250,13 @@ const pendingDetectionPayload = ref<PendingDetectionPayload | null>(null)
 const taskSelectionContext = ref<TaskSelectionContext>('image')
 const paperEnableImageDetection = ref(true)
 const paperMethodSwitches = ref<MethodSwitches>(createDefaultMethodSwitches())
+const zipSelectionDialog = ref(false)
+const zipSelectionLoading = ref(false)
+const zipSelectionError = ref('')
+const zipSelectionTarget = ref<ZipSelectionTarget>('paper')
+const zipSelectionSourceFile = ref<File | null>(null)
+const zipEntryOptions = ref<ZipDocumentEntry[]>([])
+const selectedZipEntryName = ref('')
 const taskSelectionMinSelected = computed(() => (taskSelectionContext.value === 'image' ? 1 : 0))
 const taskSelectionConfirmLabel = computed(() => (
   taskSelectionContext.value === 'image' ? '确认并提交' : '确认'
@@ -169,6 +264,30 @@ const taskSelectionConfirmLabel = computed(() => (
 const taskSelectionInitialSelection = computed(() => (
   taskSelectionContext.value === 'paper-image' ? paperMethodSwitches.value : undefined
 ))
+const zipSelectionSourceName = computed(() => zipSelectionSourceFile.value?.name || 'ZIP 文件')
+const zipSelectionTargetLabel = computed(() => {
+  if (zipSelectionTarget.value === 'review-file') return 'Review 文件'
+  return '论文文件'
+})
+const zipSelectionAllowedLabel = computed(() => 'PDF / DOCX / TXT')
+const paperDisplayName = computed(() => paperZipSelection.value?.entry.display_name || '')
+const paperDisplaySize = computed(() => paperZipSelection.value?.entry.file_size)
+const paperDisplayHint = computed(() => (
+  paperZipSelection.value ? `来自 ZIP：${paperZipSelection.value.zipFile.name}` : ''
+))
+const reviewPaperDisplayName = computed(() => reviewPaperZipSelection.value?.entry.display_name || '')
+const reviewPaperDisplaySize = computed(() => reviewPaperZipSelection.value?.entry.file_size)
+const reviewPaperDisplayHint = computed(() => (
+  reviewPaperZipSelection.value ? `来自 ZIP：${reviewPaperZipSelection.value.zipFile.name}` : ''
+))
+const reviewFileDisplayName = computed(() => reviewFileZipSelection.value?.entry.display_name || '')
+const reviewFileDisplaySize = computed(() => reviewFileZipSelection.value?.entry.file_size)
+const reviewFileDisplayHint = computed(() => (
+  reviewFileZipSelection.value ? `来自 ZIP：${reviewFileZipSelection.value.zipFile.name}` : ''
+))
+const selectedEntryDisplayName = (selection: ZipSelectionState | null) => (
+  selection?.entry.display_name || selection?.entry.file_name || ''
+)
 
 const MAX_SIZE = 100 * 1024 * 1024
 const imageExt = new Set(['png', 'jpg', 'jpeg', 'pdf', 'zip'])
@@ -179,6 +298,9 @@ watch(detectionType, () => {
   mainFiles.value = []
   reviewPaperFile.value = null
   reviewFile.value = null
+  paperZipSelection.value = null
+  reviewPaperZipSelection.value = null
+  reviewFileZipSelection.value = null
   uploadProgress.value = 0
   paperEnableImageDetection.value = true
   paperMethodSwitches.value = createDefaultMethodSwitches()
@@ -188,6 +310,7 @@ watch(detectionType, () => {
   reviewPaperEditableText.value = ''
   reviewPaperTextPreviewLoading.value = false
   reviewPaperTextPreviewError.value = ''
+  closeZipSelectionDialog()
 })
 
 const resourceDomainOptions: TaskOption[] = [
@@ -201,12 +324,12 @@ const resourceDomainOptions: TaskOption[] = [
 const paperImageDetectionSupported = computed(() => {
   if (progressTaskType.value !== 'paper') return false
   const fileName = uploadedResourceFiles.value[0]?.name?.toLowerCase() || ''
-  return fileName.endsWith('.pdf') || fileName.endsWith('.zip')
+  return fileName.endsWith('.pdf')
 })
 
 const paperImageDetectionHint = computed(() => {
   if (!paperImageDetectionSupported.value) {
-    return '当前仅支持对 PDF / ZIP 论文提取图像并执行图像检测。'
+    return '当前仅支持对 PDF 论文提取图像并执行图像检测。'
   }
   return '开启后会复用图像检测链路，仅执行你勾选的图像子任务。'
 })
@@ -216,6 +339,14 @@ const selectedPaperMethodCount = computed(() => Object.values(paperMethodSwitche
 const getExt = (file: File) => {
   const idx = file.name.lastIndexOf('.')
   return idx === -1 ? '' : file.name.slice(idx + 1).toLowerCase()
+}
+
+const formatFileSize = (bytes: number) => {
+  if (!bytes) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1)
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
 }
 
 const validateFile = (file: File, type: DetectionType | 'review-paper' | 'review-file') => {
@@ -245,30 +376,105 @@ const handleMainFiles = (files: File[]) => {
   mainFiles.value = detectionType.value === 'image' ? files : [files[0]]
 }
 
-const handlePaperFile = (file: File) => {
+const openZipSelection = async (file: File, target: ZipSelectionTarget) => {
+  zipSelectionTarget.value = target
+  zipSelectionSourceFile.value = file
+  zipSelectionError.value = ''
+  zipEntryOptions.value = []
+  selectedZipEntryName.value = ''
+  zipSelectionDialog.value = true
+  zipSelectionLoading.value = true
+
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('context', target)
+    const response = await uploadApi.listZipDocumentEntries(formData)
+    zipEntryOptions.value = response?.data?.entries || []
+    selectedZipEntryName.value = zipEntryOptions.value[0]?.entry_name || ''
+    if (!zipEntryOptions.value.length) {
+      zipSelectionError.value = 'ZIP 中没有找到可用于当前入口的 PDF / DOCX / TXT 文件。'
+    }
+  } catch (error: any) {
+    zipEntryOptions.value = []
+    zipSelectionError.value = error?.response?.data?.message || '读取 ZIP 文件失败。'
+  } finally {
+    zipSelectionLoading.value = false
+  }
+}
+
+const closeZipSelectionDialog = () => {
+  zipSelectionDialog.value = false
+  zipSelectionLoading.value = false
+  zipSelectionError.value = ''
+  zipSelectionSourceFile.value = null
+  zipEntryOptions.value = []
+  selectedZipEntryName.value = ''
+}
+
+const confirmZipSelection = () => {
+  const zipFile = zipSelectionSourceFile.value
+  const entry = zipEntryOptions.value.find(item => item.entry_name === selectedZipEntryName.value)
+  if (!zipFile || !entry) {
+    snackbar.showMessage('请先选择 ZIP 内的文件。', 'error')
+    return
+  }
+
+  const state: ZipSelectionState = { zipFile, entry }
+  if (zipSelectionTarget.value === 'paper') {
+    mainFiles.value = [zipFile]
+    paperZipSelection.value = state
+  } else if (zipSelectionTarget.value === 'review-paper') {
+    reviewPaperFile.value = zipFile
+    reviewPaperZipSelection.value = state
+  } else {
+    reviewFile.value = zipFile
+    reviewFileZipSelection.value = state
+  }
+
+  snackbar.showMessage(`已选择 ZIP 内文件：${entry.display_name || entry.file_name}`, 'success')
+  closeZipSelectionDialog()
+}
+
+const handlePaperFile = async (file: File) => {
   const error = validateFile(file, 'paper')
   if (error) {
     snackbar.showMessage(error, 'error')
     return
   }
+  if (getExt(file) === 'zip') {
+    await openZipSelection(file, 'paper')
+    return
+  }
+  paperZipSelection.value = null
   mainFiles.value = [file]
 }
 
-const handleReviewPaper = (file: File) => {
+const handleReviewPaper = async (file: File) => {
   const error = validateFile(file, 'review-paper')
   if (error) {
     snackbar.showMessage(error, 'error')
     return
   }
+  if (getExt(file) === 'zip') {
+    await openZipSelection(file, 'review-paper')
+    return
+  }
+  reviewPaperZipSelection.value = null
   reviewPaperFile.value = file
 }
 
-const handleReviewFile = (file: File) => {
+const handleReviewFile = async (file: File) => {
   const error = validateFile(file, 'review-file')
   if (error) {
     snackbar.showMessage(error, 'error')
     return
   }
+  if (getExt(file) === 'zip') {
+    await openZipSelection(file, 'review-file')
+    return
+  }
+  reviewFileZipSelection.value = null
   reviewFile.value = file
 }
 
@@ -278,14 +484,17 @@ const removeMainFile = (idx: number) => {
 
 const clearMainFiles = () => {
   mainFiles.value = []
+  paperZipSelection.value = null
 }
 
 const clearReviewPaper = () => {
   reviewPaperFile.value = null
+  reviewPaperZipSelection.value = null
 }
 
 const clearReviewFile = () => {
   reviewFile.value = null
+  reviewFileZipSelection.value = null
 }
 
 const updateResourceDomainTag = (value: string) => {
@@ -417,6 +626,93 @@ const uploadSingleFile = async (
   return response.data
 }
 
+const uploadZipSelectedFile = async (
+  selection: ZipSelectionState,
+  payload: {
+    detection_type: DetectionType
+    review_role?: 'paper' | 'review'
+    linked_paper_file_id?: number
+  },
+  context: ZipSelectionTarget,
+  progressBase = 0,
+  progressSpan = 100,
+) => {
+  const formData = new FormData()
+  formData.append('file', selection.zipFile)
+  formData.append('entry_name', selection.entry.entry_name)
+  formData.append('context', context)
+  formData.append('detection_type', payload.detection_type)
+  if (payload.review_role) formData.append('review_role', payload.review_role)
+  if (payload.linked_paper_file_id) {
+    formData.append('linked_paper_file_id', String(payload.linked_paper_file_id))
+  }
+
+  const response = await uploadApi.uploadZipDocumentEntry(formData, (event: ProgressEvent) => {
+    const total = event.total || selection.zipFile.size || 1
+    const percent = Math.min(100, (event.loaded / total) * 100)
+    uploadProgress.value = progressBase + (percent * progressSpan) / 100
+  })
+
+  return response.data
+}
+
+const uploadPaperResourceFile = (
+  file: File,
+  progressBase = 0,
+  progressSpan = 100,
+) => {
+  if (paperZipSelection.value) {
+    return uploadZipSelectedFile(
+      paperZipSelection.value,
+      { detection_type: 'paper' },
+      'paper',
+      progressBase,
+      progressSpan,
+    )
+  }
+  return uploadSingleFile(file, { detection_type: 'paper' }, progressBase, progressSpan)
+}
+
+const uploadReviewPaperResourceFile = (
+  file: File,
+  progressBase = 0,
+  progressSpan = 100,
+) => {
+  if (reviewPaperZipSelection.value) {
+    return uploadZipSelectedFile(
+      reviewPaperZipSelection.value,
+      { detection_type: 'review', review_role: 'paper' },
+      'review-paper',
+      progressBase,
+      progressSpan,
+    )
+  }
+  return uploadSingleFile(file, { detection_type: 'review', review_role: 'paper' }, progressBase, progressSpan)
+}
+
+const uploadReviewResourceFile = (
+  file: File,
+  linkedPaperFileId: number,
+  progressBase = 0,
+  progressSpan = 100,
+) => {
+  const payload = {
+    detection_type: 'review' as DetectionType,
+    review_role: 'review' as const,
+    linked_paper_file_id: linkedPaperFileId,
+  }
+  if (reviewFileZipSelection.value) {
+    return uploadZipSelectedFile(
+      reviewFileZipSelection.value,
+      payload,
+      'review-file',
+      progressBase,
+      progressSpan,
+    )
+  }
+  return uploadSingleFile(file, payload, progressBase, progressSpan)
+}
+
 const openTaskSelection = (payload: PendingDetectionPayload) => {
   taskSelectionContext.value = 'image'
   pendingDetectionPayload.value = payload
@@ -518,11 +814,11 @@ const submitUpload = async () => {
         return
       }
 
-      const data = await uploadSingleFile(mainFiles.value[0], { detection_type: 'paper' })
+      const data = await uploadPaperResourceFile(mainFiles.value[0])
       progressTaskType.value = 'paper'
       uploadedResourceFiles.value = [{
         file_id: data.file_id,
-        name: mainFiles.value[0].name,
+        name: selectedEntryDisplayName(paperZipSelection.value) || data.file_name || mainFiles.value[0].name,
         resource_type: 'paper',
       }]
       await loadPaperTextPreview(data.file_id)
@@ -538,28 +834,31 @@ const submitUpload = async () => {
       return
     }
 
-    const paperData = await uploadSingleFile(
+    const paperData = await uploadReviewPaperResourceFile(
       reviewPaperFile.value,
-      { detection_type: 'review', review_role: 'paper' },
       0,
       50,
     )
 
-    const reviewData = await uploadSingleFile(
+    const reviewData = await uploadReviewResourceFile(
       reviewFile.value,
-      {
-        detection_type: 'review',
-        review_role: 'review',
-        linked_paper_file_id: paperData.file_id,
-      },
+      paperData.file_id,
       50,
       50,
     )
 
     progressTaskType.value = 'review'
     uploadedResourceFiles.value = [
-      { file_id: paperData.file_id, name: reviewPaperFile.value.name, resource_type: 'review_paper' },
-      { file_id: reviewData.file_id, name: reviewFile.value.name, resource_type: 'review_file' },
+      {
+        file_id: paperData.file_id,
+        name: selectedEntryDisplayName(reviewPaperZipSelection.value) || paperData.file_name || reviewPaperFile.value.name,
+        resource_type: 'review_paper',
+      },
+      {
+        file_id: reviewData.file_id,
+        name: selectedEntryDisplayName(reviewFileZipSelection.value) || reviewData.file_name || reviewFile.value.name,
+        resource_type: 'review_file',
+      },
     ]
     await loadReviewPaperTextPreview(paperData.file_id)
     await loadReviewTextPreview(reviewData.file_id)
@@ -723,5 +1022,9 @@ const returnToUpload = () => {
   mainFiles.value = []
   reviewPaperFile.value = null
   reviewFile.value = null
+  paperZipSelection.value = null
+  reviewPaperZipSelection.value = null
+  reviewFileZipSelection.value = null
+  closeZipSelectionDialog()
 }
 </script>
