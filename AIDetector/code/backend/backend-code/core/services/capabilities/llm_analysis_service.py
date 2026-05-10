@@ -44,20 +44,20 @@ def build_overall_paper_evaluation(
 
     risk_score = 0
     if total_paragraphs > 0:
-        risk_score += min(40, int((suspicious_count / total_paragraphs) * 40))
-    risk_score += min(30, confirmed_count * 6)
-    risk_score += min(15, reference_high_risk_count * 3)
-    risk_score += min(15, data_high_risk_count * 5)
+        risk_score += min(35, int((suspicious_count / total_paragraphs) * 35))
+    risk_score += min(40, confirmed_count * 18)
+    risk_score += min(15, reference_high_risk_count * 10)
+    risk_score += min(10, data_high_risk_count * 8)
 
-    if risk_score >= 70:
-        level = "high"
-        conclusion = "整篇论文存在较高 AI 生成与学术真实性风险，建议优先人工复核并进行来源核验。"
-    elif risk_score >= 40:
-        level = "medium"
-        conclusion = "论文存在中等风险段落，建议重点复核高概率段落与关键参考文献。"
-    else:
-        level = "low"
-        conclusion = "论文整体风险较低，但仍建议抽样复核可疑段落。"
+    score_level = _risk_level_from_score(risk_score)
+    evidence_level = _minimum_risk_level_from_evidence(
+        confirmed_count=confirmed_count,
+        reference_high_risk_count=reference_high_risk_count,
+        data_high_risk_count=data_high_risk_count,
+    )
+    level = _max_risk_level(score_level, evidence_level)
+    risk_score = _align_score_with_level(risk_score, level)
+    conclusion = _rule_based_conclusion(level, confirmed_count, reference_high_risk_count, data_high_risk_count)
 
     evidence = {
         "total_paragraphs": total_paragraphs,
@@ -75,12 +75,69 @@ def build_overall_paper_evaluation(
         llm_model_name=llm_model_name,
     )
 
+    llm_level = _normalize_risk_level(llm_summary.get("risk_level"))
+    final_level = _max_risk_level(level, llm_level)
+    llm_summary_is_consistent = _risk_rank(llm_level) >= _risk_rank(level)
+    summary = llm_summary.get("summary") if llm_summary_is_consistent else ""
+
     return {
         "risk_score": risk_score,
-        "risk_level": llm_summary.get("risk_level") or level,
-        "summary": llm_summary.get("summary") or conclusion,
+        "risk_level": final_level,
+        "summary": summary or conclusion,
         "key_concerns": llm_summary.get("key_concerns") or [],
         "suggestions": llm_summary.get("suggestions") or [],
         "evidence": evidence,
-        "summary_source": "llm_prompt" if llm_summary.get("summary") else "rule_based",
+        "summary_source": "llm_prompt" if summary else "rule_based",
     }
+
+
+def _risk_level_from_score(risk_score):
+    if risk_score >= 70:
+        return "high"
+    if risk_score >= 40:
+        return "medium"
+    return "low"
+
+
+def _minimum_risk_level_from_evidence(*, confirmed_count, reference_high_risk_count, data_high_risk_count):
+    if confirmed_count >= 3 or data_high_risk_count >= 2:
+        return "high"
+    if confirmed_count >= 2 and reference_high_risk_count >= 1:
+        return "high"
+    if confirmed_count >= 1 or reference_high_risk_count >= 1 or data_high_risk_count >= 1:
+        return "medium"
+    return "low"
+
+
+def _align_score_with_level(risk_score, risk_level):
+    if risk_level == "high":
+        return max(risk_score, 70)
+    if risk_level == "medium":
+        return max(risk_score, 40)
+    return risk_score
+
+
+def _normalize_risk_level(value):
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in {"low", "medium", "high"} else "low"
+
+
+def _risk_rank(level):
+    return {"low": 0, "medium": 1, "high": 2}.get(level, 0)
+
+
+def _max_risk_level(*levels):
+    return max((_normalize_risk_level(level) for level in levels), key=_risk_rank)
+
+
+def _rule_based_conclusion(level, confirmed_count, reference_high_risk_count, data_high_risk_count):
+    if level == "high":
+        return (
+            "论文存在高风险证据，建议优先人工复核确认 AI 段落、核验高风险引用，"
+            "并在处置前保留原文与检测记录。"
+        )
+    if level == "medium":
+        if confirmed_count or reference_high_risk_count or data_high_risk_count:
+            return "论文存在明确风险证据，建议重点复核确认 AI 段落、参考文献和数据真实性。"
+        return "论文存在中等风险段落，建议重点复核高概率段落与关键参考文献。"
+    return "论文整体风险较低，但仍建议抽样复核可疑段落。"

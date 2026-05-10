@@ -18,6 +18,7 @@ from core.services.resources.document_preprocessor import (
     preprocess_document,
 )
 from core.services.resources.text_sanitizer import sanitize_json_like
+from core.services.capabilities.llm_analysis_service import build_overall_paper_evaluation
 from core.tasks import run_paper_detection, run_review_detection
 
 
@@ -355,3 +356,31 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(sanitized["paragraph_results"][0]["text"], "abcdef")
         self.assertEqual(sanitized["paragraph_results"][0]["details"]["reason"], "xy")
         self.assertEqual(sanitized["list"][0], "ok")
+
+    @patch("core.services.capabilities.llm_analysis_service.summarize_paper_overall")
+    def test_overall_paper_evaluation_escalates_confirmed_ai_and_high_risk_reference(self, mock_summary):
+        mock_summary.return_value = {
+            "risk_level": "low",
+            "summary": "LLM returned a lower risk level.",
+            "key_concerns": [],
+            "suggestions": [],
+        }
+        paragraph_results = [
+            {"paragraph_index": 0, "label": "suspicious", "probability": 0.91},
+            {"paragraph_index": 1, "label": "suspicious", "probability": 0.88},
+            {"paragraph_index": 2, "label": "suspicious", "probability": 0.66},
+            {"paragraph_index": 3, "label": "clean", "probability": 0.12},
+        ]
+        confirmed_ai_paragraphs = paragraph_results[:2]
+        reference_results = [{"reference_index": 0, "authenticity_label": "high_risk"}]
+
+        evaluation = build_overall_paper_evaluation(
+            paragraph_results=paragraph_results,
+            confirmed_ai_paragraphs=confirmed_ai_paragraphs,
+            reference_results=reference_results,
+            data_authenticity_results={"findings": []},
+        )
+
+        self.assertEqual(evaluation["risk_level"], "high")
+        self.assertGreaterEqual(evaluation["risk_score"], 70)
+        self.assertEqual(evaluation["summary_source"], "rule_based")
