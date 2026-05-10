@@ -14,9 +14,9 @@
       </v-card-title>
       <v-card-text>
         <v-alert :type="overallAlertType" variant="tonal" class="mb-4">
-          <div class="mb-1"><strong>模板化倾向：</strong>{{ levelText(overallEvaluation.template_like_level) }}</div>
-          <div class="mb-1"><strong>内容错误风险：</strong>{{ levelText(overallEvaluation.wrongness_level) }}</div>
-          <div class="mb-1"><strong>与论文相关度：</strong>{{ levelText(overallEvaluation.relevance_level) }}</div>
+          <div class="mb-1"><strong>模板化倾向：</strong>{{ riskLevelText(overallEvaluation.template_like_level) }}</div>
+          <div class="mb-1"><strong>内容错误风险：</strong>{{ riskLevelText(overallEvaluation.wrongness_level) }}</div>
+          <div class="mb-1"><strong>与论文相关度：</strong>{{ relevanceLevelText(overallEvaluation.relevance_level) }}</div>
           <div><strong>总结：</strong>{{ overallEvaluation.summary || '暂无总结' }}</div>
         </v-alert>
 
@@ -65,55 +65,35 @@
 
             <v-list-item-title class="text-subtitle-1 font-weight-bold mb-2">
               第 {{ (item.review_paragraph_index ?? index) + 1 }} 段
-              <v-chip size="small" class="ml-2" :color="levelColor(item.template_like_level)">
-                模板化 {{ levelText(item.template_like_level) }}
+              <v-chip size="small" class="ml-2" :color="riskLevelColor(item.template_like_level)">
+                模板化 {{ riskLevelText(item.template_like_level) }}
               </v-chip>
-              <v-chip size="small" class="ml-2" :color="levelColor(item.wrongness_level)">
-                错误风险 {{ levelText(item.wrongness_level) }}
+              <v-chip size="small" class="ml-2" :color="riskLevelColor(item.wrongness_level)">
+                错误风险 {{ riskLevelText(item.wrongness_level) }}
+              </v-chip>
+              <v-chip size="small" class="ml-2" :color="relevanceLevelColor(item.relevance_level)" variant="tonal">
+                相关度 {{ relevanceLevelText(item.relevance_level) }}
               </v-chip>
               <v-chip size="small" class="ml-2" color="primary" variant="tonal">
-                相关度 {{ formatScore(item.relevance_score) }}
+                匹配分数 {{ formatScore(item.relevance_score) }}
               </v-chip>
             </v-list-item-title>
 
-            <v-list-item-subtitle class="text-body-1" style="white-space: pre-wrap;">
+            <div class="text-body-1 review-paragraph-text">
               <strong>Review 内容：</strong>{{ item.review_text || '-' }}
-            </v-list-item-subtitle>
+            </div>
 
             <div class="mt-3">
-              <v-alert type="info" variant="tonal" density="compact" class="text-body-2 mb-2">
+              <v-alert :type="relevanceAlertType(item.relevance_level)" variant="tonal" density="compact" class="text-body-2 mb-2">
                 <strong>论文参考段落：</strong>
                 {{ item.paper_paragraph_index !== null && item.paper_paragraph_index !== undefined ? `第 ${item.paper_paragraph_index + 1} 段` : '未匹配到明确段落' }}
               </v-alert>
-              <v-alert type="warning" variant="tonal" density="compact" class="text-body-2">
+              <v-alert :type="paragraphExplanationAlertType(item)" variant="tonal" density="compact" class="text-body-2">
                 <strong>分析解释：</strong>{{ item.explanation || '暂无解释。' }}
               </v-alert>
             </div>
           </v-list-item>
         </v-list>
-      </v-card-text>
-    </v-card>
-
-    <v-card v-if="task?.results?.review_analysis_results?.overall?.summary || task?.results?.relevance_results?.length" elevation="2" rounded="lg">
-      <v-card-title class="d-flex align-center ga-2">
-        <v-icon color="teal">mdi-book-open-page-variant-outline</v-icon>
-        <span class="text-h6">原始审查数据</span>
-      </v-card-title>
-      <v-card-text>
-        <v-expansion-panels variant="accordion">
-          <v-expansion-panel>
-            <v-expansion-panel-title>Review 总体数据</v-expansion-panel-title>
-            <v-expansion-panel-text>
-              <pre class="json-block">{{ task?.results?.review_analysis_results || task?.results?.overall_evaluation || {} }}</pre>
-            </v-expansion-panel-text>
-          </v-expansion-panel>
-          <v-expansion-panel v-if="task?.results?.relevance_results?.length">
-            <v-expansion-panel-title>段落明细</v-expansion-panel-title>
-            <v-expansion-panel-text>
-              <pre class="json-block">{{ task.results.relevance_results }}</pre>
-            </v-expansion-panel-text>
-          </v-expansion-panel>
-        </v-expansion-panels>
       </v-card-text>
     </v-card>
   </div>
@@ -134,49 +114,187 @@ const emit = defineEmits<{
 }>()
 
 const overallEvaluation = computed(() => props.task?.results?.review_analysis_results?.overall || props.task?.results?.overall_evaluation || null)
+
 const paragraphAnalyses = computed(() => {
-  const raw = props.task?.results?.review_analysis_results?.paragraph_results || props.task?.results?.relevance_results || []
-  return Array.isArray(raw) ? raw.map((item: any) => ({
-    review_paragraph_index: item.review_paragraph_index ?? item.paragraph_index,
-    review_text: item.review_text ?? item.text,
-    paper_paragraph_index: item.paper_paragraph_index,
-    explanation: item.explanation ?? item.relevance_explanation,
-    template_like_level: item.template_like_level ?? item.details?.template_like_level,
-    wrongness_level: item.wrongness_level ?? item.details?.wrongness_level,
-    relevance_score: item.relevance_score ?? item.details?.relevance_score,
-    relevance_level: item.relevance_level ?? item.label,
-  })) : []
+  const results = props.task?.results || {}
+  const analysisRows = asArray(results.review_analysis_results?.paragraph_results)
+  const relevanceRows = asArray(results.relevance_results)
+  const paragraphRows = asArray(results.paragraph_results)
+  const analysisByIndex = buildReviewIndexMap(analysisRows)
+  const relevanceByIndex = buildReviewIndexMap(relevanceRows)
+  const paragraphByIndex = buildReviewIndexMap(paragraphRows)
+  const indexes = Array.from(new Set([
+    ...analysisByIndex.keys(),
+    ...relevanceByIndex.keys(),
+    ...paragraphByIndex.keys(),
+  ])).sort((a, b) => a - b)
+
+  return indexes.map((reviewIndex) => {
+    const analysisItem = analysisByIndex.get(reviewIndex) || {}
+    const relevanceItem = relevanceByIndex.get(reviewIndex) || {}
+    const paragraphItem = paragraphByIndex.get(reviewIndex) || {}
+
+    return {
+      review_paragraph_index: reviewIndex,
+      review_text: firstPresent(
+        analysisItem.review_text,
+        analysisItem.text,
+        relevanceItem.review_text,
+        relevanceItem.text,
+        paragraphItem.review_text,
+        paragraphItem.text,
+        paragraphItem.details?.review_text,
+      ),
+      paper_paragraph_index: firstPresent(
+        analysisItem.paper_paragraph_index,
+        relevanceItem.paper_paragraph_index,
+        paragraphItem.paper_paragraph_index,
+        paragraphItem.details?.paper_paragraph_index,
+      ),
+      paper_text: firstPresent(
+        analysisItem.paper_text,
+        relevanceItem.paper_text,
+        paragraphItem.paper_text,
+        paragraphItem.details?.paper_text,
+      ),
+      explanation: firstPresent(
+        analysisItem.explanation,
+        analysisItem.relevance_explanation,
+        relevanceItem.explanation,
+        relevanceItem.relevance_explanation,
+        paragraphItem.explanation,
+        paragraphItem.relevance_explanation,
+        paragraphItem.details?.explanation,
+        paragraphItem.details?.relevance_explanation,
+      ),
+      template_like_level: firstPresent(
+        analysisItem.template_like_level,
+        analysisItem.details?.template_like_level,
+        relevanceItem.template_like_level,
+        relevanceItem.details?.template_like_level,
+        paragraphItem.template_like_level,
+        paragraphItem.details?.template_like_level,
+      ),
+      wrongness_level: firstPresent(
+        analysisItem.wrongness_level,
+        analysisItem.details?.wrongness_level,
+        relevanceItem.wrongness_level,
+        relevanceItem.details?.wrongness_level,
+        paragraphItem.wrongness_level,
+        paragraphItem.details?.wrongness_level,
+      ),
+      relevance_score: firstPresent(
+        analysisItem.relevance_score,
+        analysisItem.details?.relevance_score,
+        relevanceItem.relevance_score,
+        relevanceItem.details?.relevance_score,
+        paragraphItem.relevance_score,
+        paragraphItem.details?.relevance_score,
+      ),
+      relevance_level: firstPresent(
+        analysisItem.relevance_level,
+        analysisItem.details?.relevance_level,
+        relevanceItem.relevance_level,
+        relevanceItem.label,
+        relevanceItem.details?.relevance_level,
+        paragraphItem.relevance_level,
+        paragraphItem.details?.relevance_level,
+      ),
+    }
+  })
 })
 
-const overallAlertType = computed(() => {
-  const level = String(overallEvaluation.value?.relevance_level || overallEvaluation.value?.wrongness_level || 'low').toLowerCase()
-  if (level === 'high') return 'error'
-  if (level === 'medium') return 'warning'
-  return 'success'
+const asArray = (value: any) => Array.isArray(value) ? value : []
+
+const firstPresent = (...values: any[]) => values.find((value) => {
+  if (typeof value === 'string') return value.trim() !== ''
+  return value !== undefined && value !== null
 })
 
-const levelText = (level?: string) => {
-  const normalized = String(level || 'low').toLowerCase()
-  if (normalized === 'high') return '高'
-  if (normalized === 'medium') return '中'
-  return '低'
+const getReviewIndex = (item: any, fallbackIndex: number) => {
+  const rawIndex = item?.review_paragraph_index ?? item?.paragraph_index ?? fallbackIndex
+  const numberIndex = Number(rawIndex)
+  return Number.isFinite(numberIndex) ? numberIndex : fallbackIndex
 }
 
-const levelColor = (level?: string) => {
-  const normalized = String(level || 'low').toLowerCase()
+const buildReviewIndexMap = (items: any[]) => {
+  const indexed = new Map<number, any>()
+  items.forEach((item, index) => {
+    const reviewIndex = getReviewIndex(item, index)
+    if (!indexed.has(reviewIndex)) {
+      indexed.set(reviewIndex, item)
+    }
+  })
+  return indexed
+}
+
+const normalizeLevel = (level?: string) => String(level || '').toLowerCase()
+
+const overallAlertType = computed(() => {
+  const templateLevel = normalizeLevel(overallEvaluation.value?.template_like_level)
+  const wrongnessLevel = normalizeLevel(overallEvaluation.value?.wrongness_level)
+  if (templateLevel === 'high' || wrongnessLevel === 'high') return 'error'
+  if (templateLevel === 'medium' || wrongnessLevel === 'medium') return 'warning'
+  return 'success'
+})
+
+const riskLevelText = (level?: string) => {
+  const normalized = normalizeLevel(level)
+  if (normalized === 'high') return '高'
+  if (normalized === 'medium') return '中'
+  if (normalized === 'low') return '低'
+  return '未知'
+}
+
+const relevanceLevelText = (level?: string) => {
+  const normalized = normalizeLevel(level)
+  if (normalized === 'high' || normalized === 'relevant') return '高'
+  if (normalized === 'medium') return '中'
+  if (normalized === 'low' || normalized === 'weak_match') return '低'
+  return '未知'
+}
+
+const riskLevelColor = (level?: string) => {
+  const normalized = normalizeLevel(level)
   if (normalized === 'high') return 'error'
   if (normalized === 'medium') return 'warning'
-  return 'success'
+  if (normalized === 'low') return 'success'
+  return 'grey'
+}
+
+const relevanceLevelColor = (level?: string) => {
+  const normalized = normalizeLevel(level)
+  if (normalized === 'high' || normalized === 'relevant') return 'success'
+  if (normalized === 'medium') return 'warning'
+  if (normalized === 'low' || normalized === 'weak_match') return 'grey'
+  return 'grey'
 }
 
 const paragraphAvatarColor = (item: any) => {
-  if (String(item.template_like_level || '').toLowerCase() === 'high' || String(item.wrongness_level || '').toLowerCase() === 'high') {
+  if (normalizeLevel(item.template_like_level) === 'high' || normalizeLevel(item.wrongness_level) === 'high') {
     return 'error'
   }
-  if (String(item.relevance_level || '').toLowerCase() === 'medium') {
+  if (normalizeLevel(item.template_like_level) === 'medium' || normalizeLevel(item.wrongness_level) === 'medium') {
     return 'warning'
   }
-  return 'primary'
+  return 'success'
+}
+
+const relevanceAlertType = (level?: string) => {
+  const normalized = normalizeLevel(level)
+  if (normalized === 'high' || normalized === 'relevant') return 'success'
+  if (normalized === 'medium') return 'warning'
+  return 'info'
+}
+
+const paragraphExplanationAlertType = (item: any) => {
+  if (normalizeLevel(item.template_like_level) === 'high' || normalizeLevel(item.wrongness_level) === 'high') {
+    return 'error'
+  }
+  if (normalizeLevel(item.template_like_level) === 'medium' || normalizeLevel(item.wrongness_level) === 'medium') {
+    return 'warning'
+  }
+  return 'info'
 }
 
 const formatScore = (value: any) => {
@@ -186,12 +304,8 @@ const formatScore = (value: any) => {
 </script>
 
 <style scoped>
-.json-block {
+.review-paragraph-text {
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 12px;
-  background: rgb(var(--v-theme-surface-variant));
-  padding: 12px;
-  border-radius: 8px;
 }
 </style>

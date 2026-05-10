@@ -591,7 +591,7 @@ const previewFile = async (file: ResourceFile) => {
   previewText.value = ''
   previewError.value = ''
   try {
-    const response = await uploadApi.getResourceTextPreview(file.file_id)
+    const response = await uploadApi.getResourceTextPreview(file.file_id, props.task.task_id)
     previewText.value = response.data?.text_content || '暂无可预览文本。'
     if (response.data?.text_truncated) {
       previewError.value = '文件较长，当前仅展示前 60000 字。'

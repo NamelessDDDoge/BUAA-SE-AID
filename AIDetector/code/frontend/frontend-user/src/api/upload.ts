@@ -14,8 +14,10 @@ export default {
     return http.get(`/upload/${data.file_id}/extract_images/?page=${data.page_number}&page_size=${data.page_size}`)
   },
 
-  getResourceTextPreview(fileId: number) {
-    return http.get(`/upload/${fileId}/preview_text/`)
+  getResourceTextPreview(fileId: number, taskId?: string | number | null) {
+    return http.get(`/upload/${fileId}/preview_text/`, {
+      params: taskId ? { task_id: taskId } : undefined,
+    })
   },
 
   addTag(data: any) {

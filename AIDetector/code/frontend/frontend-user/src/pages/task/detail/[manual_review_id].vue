@@ -281,13 +281,15 @@
         </v-card-title>
         <v-card-text>
           <v-alert v-if="previewError" type="warning" variant="tonal" class="mb-4">{{ previewError }}</v-alert>
+          <v-progress-linear v-if="previewLoading" indeterminate color="primary" class="mb-4" />
+          <pre v-if="previewText" class="file-preview">{{ previewText }}</pre>
           <iframe
-            v-if="previewUrl"
+            v-else-if="previewUrl"
             :src="previewUrl"
             class="file-iframe"
             title="源文件预览"
           />
-          <div v-else class="text-medium-emphasis">当前文件无法内嵌预览，请下载查看源文件。</div>
+          <div v-else-if="!previewLoading" class="text-medium-emphasis">当前文件无法预览，请下载查看源文件。</div>
         </v-card-text>
       </v-card>
     </v-dialog>
@@ -353,6 +355,7 @@ const overall = ref()
 const detection_results = ref<dimension[]>([])
 const resourceTaskType = ref<'paper' | 'review'>('paper')
 const resourceTaskName = ref('')
+const resourceTaskId = ref<number | string | null>(null)
 const resourceReason = ref('')
 const resourceFiles = ref<Array<{ id?: number; file_id?: number; file_name: string; resource_type: string; file_type: string; file_url?: string | null }>>([])
 const originalFiles = ref<Array<{ id?: number; file_id?: number; file_name: string; resource_type: string; file_type: string; file_url?: string | null }>>([])
@@ -362,6 +365,8 @@ const resourceComment = ref('')
 const previewDialog = ref(false)
 const previewTitle = ref('')
 const previewUrl = ref('')
+const previewText = ref('')
+const previewLoading = ref(false)
 const previewError = ref('')
 const resourceDecisionOptions = computed(() => {
   if (resourceTaskType.value === 'review') {
@@ -436,6 +441,7 @@ onMounted(async () => {
     if (response.request_type === 'resource' || requestType.value === 'resource') {
       resourceTaskType.value = response.task_type || (route.query.task_type as 'paper' | 'review') || 'paper'
       resourceTaskName.value = response.task_name || ''
+      resourceTaskId.value = response.task_id || null
       resourceReason.value = response.reason || ''
       resourceFiles.value = response.selected_files || []
       originalFiles.value = response.original_files || response.selected_files || []
@@ -534,11 +540,72 @@ const downloadFile = (file: { file_name: string; file_url?: string | null }) => 
   document.body.removeChild(link)
 }
 
+const loadFileTextPreview = async (
+  file: { id?: number; file_id?: number; file_name: string; file_url?: string | null },
+  target: 'preview' | 'extract',
+) => {
+  const fileId = file.file_id || file.id
+  if (!fileId) {
+    snackbar.showMessage('文件缺少ID，无法获取提取文本', 'error')
+    return
+  }
+
+  const isPreview = target === 'preview'
+  if (isPreview) {
+    previewDialog.value = true
+    previewTitle.value = file.file_name || '文件预览'
+    previewUrl.value = ''
+    previewText.value = ''
+    previewError.value = ''
+    previewLoading.value = true
+  } else {
+    showExtractDialog.value = true
+    extractDialogTitle.value = `提取文本 - ${file.file_name || '未命名文件'}`
+    extractLoading.value = true
+    extractError.value = ''
+    extracted_text.value = ''
+  }
+
+  try {
+    const response = await uploadApi.getResourceTextPreview(fileId, resourceTaskId.value)
+    const textContent = response.data?.text_content || ''
+    if (isPreview) {
+      previewText.value = textContent
+    } else {
+      extracted_text.value = textContent
+    }
+    if (response.data?.text_truncated) {
+      const message = '文件较长，当前仅展示前 6000000 字。'
+      if (isPreview) previewError.value = message
+      else extractError.value = message
+    }
+    if (!textContent) {
+      const message = '当前文件暂无可展示文本。'
+      if (isPreview) previewError.value = previewError.value || message
+      else extractError.value = extractError.value || message
+    }
+  } catch (error: any) {
+    const message = error?.response?.data?.message || '获取提取文本失败。'
+    if (isPreview) previewError.value = message
+    else extractError.value = message
+  } finally {
+    if (isPreview) previewLoading.value = false
+    else extractLoading.value = false
+  }
+}
+
 const previewFile = async (file: { id?: number; file_id?: number; file_name: string; file_url?: string | null }) => {
+  if (requestType.value === 'resource') {
+    await loadFileTextPreview(file, 'preview')
+    return
+  }
+
   previewDialog.value = true
   previewTitle.value = file.file_name
   previewUrl.value = ''
+  previewText.value = ''
   previewError.value = ''
+  previewLoading.value = false
   const url = getFileUrl(file)
   if (!url) {
     previewError.value = '当前文件无法预览，请下载查看源文件。'
@@ -548,30 +615,7 @@ const previewFile = async (file: { id?: number; file_id?: number; file_name: str
 }
 
 const openExtractDialog = async (file: { id?: number; file_id?: number; file_name: string; file_url?: string | null }) => {
-  const fileId = file.file_id || file.id
-  if (!fileId) {
-    snackbar.showMessage('文件缺少ID，无法获取提取文本', 'error')
-    return
-  }
-  showExtractDialog.value = true
-  extractDialogTitle.value = `提取文本 - ${file.file_name || '未命名文件'}`
-  extractLoading.value = true
-  extractError.value = ''
-  extracted_text.value = ''
-  try {
-    const response = await uploadApi.getResourceTextPreview(fileId)
-    extracted_text.value = response.data?.text_content || ''
-    if (response.data?.text_truncated) {
-      extractError.value = '文件较长，当前仅展示前 60000 字。'
-    }
-    if (!extracted_text.value) {
-      extractError.value = extractError.value || '当前文件暂无可展示文本。'
-    }
-  } catch (error: any) {
-    extractError.value = error?.response?.data?.message || '获取提取文本失败。'
-  } finally {
-    extractLoading.value = false
-  }
+  await loadFileTextPreview(file, 'extract')
 }
 
 const downloadCombinedReport = async () => {

@@ -24,6 +24,7 @@ from core.services.orchestrators.resource_task_orchestrator import (
     create_resource_detection_task,
     run_resource_detection_task_async,
 )
+from core.utils.task_result_store import store_paper_task_results
 from core.utils.task_result_serializer import build_detection_task_status_payload
 
 
@@ -232,6 +233,68 @@ class ResourceTaskFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertIn("current server node", response.data["message"])
+
+    def test_text_preview_with_task_context_prefers_persisted_paper_override(self):
+        file_record = self.create_file("paper.txt", "paper")
+        self.write_media_file("uploads/paper.txt", b"Original extracted text")
+        task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="paper",
+            task_name="Edited Paper",
+            status="completed",
+            text_detection_results={"text_override": "Edited paper text"},
+        )
+        task.resource_files.add(file_record)
+
+        store_paper_task_results(
+            detection_task=task,
+            source_file=file_record,
+            results_payload={
+                "document": {"paragraph_count": 1, "segment_count": 1},
+                "paragraph_results": [{"paragraph_index": 0, "text": "Edited paper text"}],
+                "suspicious_paragraphs": [],
+                "reference_results": [],
+                "overall_evaluation": {},
+                "image_results": [],
+            },
+        )
+        task.refresh_from_db()
+
+        self.assertEqual(task.text_detection_results["text_override"], "Edited paper text")
+        response = self.client.get(f"/api/upload/{file_record.id}/preview_text/?task_id={task.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["text_content"], "Edited paper text")
+        self.assertEqual(response.data["text_source"], "task_override")
+
+    def test_text_preview_with_task_context_prefers_persisted_review_overrides(self):
+        paper_file = self.create_file("review-paper.txt", "review_paper")
+        review_file = self.create_file("review.txt", "review_file", linked_file=paper_file)
+        self.write_media_file("uploads/review-paper.txt", b"Original paper text")
+        self.write_media_file("uploads/review.txt", b"Original review text")
+        task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="review",
+            task_name="Edited Review",
+            status="completed",
+            text_detection_results={
+                "paper_text_override": "Edited linked paper",
+                "review_text_override": "Edited review content",
+            },
+        )
+        task.resource_files.add(paper_file, review_file)
+
+        paper_response = self.client.get(f"/api/upload/{paper_file.id}/preview_text/?task_id={task.id}")
+        review_response = self.client.get(f"/api/upload/{review_file.id}/preview_text/?task_id={task.id}")
+
+        self.assertEqual(paper_response.status_code, 200)
+        self.assertEqual(paper_response.data["text_content"], "Edited linked paper")
+        self.assertEqual(paper_response.data["text_source"], "task_override")
+        self.assertEqual(review_response.status_code, 200)
+        self.assertEqual(review_response.data["text_content"], "Edited review content")
+        self.assertEqual(review_response.data["text_source"], "task_override")
 
     def test_org_admin_can_download_other_users_existing_resource(self):
         other_user = User.objects.create_user(

@@ -8,10 +8,10 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 import os
 
-from ..models import FileManagement, ImageUpload, ResourceReviewRequest, User
+from ..models import DetectionTask, FileManagement, ImageUpload, ResourceReviewRequest, User
 from ..services import log_user_event
 from ..services.resources import save_uploaded_resource
-from ..services.resources.document_preprocessor import preprocess_document
+from ..services.resources.document_preprocessor import extract_document_paragraphs, preprocess_document
 from .views_dectection import CustomPagination
 
 
@@ -27,6 +27,96 @@ def _can_access_file_record(user, file_management):
     if _is_software_admin(user):
         return True
     return user.organization_id is not None and user.organization_id == file_management.organization_id
+
+
+def _can_access_detection_task(user, task):
+    if task.user_id == user.id:
+        return True
+    if user.is_staff:
+        if _is_software_admin(user):
+            return True
+        return user.organization_id is not None and user.organization_id == task.organization_id
+    return ResourceReviewRequest.objects.filter(detection_task=task, reviewers=user).exists()
+
+
+def _build_preview_response(
+    *,
+    file_management,
+    text_content,
+    source,
+    paragraphs=None,
+    segments=None,
+    references=None,
+):
+    text_content = text_content or ""
+    max_chars = 6000000  # 增加到 600 万字，避免因为截断导致用户上传截断后的 override_text
+    truncated = len(text_content) > max_chars
+    preview_text = text_content[:max_chars]
+    paragraph_list = paragraphs if isinstance(paragraphs, list) else extract_document_paragraphs(preview_text)
+    segment_list = segments if isinstance(segments, list) else paragraph_list
+    reference_list = references if isinstance(references, list) else []
+
+    return Response(
+        {
+            "file_id": file_management.id,
+            "file_name": file_management.file_name,
+            "resource_type": file_management.resource_type,
+            "text_content": preview_text,
+            "text_truncated": truncated,
+            "text_source": source,
+            "paragraph_count": len(paragraph_list),
+            "segment_count": len(segment_list),
+            "reference_count": len(reference_list),
+            "paragraph_preview": paragraph_list[:8],
+            "reference_preview": reference_list[:8],
+        }
+    )
+
+
+def _get_task_preview_text(task, file_management):
+    raw_results = task.text_detection_results if isinstance(task.text_detection_results, dict) else {}
+    if file_management.resource_type == "review_file":
+        override_text = raw_results.get("review_text_override") or raw_results.get("text_override")
+        if isinstance(override_text, str) and override_text.strip():
+            return override_text, "task_override"
+        review_text = _join_result_text(raw_results.get("paragraph_results"))
+        if review_text:
+            return review_text, "task_results"
+        review_text = _join_result_text(raw_results.get("relevance_results"), "review_text")
+        if review_text:
+            return review_text, "task_results"
+        review_analysis = raw_results.get("review_analysis_results") or {}
+        review_text = _join_result_text(review_analysis.get("paragraph_results"), "review_text")
+        if review_text:
+            return review_text, "task_results"
+    if file_management.resource_type == "review_paper":
+        override_text = raw_results.get("paper_text_override")
+        if isinstance(override_text, str) and override_text.strip():
+            return override_text, "task_override"
+        return "", ""
+
+    override_text = raw_results.get("paper_text_override") or raw_results.get("text_override")
+    if isinstance(override_text, str) and override_text.strip():
+        return override_text, "task_override"
+    if file_management.resource_type == "paper":
+        paper_text = _join_result_text(raw_results.get("paragraph_results"))
+        if paper_text:
+            return paper_text, "task_results"
+
+    return "", ""
+
+
+def _join_result_text(items, text_key="text"):
+    if not isinstance(items, list):
+        return ""
+    parts = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        value = item.get(text_key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+    return "\n\n".join(parts)
 
 
 @api_view(["POST"])
@@ -193,6 +283,27 @@ def get_resource_text_preview(request, file_id):
             status=400,
         )
 
+    task_id = request.query_params.get("task_id")
+    if task_id:
+        try:
+            task = DetectionTask.objects.prefetch_related("resource_files").get(id=task_id)
+        except (DetectionTask.DoesNotExist, ValueError):
+            return Response({"message": "Detection task not found"}, status=404)
+
+        if not _can_access_detection_task(request.user, task):
+            return Response({"message": "Detection task not found"}, status=404)
+
+        if not task.resource_files.filter(id=file_management.id).exists():
+            return Response({"message": "File does not belong to this task"}, status=404)
+
+        task_text, task_text_source = _get_task_preview_text(task, file_management)
+        if task_text:
+            return _build_preview_response(
+                file_management=file_management,
+                text_content=task_text,
+                source=task_text_source,
+            )
+
     stored_path = (file_management.stored_path or "").strip()
     if not stored_path:
         return Response({"message": "File path is empty"}, status=400)
@@ -203,23 +314,14 @@ def get_resource_text_preview(request, file_id):
 
     processed = preprocess_document(file_path)
     text_content = processed.get("text_content") or ""
-    max_chars = 6000000  # 增加到 600 万字，避免因为截断导致用户上传截断后的 override_text
-    truncated = len(text_content) > max_chars
-    preview_text = text_content[:max_chars]
 
-    return Response(
-        {
-            "file_id": file_management.id,
-            "file_name": file_management.file_name,
-            "resource_type": file_management.resource_type,
-            "text_content": preview_text,
-            "text_truncated": truncated,
-            "paragraph_count": len(processed.get("paragraphs") or []),
-            "segment_count": len(processed.get("segments") or []),
-            "reference_count": len(processed.get("references") or []),
-            "paragraph_preview": (processed.get("paragraphs") or [])[:8],
-            "reference_preview": (processed.get("references") or [])[:8],
-        }
+    return _build_preview_response(
+        file_management=file_management,
+        text_content=text_content,
+        source="file_extraction",
+        paragraphs=processed.get("paragraphs") or [],
+        segments=processed.get("segments") or [],
+        references=processed.get("references") or [],
     )
 
 

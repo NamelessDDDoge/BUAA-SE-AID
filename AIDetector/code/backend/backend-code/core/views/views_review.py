@@ -54,7 +54,8 @@ def _serialize_file_management(file):
 
 def _serialize_reviewer_progress(manual_review, total_count, completed_count):
     reviewer = manual_review.reviewer
-    return {
+    payload = manual_review.result_payload if isinstance(getattr(manual_review, 'result_payload', None), dict) else {}
+    data = {
         'id': reviewer.id,
         'username': reviewer.username,
         'avatar': reviewer.avatar.url if reviewer.avatar else None,
@@ -63,6 +64,15 @@ def _serialize_reviewer_progress(manual_review, total_count, completed_count):
         'completed_count': completed_count,
         'review_time': manual_review.review_time.strftime('%Y-%m-%d %H:%M:%S') if manual_review.review_time else None,
     }
+    if payload:
+        data.update({
+            'final_decision': payload.get('final_decision'),
+            'comment': payload.get('comment') or getattr(manual_review, 'conclusion', ''),
+            'steps': payload.get('steps') if isinstance(payload.get('steps'), list) else [],
+        })
+    elif hasattr(manual_review, 'conclusion'):
+        data['comment'] = manual_review.conclusion
+    return data
 
 
 @api_view(['GET'])
@@ -908,6 +918,7 @@ def get_review_detail(request, manual_review_id):
             'task_name': task.task_name,
             'status': manual_review.status,
             'selected_files': selected_files,
+            'original_files': [ _serialize_file_management(f) for f in task.resource_files.all() ],
             'reason': review_request.reason,
             'detection_result_summary': task.text_detection_results,
             'result_payload': manual_review.result_payload or {},

@@ -9,8 +9,29 @@ from ..models import (
 from ..services.resources.text_sanitizer import sanitize_json_like
 
 
+TEXT_OVERRIDE_KEYS = ("text_override", "paper_text_override", "review_text_override")
+
+
+def _extract_text_overrides(payload):
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        key: value
+        for key, value in payload.items()
+        if key in TEXT_OVERRIDE_KEYS and isinstance(value, str) and value.strip()
+    }
+
+
+def _preserve_text_overrides(sanitized_payload, previous_payload):
+    return {
+        **sanitized_payload,
+        **_extract_text_overrides(previous_payload),
+    }
+
+
 def store_paper_task_results(*, detection_task, source_file, results_payload):
     sanitized_payload = sanitize_json_like(results_payload)
+    sanitized_payload = _preserve_text_overrides(sanitized_payload, detection_task.text_detection_results)
     document = sanitized_payload.get("document", {})
     paragraph_results = sanitized_payload.get("paragraph_results", [])
     explanation_map = {
@@ -66,6 +87,7 @@ def store_paper_task_results(*, detection_task, source_file, results_payload):
 
 def store_review_task_results(*, detection_task, paper_file, review_file, results_payload):
     sanitized_payload = sanitize_json_like(results_payload)
+    sanitized_payload = _preserve_text_overrides(sanitized_payload, detection_task.text_detection_results)
     document = sanitized_payload.get("document", {})
     paragraph_results = sanitized_payload.get("paragraph_results", [])
     review_analysis = sanitized_payload.get("review_analysis_results") or {}
