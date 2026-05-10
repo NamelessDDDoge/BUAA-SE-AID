@@ -387,9 +387,6 @@ const getStateName = (state: string) => ({
   pending: '待审核',
   refused: '已拒绝',
   accepted: '已通过',
-  pending: '待审核',
-  refused: '已拒绝',
-  accepted: '已通过',
 }[state] || state)
 
 const fetchRequests = async () => {

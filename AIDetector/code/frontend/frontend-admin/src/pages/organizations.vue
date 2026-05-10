@@ -484,7 +484,7 @@ const formatTime = (data: string) => {
 
 
 const getImgUrl = (logo: any) => {
-  return import.meta.env.VITE_API_URL + logo
+  return logo ? import.meta.env.VITE_API_URL + logo : ''
 }
 
 // 获取组织列表

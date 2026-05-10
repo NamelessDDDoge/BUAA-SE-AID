@@ -38,6 +38,7 @@ export default {
   downloadReviewReport(params: { review_request_id: string | number }) {
     return http.get(`/manual-review/${params.review_request_id}/report/`, {
       responseType: 'blob',
+      timeout: 120000,
     })
   },
 }

@@ -25,7 +25,7 @@
           @click="goToOrganizationProfile"></v-list-item>
         <v-list-item v-if="isLoggedIn" prepend-icon="mdi-folder" title="资源管理" value="files"
           @click="goToFiles"></v-list-item>
-        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-account-group" title="用户管理" value="users"
+        <v-list-item v-if="isLoggedIn && (userStore.admin_type === 'software_admin' || userStore.admin_type === 'organization_admin')" prepend-icon="mdi-account-group" title="用户管理" value="users"
           @click="goToUsers"></v-list-item>
                 <v-list-item v-if="isLoggedIn && userStore.admin_type === 'software_admin'" prepend-icon="mdi-robot-outline" title="模型配置" value="llms"
           @click="goToLLMs"></v-list-item>
@@ -81,7 +81,7 @@
         <v-icon>mdi-folder</v-icon>
         <span>资源管理</span>
       </v-btn>
-      <v-btn v-if="isLoggedIn" to="/users" value="users">
+      <v-btn v-if="isLoggedIn && (userStore.admin_type === 'software_admin' || userStore.admin_type === 'organization_admin')" to="/users" value="users">
         <v-icon>mdi-account-group</v-icon>
         <span>用户管理</span>
       </v-btn>

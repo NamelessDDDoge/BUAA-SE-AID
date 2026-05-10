@@ -100,7 +100,11 @@ const downloadTaskReport = async () => {
     document.body.removeChild(a)
     window.URL.revokeObjectURL(url)
     snackbar.showMessage('Report downloaded successfully.', 'success')
-  } catch {
+  } catch (error: any) {
+    if (error?.response?.status === 202) {
+      snackbar.showMessage('报告正在生成中，请稍后重试。', 'warning')
+      return
+    }
     snackbar.showMessage('Failed to download the report.', 'error')
   }
 }

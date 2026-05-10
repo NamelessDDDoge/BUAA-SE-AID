@@ -40,6 +40,7 @@ export default {
     return http.get(`/reviewer/manual-review/${manual_review_id}/report/`, {
       params: { request_type },
       responseType: 'blob',
+      timeout: 120000,
     })
   }
 

@@ -433,7 +433,11 @@ const downloadReport = async () => {
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.response?.status === 202) {
+      snackbar.showMessage('报告正在生成中，请稍后重试。', 'warning')
+      return
+    }
     snackbar.showMessage('报告下载失败', 'error')
   }
 }

@@ -19,6 +19,6 @@ export default {
     },
 
     downloadTaskReportAdmin(taskId: number) {
-        return http.get(`/admin/tasks/${taskId}/report/`, { responseType: 'blob' })
+        return http.get(`/admin/tasks/${taskId}/report/`, { responseType: 'blob', timeout: 120000 })
     }
 }

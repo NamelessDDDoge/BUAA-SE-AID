@@ -83,13 +83,15 @@ export default {
 
   downloadReport(data: any) {
     return http.get(`/tasks/${data}/report/`, {
-      responseType: 'blob'
+      responseType: 'blob',
+      timeout: 120000,
     })
   },
 
   downloadReviewReport(data: any) {
     return http.get(`/manual-review/${data.review_request_id}/report/`, {
-      responseType: 'blob'
+      responseType: 'blob',
+      timeout: 120000,
     })
   },
 

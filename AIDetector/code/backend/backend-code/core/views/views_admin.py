@@ -846,7 +846,7 @@ def get_task_summary(request):
     one_month_ago = timezone.now() - timedelta(days=30)
     user_id = request.user.id
     user = User.objects.get(id=user_id)
-    # 权限控制
+
     if not _is_software_admin(request.user):
         organization = user.organization
         tasks = DetectionTask.objects.filter(organization=organization)
@@ -860,14 +860,23 @@ def get_task_summary(request):
     completed_tasks = tasks.filter(status='completed')
     recent_tasks = tasks.filter(upload_time__gte=one_month_ago)
 
-    # 统计任务数
-    total_task_count = tasks.count()
-    completed_task_count = completed_tasks.count()
+    # 聚合统计 (1 query vs 6)
+    from django.db.models import Count, Q
+    agg = tasks.aggregate(
+        total=Count('id'),
+        completed=Count('id', filter=Q(status='completed')),
+        pending=Count('id', filter=Q(status='pending')),
+        in_progress=Count('id', filter=Q(status='in_progress')),
+        failed=Count('id', filter=Q(status='failed')),
+        image=Count('id', filter=Q(task_type='image')),
+        paper=Count('id', filter=Q(task_type='paper')),
+        review=Count('id', filter=Q(task_type='review')),
+    )
     recent_task_count = recent_tasks.count()
 
-    # 获取最近任务的详细信息
+    # 最近任务详情 (加 select_related 避免 N+1, 限制 100 条)
     task_details = []
-    for task in recent_tasks:
+    for task in recent_tasks.select_related('organization').order_by('-upload_time')[:100]:
         task_details.append({
             "task_id": task.id,
             "task_name": task.task_name,
@@ -877,24 +886,21 @@ def get_task_summary(request):
             "organization": task.organization.name if task.organization else None,
         })
 
-    task_type_counts = {
-        "image": tasks.filter(task_type='image').count(),
-        "paper": tasks.filter(task_type='paper').count(),
-        "review": tasks.filter(task_type='review').count(),
-    }
-    status_counts = {
-        "pending": tasks.filter(status='pending').count(),
-        "in_progress": tasks.filter(status='in_progress').count(),
-        "completed": tasks.filter(status='completed').count(),
-        "failed": tasks.filter(status='failed').count(),
-    }
-
     return Response({
-        "total_task_count": total_task_count,
-        "completed_task_count": completed_task_count,
+        "total_task_count": agg['total'],
+        "completed_task_count": agg['completed'],
         "recent_task_count": recent_task_count,
-        "task_type_counts": task_type_counts,
-        "status_counts": status_counts,
+        "task_type_counts": {
+            "image": agg['image'],
+            "paper": agg['paper'],
+            "review": agg['review'],
+        },
+        "status_counts": {
+            "pending": agg['pending'],
+            "in_progress": agg['in_progress'],
+            "completed": agg['completed'],
+            "failed": agg['failed'],
+        },
         "recent_tasks": task_details,
     })
 

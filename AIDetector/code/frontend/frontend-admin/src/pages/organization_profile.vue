@@ -183,7 +183,7 @@ const canRecharge = computed(() => {
 })
 
 const getImgUrl=(logo:any)=>{
-  return import.meta.env.VITE_API_URL+logo
+  return logo ? import.meta.env.VITE_API_URL+logo : ''
 }
 
 const formatTime = (data: string) => {

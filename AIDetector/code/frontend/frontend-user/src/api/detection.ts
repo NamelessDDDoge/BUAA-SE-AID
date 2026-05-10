@@ -42,6 +42,7 @@ export default {
   downloadTaskReport(taskId: string | number) {
     return http.get(`/tasks/${taskId}/report/`, {
       responseType: 'blob',
+      timeout: 120000,
     })
   },
 
