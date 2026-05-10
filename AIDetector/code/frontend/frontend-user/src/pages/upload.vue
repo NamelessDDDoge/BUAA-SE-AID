@@ -1,11 +1,12 @@
 <template>
-  <div v-show="!showProgress">
+  <div v-show="!showProgress" class="upload-page">
     <v-row>
       <v-col cols="12" lg="10" class="mx-auto">
-        <DetectionTypeSwitcher v-model="detectionType" />
+        <DetectionTypeSwitcher v-model="detectionType" class="upload-page__section" />
 
         <ImageTaskForm
           v-if="detectionType === 'image'"
+          class="upload-page__section"
           :files="mainFiles"
           :uploading="uploading"
           :upload-progress="uploadProgress"
@@ -16,6 +17,7 @@
 
         <PaperTaskForm
           v-else-if="detectionType === 'paper'"
+          class="upload-page__section"
           :file="mainFiles[0] || null"
           :uploading="uploading"
           :upload-progress="uploadProgress"
@@ -29,6 +31,7 @@
 
         <ReviewTaskForm
           v-else
+          class="upload-page__section"
           :paper-file="reviewPaperFile"
           :review-file="reviewFile"
           :uploading="uploading"
@@ -1052,3 +1055,9 @@ const returnToUpload = () => {
   closeZipSelectionDialog()
 }
 </script>
+
+<style scoped>
+.upload-page :deep(.upload-page__section.v-card) {
+  border: none !important;
+}
+</style>
