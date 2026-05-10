@@ -88,18 +88,24 @@ def run_paper_detection_task(task_id, api_key=None):
         for item in paragraph_results
         if bool(item.get("is_ai_confirmed"))
     ]
-    explanations = build_suspicious_paragraph_explanations(paragraph_results, api_key=api_key)
+    explanations = build_suspicious_paragraph_explanations(paragraph_results, api_key=api_key, llm_model_name=detection_task.llm_model_name)
     reference_results = evaluate_references(
         text_content=processed_document["text_content"],
         references=processed_document["references"],
+        api_key=api_key,
+        llm_model_name=detection_task.llm_model_name,
     )
-    data_authenticity_results = evaluate_data_authenticity(paragraph_results)
+    data_authenticity_results = evaluate_data_authenticity(
+        paragraph_results,
+        api_key=api_key,
+        llm_model_name=detection_task.llm_model_name,
+    )
     overall_evaluation = build_overall_paper_evaluation(
         paragraph_results=paragraph_results,
         confirmed_ai_paragraphs=confirmed_ai_paragraphs,
         reference_results=reference_results,
         data_authenticity_results=data_authenticity_results,
-        api_key=api_key,
+        api_key=api_key, llm_model_name=detection_task.llm_model_name,
     )
     image_results = _run_paper_image_detection(detection_task, file_management)
 

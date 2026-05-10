@@ -30,6 +30,19 @@
                 </div>
               </template>
             </v-checkbox>
+            <!-- if llm is checked and we are llm option, show model selector -->
+            <v-select
+              v-if="option.key === 'llm' && selectedMap['llm']"
+              v-model="selectedModel"
+              :items="activeModels"
+              item-title="display_name"
+              item-value="model_name"
+              label="选择模型 (默认为系统默认)"
+              density="compact"
+              class="mt-2 ml-8"
+              hide-details
+              clearable
+            ></v-select>
           </v-col>
         </v-row>
       </v-card-text>
@@ -46,8 +59,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, watch, ref, onMounted } from 'vue'
 import { useSnackbarStore } from '@/stores/snackbar'
+import { getActiveLLMModels, type LLMModel } from '@/api/llm'
 
 const METHOD_OPTIONS = [
   { key: 'llm', label: '大语言模型多模态识别', description: '结合视觉与文本推理判断是否存在学术造假痕迹。' },
@@ -69,12 +83,27 @@ const props = defineProps<{
   minSelected?: number
   confirmLabel?: string
   initialSelection?: Partial<MethodSwitches>
+  initialModel?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'confirm', value: MethodSwitches): void
+  (e: 'confirm', value: MethodSwitches, llmModelName?: string): void
 }>()
+
+const activeModels = ref<LLMModel[]>([])
+const selectedModel = ref<string | undefined>(undefined)
+
+const fetchModels = async () => {
+  try {
+    const res = await getActiveLLMModels()
+    activeModels.value = res.data || res
+  } catch(e) {}
+}
+
+onMounted(() => {
+  fetchModels()
+})
 
 const snackbar = useSnackbarStore()
 
@@ -97,6 +126,7 @@ const resetSelection = () => {
     ...createDefaultSelection(),
     ...(props.initialSelection || {}),
   })
+  selectedModel.value = props.initialModel
 }
 
 watch(
@@ -135,7 +165,7 @@ const confirmSelection = () => {
     return
   }
 
-  emit('confirm', { ...selectedMap })
+  emit('confirm', { ...selectedMap }, selectedMap.llm ? selectedModel.value : undefined)
   closeDialog()
 }
 </script>

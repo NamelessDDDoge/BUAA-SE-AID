@@ -56,8 +56,9 @@
     :uploaded-resource-files="uploadedResourceFiles"
     :resource-domain-tag="resourceDomainTag"
     :resource-domain-options="resourceDomainOptions"
-    :resource-task-name="resourceTaskName"
-    :can-proceed="canProceed"
+    :resource-task-name="resourceTaskName"      :active-models="activeModels"
+      :selected-llm-model="selectedLlmModel"
+      @update:selectedLlmModel="selectedLlmModel = $event"    :can-proceed="canProceed"
     :submitting-detection="submittingDetection"
     :paper-enable-image-detection="paperEnableImageDetection"
     :paper-image-detection-supported="paperImageDetectionSupported"
@@ -95,6 +96,7 @@
     :min-selected="taskSelectionMinSelected"
     :confirm-label="taskSelectionConfirmLabel"
     :initial-selection="taskSelectionInitialSelection"
+    :initial-model="taskSelectionContext === 'paper-image' ? selectedLlmModel : undefined"
     @confirm="confirmTaskSelection"
   />
 
@@ -159,12 +161,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import uploadApi from '@/api/upload'
 import detectionApi from '@/api/detection'
 import resourceTasksApi from '@/api/resourceTasks'
+import { getActiveLLMModels, type LLMModel } from '@/api/llm'
 import { useSnackbarStore } from '@/stores/snackbar'
 import TaskSelectionDialog from '@/components/steps/TaskSelectionDialog.vue'
 import DetectionTypeSwitcher from '@/features/detection/components/DetectionTypeSwitcher.vue'
@@ -233,6 +236,18 @@ const fileId = ref<number | null>(null)
 const selectedImages = ref<Image[]>([])
 const currentTag = ref('')
 const currentTaskName = ref('')
+const activeModels = ref<LLMModel[]>([])
+
+const fetchModels = async () => {
+  try {
+    const res = await getActiveLLMModels()
+    activeModels.value = res.data || res
+  } catch(e) {}
+}
+
+onMounted(() => {
+  fetchModels()
+})
 const resourceTaskName = ref('')
 const uploadedResourceFiles = ref<UploadedResourceFile[]>([])
 const resourceDomainTag = ref('')
@@ -249,6 +264,7 @@ const taskSelectionDialog = ref(false)
 const pendingDetectionPayload = ref<PendingDetectionPayload | null>(null)
 const taskSelectionContext = ref<TaskSelectionContext>('image')
 const paperEnableImageDetection = ref(true)
+const selectedLlmModel = ref<string | undefined>(undefined)
 const paperMethodSwitches = ref<MethodSwitches>(createDefaultMethodSwitches())
 const zipSelectionDialog = ref(false)
 const zipSelectionLoading = ref(false)
@@ -724,7 +740,7 @@ const openPaperMethodSelection = () => {
   taskSelectionDialog.value = true
 }
 
-const submitDetectionWithSelection = async (methodSwitches: MethodSwitches) => {
+const submitDetectionWithSelection = async (methodSwitches: MethodSwitches, llmModelName?: string) => {
   if (!pendingDetectionPayload.value) return
 
   submittingDetection.value = true
@@ -732,6 +748,7 @@ const submitDetectionWithSelection = async (methodSwitches: MethodSwitches) => {
     await detectionApi.submitDetection({
       ...pendingDetectionPayload.value,
       method_switches: methodSwitches,
+      llm_model_name: llmModelName,
     })
     snackbar.showMessage('检测任务提交成功。', 'success')
     pendingDetectionPayload.value = null
@@ -744,12 +761,13 @@ const submitDetectionWithSelection = async (methodSwitches: MethodSwitches) => {
   }
 }
 
-const confirmTaskSelection = async (methodSwitches: MethodSwitches) => {
+const confirmTaskSelection = async (methodSwitches: MethodSwitches, llmModelName?: string) => {
   if (taskSelectionContext.value === 'paper-image') {
     paperMethodSwitches.value = { ...methodSwitches }
+    selectedLlmModel.value = llmModelName
     return
   }
-  await submitDetectionWithSelection(methodSwitches)
+  await submitDetectionWithSelection(methodSwitches, llmModelName)
 }
 
 const submitUpload = async () => {
@@ -914,6 +932,7 @@ const handleResourceTaskNext = async () => {
       file_ids: number[]
       extract_images?: boolean
       if_use_llm?: boolean
+      llm_model_name?: string
       method_switches?: Record<string, boolean>
       text_override?: string
       paper_text_override?: string
@@ -930,15 +949,20 @@ const handleResourceTaskNext = async () => {
         ? { ...paperMethodSwitches.value }
         : Object.fromEntries(Object.keys(createDefaultMethodSwitches()).map(key => [key, false]))
       payload.if_use_llm = Boolean(payload.method_switches.llm)
+      if (selectedLlmModel.value) payload.llm_model_name = selectedLlmModel.value
       if (paperEditableText.value.trim()) {
         payload.text_override = paperEditableText.value.trim()
       }
     } else {
       if (reviewPaperEditableText.value.trim()) {
         payload.paper_text_override = reviewPaperEditableText.value.trim()
+      if (selectedLlmModel.value) payload.llm_model_name = selectedLlmModel.value
       }
       if (reviewEditableText.value.trim()) {
         payload.review_text_override = reviewEditableText.value.trim()
+      }
+      if (selectedLlmModel.value) {
+        payload.llm_model_name = selectedLlmModel.value
       }
     }
 

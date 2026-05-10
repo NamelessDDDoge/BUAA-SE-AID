@@ -1,7 +1,7 @@
 from .llm import assess_data_authenticity_finding
 
 
-def evaluate_data_authenticity(paragraph_results, api_key=None):
+def evaluate_data_authenticity(paragraph_results, api_key=None, llm_model_name=None):
     findings = []
     llm_invoked = False
     llm_error = None
@@ -16,6 +16,7 @@ def evaluate_data_authenticity(paragraph_results, api_key=None):
             claim_text=text,
             evidence=text[:240],
             api_key=api_key,
+            llm_model_name=llm_model_name,
         )
         if isinstance(llm_finding, dict) and llm_finding.get("error"):
             if llm_error is None:

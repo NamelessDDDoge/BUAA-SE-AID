@@ -121,6 +121,7 @@ def run_review_detection_task(task_id, api_key=None):
         paper_document=paper_document,
         review_document=review_document,
         api_key=api_key,
+        llm_model_name=detection_task.llm_model_name,
     )
     paragraph_results = []
     analysis_map = {

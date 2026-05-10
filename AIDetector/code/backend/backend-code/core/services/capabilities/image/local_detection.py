@@ -37,6 +37,7 @@ def _normalize_task_parameters(detection_task):
         "cmd_block_size": cmd_block_size,
         "urn_k": float(urn_k),
         "if_use_llm": bool(detection_task.if_use_llm),
+        "llm_model_name": getattr(detection_task, "llm_model_name", None),
         "method_switches": detection_task.method_switches,
     }
 

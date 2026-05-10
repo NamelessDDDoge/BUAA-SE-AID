@@ -29,6 +29,7 @@ def create_resource_detection_task(
     review_text_override=None,
     if_use_llm=False,
     method_switches=None,
+    llm_model_name=None,
     extract_images=None,
     on_commit=None,
     async_task_starter=None,
@@ -96,6 +97,7 @@ def create_resource_detection_task(
         task_name=task_name,
         status=task_status,
         if_use_llm=effective_if_use_llm,
+        llm_model_name=llm_model_name,
         method_switches=normalized_switches,
         text_detection_results=initial_text_results,
     )

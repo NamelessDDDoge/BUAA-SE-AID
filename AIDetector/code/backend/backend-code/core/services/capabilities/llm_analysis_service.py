@@ -1,7 +1,7 @@
 from .llm import explain_text_segment, summarize_paper_overall
 
 
-def build_suspicious_paragraph_explanations(paragraph_results, *, api_key=None, suspicious_threshold=0.5):
+def build_suspicious_paragraph_explanations(paragraph_results, *, api_key=None, llm_model_name=None, suspicious_threshold=0.5):
     explanations = []
     for result in paragraph_results:
         if float(result.get("probability", 0) or 0) < suspicious_threshold:
@@ -15,6 +15,7 @@ def build_suspicious_paragraph_explanations(paragraph_results, *, api_key=None, 
                     text=result["text"],
                     score=float(result["probability"]),
                     api_key=api_key,
+        llm_model_name=llm_model_name,
                 ),
             }
         )
@@ -28,6 +29,7 @@ def build_overall_paper_evaluation(
     reference_results,
     data_authenticity_results,
     api_key=None,
+    llm_model_name=None,
 ):
     total_paragraphs = len(paragraph_results or [])
     suspicious_count = sum(1 for item in (paragraph_results or []) if item.get("label") == "suspicious")
@@ -70,6 +72,7 @@ def build_overall_paper_evaluation(
         risk_score=risk_score,
         risk_level=level,
         api_key=api_key,
+        llm_model_name=llm_model_name,
     )
 
     return {

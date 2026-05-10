@@ -23,7 +23,24 @@ DEFAULT_LLM_MODEL = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-4o-mini")
 DEFAULT_LLM_API_KEY = os.environ.get("OPENAI_COMPAT_API_KEY", "").strip()
 
 
-def get_llm_runtime_config(api_key=None):
+def get_llm_runtime_config(api_key=None, llm_model_name=None):
+    if llm_model_name:
+        from core.models import LLMModel
+        try:
+            llm_obj = LLMModel.objects.get(model_name=llm_model_name)
+            provider_prefix = llm_obj.provider.upper()
+            endpoint = os.environ.get(f"{provider_prefix}_ENDPOINT", "").strip() or os.environ.get("OPENAI_COMPAT_ENDPOINT", "").strip() or DEFAULT_LLM_ENDPOINT
+            model = llm_obj.model_name
+            key = (api_key or "").strip() or os.environ.get(f"{provider_prefix}_API_KEY", "").strip() or os.environ.get("OPENAI_COMPAT_API_KEY", "").strip() or DEFAULT_LLM_API_KEY
+            if endpoint and key:
+                return {
+                    "endpoint": endpoint,
+                    "model": model,
+                    "key": key,
+                }
+        except Exception:
+            pass
+
     endpoint = (
         os.environ.get("OPENAI_COMPAT_ENDPOINT", "").strip()
         or os.environ.get("FASTDETECT_OPENAI_COMPAT_ENDPOINT", "").strip()
@@ -49,12 +66,13 @@ def get_llm_runtime_config(api_key=None):
     }
 
 
-def explain_text_segment(*, text, score, api_key=None):
+def explain_text_segment(*, text, score, api_key=None, llm_model_name=None):
     fallback = _fallback_segment_explanation(score)
     response_json = _request_structured_json(
         system_prompt=SEGMENT_EXPLANATION_SYSTEM_PROMPT,
         user_prompt=render_prompt(SEGMENT_EXPLANATION_USER_TEMPLATE, text=text, score=score),
         api_key=api_key,
+        llm_model_name=llm_model_name,
     )
     if not isinstance(response_json, dict):
         return fallback
@@ -65,7 +83,7 @@ def explain_text_segment(*, text, score, api_key=None):
     return explanation
 
 
-def summarize_paper_overall(*, evidence, risk_score, risk_level, api_key=None):
+def summarize_paper_overall(*, evidence, risk_score, risk_level, api_key=None, llm_model_name=None):
     fallback = {
         "risk_level": risk_level,
         "summary": _fallback_overall_summary(risk_level),
@@ -86,6 +104,7 @@ def summarize_paper_overall(*, evidence, risk_score, risk_level, api_key=None):
         system_prompt=OVERALL_EVALUATION_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         api_key=api_key,
+        llm_model_name=llm_model_name,
     )
     if not isinstance(response_json, dict):
         return fallback
@@ -98,11 +117,12 @@ def summarize_paper_overall(*, evidence, risk_score, risk_level, api_key=None):
     }
 
 
-def assess_reference_authenticity(*, reference, api_key=None):
+def assess_reference_authenticity(*, reference, api_key=None, llm_model_name=None):
     response_json = _request_structured_json(
         system_prompt=REFERENCE_AUTH_SYSTEM_PROMPT,
         user_prompt=render_prompt(REFERENCE_AUTH_USER_TEMPLATE, reference=reference or ""),
         api_key=api_key,
+        llm_model_name=llm_model_name,
     )
     if not isinstance(response_json, dict):
         return None
@@ -119,7 +139,7 @@ def assess_reference_authenticity(*, reference, api_key=None):
     }
 
 
-def assess_data_authenticity_finding(*, paragraph_index, claim_text, evidence, api_key=None):
+def assess_data_authenticity_finding(*, paragraph_index, claim_text, evidence, api_key=None, llm_model_name=None):
     response_json = _request_structured_json(
         system_prompt=DATA_AUTH_SYSTEM_PROMPT,
         user_prompt=render_prompt(
@@ -129,6 +149,7 @@ def assess_data_authenticity_finding(*, paragraph_index, claim_text, evidence, a
             evidence=evidence or "",
         ),
         api_key=api_key,
+        llm_model_name=llm_model_name,
     )
     if not isinstance(response_json, dict):
         if isinstance(response_json, str):
@@ -188,8 +209,8 @@ def analyze_review_text(*, paper_text, review_paragraphs, api_key=None, timeout=
     }
 
 
-def _request_structured_json(*, system_prompt, user_prompt, api_key=None, timeout=30):
-    config = get_llm_runtime_config(api_key=api_key)
+def _request_structured_json(*, system_prompt, user_prompt, api_key=None, llm_model_name=None, timeout=30):
+    config = get_llm_runtime_config(api_key=api_key, llm_model_name=llm_model_name)
     endpoint = config["endpoint"]
     model = config["model"]
     key = config["key"]

@@ -1,3 +1,4 @@
+from .views.views_llm import LLMModelViewSet
 from .views.views_organization import create_organization_root
 from .views.views_review import get_manualReview_from_reviewRequestId
 from .views.views_user import *
@@ -174,4 +175,9 @@ urlpatterns = [
 
     path('manual-review/<int:review_request_id>/', get_manualReview_from_reviewRequestId, name='get_manualReview_from_reviewRequestId'),
 
+
+    # LLM Models
+    path('llms/active/', LLMModelViewSet.as_view({'get': 'active_models'}), name='llm-active-list'),
+    path('admin/llms/', LLMModelViewSet.as_view({'get': 'list', 'post': 'create'}), name='llm-admin-list'),
+    path('admin/llms/<int:pk>/', LLMModelViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name='llm-admin-detail'),
 ]

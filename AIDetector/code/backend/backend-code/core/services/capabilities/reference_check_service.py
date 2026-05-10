@@ -1,11 +1,11 @@
 from .llm import assess_reference_authenticity
 
 
-def evaluate_references(*, text_content, references, api_key=None):
+def evaluate_references(*, text_content, references, api_key=None, llm_model_name=None):
     results = []
     for index, reference in enumerate(references):
         authenticity = _normalize_authenticity_result(
-            assess_reference_authenticity(reference=reference, api_key=api_key)
+            assess_reference_authenticity(reference=reference, api_key=api_key, llm_model_name=llm_model_name)
         )
         results.append(
             {

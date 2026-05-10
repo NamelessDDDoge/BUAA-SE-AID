@@ -27,6 +27,8 @@
           @click="goToFiles"></v-list-item>
         <v-list-item v-if="isLoggedIn" prepend-icon="mdi-account-group" title="用户管理" value="users"
           @click="goToUsers"></v-list-item>
+                <v-list-item v-if="isLoggedIn && userStore.admin_type === 'software_admin'" prepend-icon="mdi-robot-outline" title="模型配置" value="llms"
+          @click="goToLLMs"></v-list-item>
         <v-list-item v-if="isLoggedIn" prepend-icon="mdi-clipboard-text-clock" title="日志记录" value="logs"
           @click="goToLogs"></v-list-item>
         <v-list-item v-if="isLoggedIn" 
@@ -299,6 +301,10 @@ const goToOrganizations = () => {
 
 const goToUsers = () => {
   router.push('/users')
+}
+
+const goToLLMs = () => {
+  router.push('/llms')
 }
 
 const goToLogs = () => {

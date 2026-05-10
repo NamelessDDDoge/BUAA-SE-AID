@@ -85,6 +85,7 @@ def create_image_detection_task(
     urn_k=0.3,
     if_use_llm=False,
     method_switches=None,
+    llm_model_name=None,
     on_commit=None,
     async_task_starter=None,
 ):
@@ -113,6 +114,7 @@ def create_image_detection_task(
             cmd_block_size=cmd_block_size,
             urn_k=urn_k,
             if_use_llm=effective_if_use_llm,
+            llm_model_name=llm_model_name,
             method_switches=normalized_switches,
         )
         detection_task.resource_files.add(*list({img.file_management for img in image_uploads}))

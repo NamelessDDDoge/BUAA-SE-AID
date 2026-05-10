@@ -38,6 +38,23 @@
 
           <v-text-field :model-value="resourceTaskName" label="任务名称" placeholder="请输入任务名称" variant="outlined" density="comfortable" maxlength="64" counter @update:model-value="emit('update:resourceTaskName', $event)" />
 
+
+          <template v-if="taskType === 'paper' || taskType === 'review'">
+            <v-select
+              :model-value="selectedLlmModel"
+              :items="activeModels"
+              item-title="display_name"
+              item-value="model_name"
+              label="使用的AI大模型 (用于文本检测和推断分析)"
+              placeholder="默认使用系统预设大语言模型"
+              variant="outlined"
+              density="comfortable"
+              class="mb-4"
+              clearable
+              @update:model-value="emit('update:selectedLlmModel', $event)"
+            />
+          </template>
+
           <template v-if="taskType === 'paper'">
             <v-divider class="my-4" />
             <v-switch
@@ -188,6 +205,7 @@
 import ImageSelectionStep from '@/components/steps/ImageSelectionStep.vue'
 import { computed, ref } from 'vue'
 import type { DetectionType, TaskOption, UploadedResourceFile } from '../types'
+import type { LLMModel } from '@/api/llm'
 const props = defineProps<{
   taskType: DetectionType
   fileId: number | null
@@ -195,6 +213,8 @@ const props = defineProps<{
   resourceDomainTag: string
   resourceDomainOptions: TaskOption[]
   resourceTaskName: string
+  activeModels: LLMModel[]
+  selectedLlmModel: string | undefined
   canProceed: boolean
   submittingDetection: boolean
   paperEnableImageDetection: boolean
@@ -225,6 +245,7 @@ const emit = defineEmits<{
   (e: 'update-name', name: string): void
   (e: 'update:resourceDomainTag', value: string): void
   (e: 'update:resourceTaskName', value: string): void
+  (e: 'update:selectedLlmModel', value: string | undefined): void
   (e: 'update:paperEnableImageDetection', value: boolean): void
   (e: 'update:paperEditableText', value: string): void
   (e: 'update:reviewPaperEditableText', value: string): void

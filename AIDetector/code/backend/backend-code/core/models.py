@@ -312,6 +312,7 @@ class DetectionTask(models.Model):
     cmd_block_size = models.IntegerField(null=True, blank=True)
     urn_k = models.FloatField(null=True, blank=True)
     if_use_llm = models.BooleanField(default=False)  # 是否使用大语言模型
+    llm_model_name = models.CharField(max_length=255, null=True, blank=True, help_text='用户选择的大模型名称')
     method_switches = models.JSONField(null=True, blank=True)  # 子任务开关映射 {"ela": true, "exif": false, ...}，传入后覆盖 Config.py 默认值
     text_detection_results = models.JSONField(null=True, blank=True)  # 用于存储文本检测分段结果
 
@@ -726,3 +727,18 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.get_category_display()} - {self.title}"
+
+class LLMModel(models.Model):
+    """
+    大语言模型管理
+    """
+    model_name = models.CharField(max_length=255, unique=True, help_text="模型实名(如 deepseek-chat)")
+    display_name = models.CharField(max_length=255, help_text="展示给用户看的名称(如 DeepSeek V3)")
+    provider = models.CharField(max_length=100, default='openai_compat', help_text="平台供应商标识")
+    is_active = models.BooleanField(default=True, help_text="是否对用户开放可用")
+    description = models.TextField(null=True, blank=True, help_text="模型特点描述")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.display_name} ({self.model_name})"

@@ -7,7 +7,7 @@ MAX_REVIEW_PARAGRAPHS = 18
 MAX_REVIEW_PARAGRAPH_CHARS = 800
 
 
-def evaluate_review_analysis(*, paper_document, review_document, api_key=None):
+def evaluate_review_analysis(*, paper_document, review_document, api_key=None, llm_model_name=None):
     review_paragraphs = [
         {
             "review_paragraph_index": index,
@@ -22,6 +22,7 @@ def evaluate_review_analysis(*, paper_document, review_document, api_key=None):
         review_paragraphs=review_paragraphs,
         api_key=api_key,
         timeout=60,
+        llm_model_name=llm_model_name,
     )
     if isinstance(llm_result, dict) and llm_result.get("error"):
         suggestion = llm_result.get("error")
