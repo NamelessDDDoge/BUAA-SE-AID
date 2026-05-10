@@ -12,7 +12,9 @@ from core.models import (
     PaperDetectionResult,
     ReviewDetectionResult,
     User,
+    LLMModel,
 )
+from core.services.capabilities.llm.runtime_config import get_fastdetect_runtime_config
 from core.services.resources.document_preprocessor import (
     extract_document_paragraphs,
     preprocess_document,
@@ -384,3 +386,20 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(evaluation["risk_level"], "high")
         self.assertGreaterEqual(evaluation["risk_score"], 70)
         self.assertEqual(evaluation["summary_source"], "rule_based")
+
+    def test_fastdetect_runtime_config_prefers_active_database_config(self):
+        LLMModel.objects.create(
+            model_name="fast-detect-db",
+            display_name="FastDetect DB",
+            provider="fastdetect",
+            model_type="fastdetect",
+            endpoint="https://example.test/api/detect",
+            api_key="db-key",
+            is_active=True,
+        )
+
+        config = get_fastdetect_runtime_config()
+
+        self.assertEqual(config["endpoint"], "https://example.test/api/detect")
+        self.assertEqual(config["model"], "fast-detect-db")
+        self.assertEqual(config["key"], "db-key")

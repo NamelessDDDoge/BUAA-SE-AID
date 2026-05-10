@@ -27,6 +27,16 @@
             @change="toggleActive(item)"
           ></v-switch>
         </template>
+        <template v-slot:item.model_type="{ item }">
+          <v-chip size="small" :color="item.model_type === 'fastdetect' ? 'deep-orange' : 'primary'" variant="tonal">
+            {{ modelTypeText(item.model_type) }}
+          </v-chip>
+        </template>
+        <template v-slot:item.has_api_key="{ item }">
+          <v-chip size="small" :color="item.has_api_key ? 'success' : 'warning'" variant="tonal">
+            {{ item.has_api_key ? '已配置' : '未配置' }}
+          </v-chip>
+        </template>
         <template v-slot:item.actions="{ item }">
           <v-icon size="small" class="me-2" @click="openDialog(item)" color="primary">
             mdi-pencil
@@ -54,7 +64,35 @@
                 <v-text-field v-model="formData.display_name" label="展示名称 (如: DeepSeek V3)" required></v-text-field>
               </v-col>
               <v-col cols="12" sm="6">
+                <v-select
+                  v-model="formData.model_type"
+                  :items="modelTypeOptions"
+                  item-title="title"
+                  item-value="value"
+                  label="模型用途"
+                  required
+                ></v-select>
+              </v-col>
+              <v-col cols="12" sm="6">
                 <v-text-field v-model="formData.provider" label="供应商 (Provider)" required></v-text-field>
+              </v-col>
+              <v-col cols="12">
+                <v-text-field
+                  v-model="formData.endpoint"
+                  label="Endpoint"
+                  placeholder="FastDetect: https://api.fastdetect.net/api/detect；对话模型: /chat/completions"
+                ></v-text-field>
+              </v-col>
+              <v-col cols="12">
+                <v-text-field
+                  v-model="formData.api_key"
+                  :label="editingId ? 'API Key（留空则保持不变）' : 'API Key'"
+                  :type="showApiKey ? 'text' : 'password'"
+                  :append-inner-icon="showApiKey ? 'mdi-eye-off' : 'mdi-eye'"
+                  placeholder="sk-..."
+                  autocomplete="off"
+                  @click:append-inner="showApiKey = !showApiKey"
+                ></v-text-field>
               </v-col>
               <v-col cols="12" sm="6">
                 <v-switch v-model="formData.is_active" label="是否开启" color="success" hide-details></v-switch>
@@ -91,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { getLLMModels, createLLMModel, updateLLMModel, deleteLLMModel } from '@/api/llm';
 import type { LLMModel } from '@/api/llm';
 
@@ -100,6 +138,7 @@ const deleteDialog = ref(false);
 const loading = ref(false);
 const saving = ref(false);
 const deleting = ref(false);
+const showApiKey = ref(false);
 const models = ref<LLMModel[]>([]);
 const itemToDelete = ref<LLMModel | null>(null);
 
@@ -108,17 +147,54 @@ const formData = ref<Partial<LLMModel>>({
   model_name: '',
   display_name: '',
   provider: 'openai_compat',
+  model_type: 'chat',
+  endpoint: '',
+  api_key: '',
   is_active: true,
   description: '',
 });
 
+const modelTypeOptions = [
+  { title: '对话模型', value: 'chat' },
+  { title: 'FastDetect AIGC 检测', value: 'fastdetect' },
+];
+
+watch(
+  () => formData.value.model_type,
+  (nextType) => {
+    if (nextType === 'fastdetect') {
+      if (!formData.value.provider || formData.value.provider === 'openai_compat') {
+        formData.value.provider = 'fastdetect'
+      }
+      if (!formData.value.endpoint) {
+        formData.value.endpoint = 'https://api.fastdetect.net/api/detect'
+      }
+      if (!formData.value.model_name) {
+        formData.value.model_name = 'fast-detect(llama3-8b/llama3-8b-instruct)'
+      }
+      if (!formData.value.display_name) {
+        formData.value.display_name = 'FastDetect AIGC 检测'
+      }
+    } else if (!formData.value.provider || formData.value.provider === 'fastdetect') {
+      formData.value.provider = 'openai_compat'
+    }
+  },
+)
+
 const headers = [
   { title: '展示名称', align: 'start', key: 'display_name' },
   { title: '模型标识', key: 'model_name' },
+  { title: '用途', key: 'model_type' },
   { title: '供应商', key: 'provider' },
+  { title: 'API Key', key: 'has_api_key' },
   { title: '启用状态', key: 'is_active' },
   { title: '操作', key: 'actions', sortable: false, align: 'end' },
 ];
+
+function modelTypeText(value?: string) {
+  if (value === 'fastdetect') return 'FastDetect'
+  return '对话模型'
+}
 
 async function fetchModels() {
   loading.value = true;
@@ -135,17 +211,21 @@ async function fetchModels() {
 function openDialog(item?: LLMModel) {
   if (item) {
     editingId.value = item.id;
-    formData.value = { ...item };
+    formData.value = { ...item, api_key: '' };
   } else {
     editingId.value = null;
     formData.value = {
       model_name: '',
       display_name: '',
       provider: 'openai_compat',
+      model_type: 'chat',
+      endpoint: '',
+      api_key: '',
       is_active: true,
       description: '',
     };
   }
+  showApiKey.value = false;
   dialog.value = true;
 }
 

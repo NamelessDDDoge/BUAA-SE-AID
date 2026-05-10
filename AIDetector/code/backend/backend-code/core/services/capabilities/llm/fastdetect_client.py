@@ -1,36 +1,20 @@
-import os
-
 import requests
 
-
-DEFAULT_FASTDETECT_API_ENDPOINT = (
-    os.environ.get("FASTDETECT_API_ENDPOINT", "").strip()
-    or os.environ.get("DEFAULT_FASTDETECT_API_ENDPOINT", "").strip()
-    or "https://api.fastdetect.net/api/detect"
-)
-DEFAULT_FASTDETECT_MODEL = (
-    os.environ.get("FASTDETECT_LLM_MODEL", "").strip()
-    or os.environ.get("DEFAULT_FASTDETECT_MODEL", "").strip()
-    or "fast-detect(llama3-8b/llama3-8b-instruct)"
-)
-DEFAULT_FASTDETECT_API_KEY = (
-    os.environ.get("FASTDETECT_API_KEY", "").strip()
-    or os.environ.get("DEFAULT_FASTDETECT_API_KEY", "").strip()
-    or ""
-)
+from .runtime_config import get_fastdetect_runtime_config
 
 
 def detect_text_segment(text, *, api_key=None, detector=None, endpoint=None, timeout=30):
+    config = get_fastdetect_runtime_config(api_key=api_key, detector=detector, endpoint=endpoint)
     payload = {
-        "detector": detector or DEFAULT_FASTDETECT_MODEL,
+        "detector": config["model"],
         "text": text,
     }
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key or DEFAULT_FASTDETECT_API_KEY}",
+        "Authorization": f"Bearer {config['key']}",
     }
     response = requests.post(
-        endpoint or DEFAULT_FASTDETECT_API_ENDPOINT,
+        config["endpoint"],
         headers=headers,
         json=payload,
         timeout=timeout,

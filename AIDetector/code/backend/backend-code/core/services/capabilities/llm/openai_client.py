@@ -3,6 +3,7 @@ import os
 
 import requests
 
+from .runtime_config import get_active_model_config
 from .prompts import (
     DATA_AUTH_SYSTEM_PROMPT,
     DATA_AUTH_USER_TEMPLATE,
@@ -29,9 +30,9 @@ def get_llm_runtime_config(api_key=None, llm_model_name=None):
         try:
             llm_obj = LLMModel.objects.get(model_name=llm_model_name)
             provider_prefix = llm_obj.provider.upper()
-            endpoint = os.environ.get(f"{provider_prefix}_ENDPOINT", "").strip() or os.environ.get("OPENAI_COMPAT_ENDPOINT", "").strip() or DEFAULT_LLM_ENDPOINT
+            endpoint = (llm_obj.endpoint or "").strip() or os.environ.get(f"{provider_prefix}_ENDPOINT", "").strip() or os.environ.get("OPENAI_COMPAT_ENDPOINT", "").strip() or DEFAULT_LLM_ENDPOINT
             model = llm_obj.model_name
-            key = (api_key or "").strip() or os.environ.get(f"{provider_prefix}_API_KEY", "").strip() or os.environ.get("OPENAI_COMPAT_API_KEY", "").strip() or DEFAULT_LLM_API_KEY
+            key = (api_key or "").strip() or (llm_obj.api_key or "").strip() or os.environ.get(f"{provider_prefix}_API_KEY", "").strip() or os.environ.get("OPENAI_COMPAT_API_KEY", "").strip() or DEFAULT_LLM_API_KEY
             if endpoint and key:
                 return {
                     "endpoint": endpoint,
@@ -41,13 +42,18 @@ def get_llm_runtime_config(api_key=None, llm_model_name=None):
         except Exception:
             pass
 
+    db_config = get_active_model_config("chat")
     endpoint = (
+        db_config.get("endpoint", "")
+        or
         os.environ.get("OPENAI_COMPAT_ENDPOINT", "").strip()
         or os.environ.get("FASTDETECT_OPENAI_COMPAT_ENDPOINT", "").strip()
         or os.environ.get("FASTDETECT_LLM_ENDPOINT", "").strip()
         or DEFAULT_LLM_ENDPOINT
     )
     model = (
+        db_config.get("model", "")
+        or
         os.environ.get("OPENAI_COMPAT_MODEL", "").strip()
         or os.environ.get("FASTDETECT_OPENAI_COMPAT_MODEL", "").strip()
         or DEFAULT_LLM_MODEL
@@ -55,6 +61,7 @@ def get_llm_runtime_config(api_key=None, llm_model_name=None):
     )
     key = (
         (api_key or "").strip()
+        or db_config.get("key", "")
         or os.environ.get("OPENAI_COMPAT_API_KEY", "").strip()
         or os.environ.get("FASTDETECT_OPENAI_COMPAT_API_KEY", "").strip()
         or DEFAULT_LLM_API_KEY

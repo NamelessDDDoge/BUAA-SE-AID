@@ -5,6 +5,10 @@ export interface LLMModel {
   model_name: string
   display_name: string
   provider: string
+  model_type: 'chat' | 'fastdetect'
+  endpoint?: string
+  api_key?: string
+  has_api_key?: boolean
   is_active: boolean
   description: string
   created_at: string

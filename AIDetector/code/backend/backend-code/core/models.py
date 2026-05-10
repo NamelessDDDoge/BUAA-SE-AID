@@ -732,9 +732,23 @@ class LLMModel(models.Model):
     """
     大语言模型管理
     """
+    MODEL_TYPE_CHOICES = (
+        ('chat', 'Chat LLM'),
+        ('fastdetect', 'FastDetect'),
+    )
+
     model_name = models.CharField(max_length=255, unique=True, help_text="模型实名(如 deepseek-chat)")
     display_name = models.CharField(max_length=255, help_text="展示给用户看的名称(如 DeepSeek V3)")
     provider = models.CharField(max_length=100, default='openai_compat', help_text="平台供应商标识")
+    model_type = models.CharField(
+        max_length=30,
+        choices=MODEL_TYPE_CHOICES,
+        default='chat',
+        db_index=True,
+        help_text="模型用途类型：chat 为对话模型，fastdetect 为 AIGC 段落检测服务",
+    )
+    endpoint = models.CharField(max_length=500, null=True, blank=True, help_text="API Endpoint")
+    api_key = models.CharField(max_length=500, null=True, blank=True, help_text="API Key")
     is_active = models.BooleanField(default=True, help_text="是否对用户开放可用")
     description = models.TextField(null=True, blank=True, help_text="模型特点描述")
     created_at = models.DateTimeField(auto_now_add=True)
