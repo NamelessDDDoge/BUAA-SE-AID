@@ -1,323 +1,306 @@
 # AI 推理服务启动方式
 
-本文档说明当前项目的两种图像推理运行方式：
+本文档只说明一种推荐用法：
 
-1. 服务器本地推理
-2. 服务器业务 + 笔记本 GPU 远程推理
+- 前后端、数据库都跑在服务器
+- 图像推理跑在你本地笔记本 GPU
 
-如果服务器没有显卡，而你的笔记本有显卡，推荐使用第 2 种方式。
-
-## 当前代码支持的两种模式
-
-### 模式 A：服务器本地推理
-
-后端直接在服务器上启动：
-
-- `AIDetector/code/ai-service/ai-service-code/local_infer.py`
-
-适用于：
-
-- 服务器本身有可用 GPU
-- 或只做轻量 CPU 调试
-
-### 模式 B：远程 GPU 推理
-
-后端仍然运行在服务器上，但图像推理会改为调用一个 HTTP 推理桥：
-
-- 服务器后端读取 `img.zip` 和 `data.json`
-- 后端把它们 POST 到 `AI_REMOTE_INFER_URL`
-- 笔记本上的 `gpu_infer_service.py` 收到请求后，在本机调用 `local_infer.py`
-- 推理结果返回给服务器后端，后端照常落库和出报告
-
-适用于：
+适用场景：
 
 - 服务器没有显卡
 - 笔记本有显卡
-- 希望前后端、数据库都部署在服务器
+- 需要让服务器上的后端调用笔记本本地显卡完成推理
 
-## 推荐部署拓扑
+---
 
-推荐链路如下：
+## 一、整体流程
+
+最终链路如下：
 
 ```text
-前端 -> 服务器 Nginx -> 服务器 Django
+前端 -> 服务器 Django -> 服务器 127.0.0.1:18080
                          |
                          v
-                 AI_REMOTE_INFER_URL
+                反向 SSH 隧道
                          |
-                  127.0.0.1:18080
+                         v
+                笔记本 127.0.0.1:18080
                          |
-                 反向 SSH 隧道 -R
+                         v
+               gpu_infer_service.py
                          |
-                  笔记本 127.0.0.1:18080
-                         |
-                  gpu_infer_service.py
-                         |
-                      local_infer.py
+                         v
+                   local_infer.py
 ```
 
-这里推荐使用反向 SSH 隧道，而不是要求服务器直接访问笔记本公网 IP。
+意思是：
 
-## 方案一：服务器本地推理
+1. 服务器后端收到图片检测请求
+2. 后端把数据发到 `AI_REMOTE_INFER_URL`
+3. 这个地址通过 SSH 隧道转发到你的笔记本
+4. 笔记本本地用 GPU 完成推理
+5. 结果再返回服务器
 
-### 1. 准备环境
+---
 
-确保服务器安装了：
+## 二、你需要准备什么
 
-- Python 环境
-- `AIDetector/code/backend/backend-code/requirements.txt` 依赖
-- AI 权重文件
+### 服务器
 
-### 2. 配置后端
+- 已经跑起来的 Django 后端
+- 后端 `.env` 可修改
+- 能正常访问本地 `127.0.0.1`
 
-在后端 `.env` 中配置：
+### 笔记本
 
-```env
-AI_SERVICE_DIR=/root/BUAA-SE-AID/AIDetector/code/ai-service/ai-service-code
-AI_SERVICE_PYTHON=/path/to/python
-AI_REMOTE_INFER_URL=
-```
+- 有 NVIDIA GPU
+- 已安装 CUDA / 显卡驱动
+- 已安装 Python 环境
+- 已有本仓库代码，至少有：
+  - `AIDetector/code/ai-service/ai-service-code`
+- 已准备模型依赖和权重
 
-这里不要设置 `AI_REMOTE_INFER_URL`。
+---
 
-### 3. 启动
+## 三、笔记本端怎么启动
 
-只启动后端即可，图像检测时后端会自动拉起：
-
-- `local_infer.py`
-
-## 方案二：服务器业务 + 笔记本 GPU 推理
-
-这是推荐方案。
-
-### 第 1 步：在笔记本准备 AI 推理环境
-
-工作目录：
-
-- `AIDetector/code/ai-service/ai-service-code`
-
-需要准备：
-
-- CUDA / 显卡驱动
-- Python 环境
-- `local_infer.py` 依赖
-- 模型权重
-
-先在笔记本本地验证：
+### 第 1 步：进入 AI 服务目录
 
 ```bash
-python local_infer.py
+cd AIDetector/code/ai-service/ai-service-code
 ```
 
-如果没有准备 `img.zip` / `data.json`，这一步不一定能完整跑通，但至少要保证依赖导入和模型环境没有明显问题。
+### 第 2 步：启动 GPU 推理服务
+下面这些配置可以直接写到 AIDetector/code/backend/backend-code/.env 中
 
-### 第 2 步：在笔记本启动 GPU 推理服务
-
-新增的服务脚本是：
-
-- `AIDetector/code/ai-service/ai-service-code/gpu_infer_service.py`
-
-最小启动方式：
+Linux / macOS：
 
 ```bash
-cd /path/to/AIDetector/code/ai-service/ai-service-code
-export AI_SERVICE_PYTHON=/path/to/python
+export AI_SERVICE_PYTHON=/你的python路径（例如/root/miniconda3/envs/se/bin/python）
 export AI_REMOTE_INFER_HOST=127.0.0.1
 export AI_REMOTE_INFER_PORT=18080
-export AI_REMOTE_INFER_TOKEN=replace-with-a-long-random-string
+export AI_REMOTE_INFER_TOKEN=你自己设置的随机串
 python gpu_infer_service.py
 ```
 
-服务健康检查：
+Windows PowerShell：
+
+```powershell
+$env:AI_SERVICE_PYTHON="你的python路径"
+$env:AI_REMOTE_INFER_HOST="127.0.0.1"
+$env:AI_REMOTE_INFER_PORT="18080"
+$env:AI_REMOTE_INFER_TOKEN="你自己设置的随机串"
+python .\gpu_infer_service.py
+```
+
+### 第 3 步：验证笔记本服务是否起来
 
 ```bash
 curl http://127.0.0.1:18080/health
 ```
 
-### 第 3 步：建立反向 SSH 隧道
+如果成功，应该返回 JSON。
 
-在笔记本执行：
+---
 
-```bash
-ssh -N -R 127.0.0.1:18080:127.0.0.1:18080 <server-user>@<server-host>
-```
+## 四、建立 SSH 反向隧道
 
-更推荐长期运行版本：
+在笔记本再开一个终端，执行：
 
 ```bash
-autossh -M 0 -N -R 127.0.0.1:18080:127.0.0.1:18080 <server-user>@<server-host>
+ssh -N -R 127.0.0.1:18080:127.0.0.1:18080 root@你的服务器公网IP
 ```
 
-效果是：
+例如：
 
-- 服务器访问 `127.0.0.1:18080`
-- 实际转发到笔记本本地的 `127.0.0.1:18080`
+```bash
+ssh -N -R 127.0.0.1:18080:127.0.0.1:18080 root@122.9.32.72
+```
 
-### 第 4 步：在服务器配置后端
+### 正常现象
 
-后端 `.env` 示例：
+- 输入密码后没有任何输出
+- 终端像“卡住”一样
+- 光标不返回
+
+这是正常的，说明 SSH 正在维持隧道。
+
+不要关闭这个终端。
+
+---
+
+## 五、服务器端怎么配置
+
+修改服务器后端实际生效的 `.env`：
+
+- `AIDetector/code/backend/backend-code/.env`
+
+至少加入这几项：
+
+```env
+AI_REMOTE_INFER_URL=http://127.0.0.1:18080/infer
+AI_REMOTE_INFER_TIMEOUT=1800
+AI_REMOTE_INFER_TOKEN=和笔记本完全一致
+```
+
+建议同时确认：
 
 ```env
 AI_SERVICE_DIR=/root/BUAA-SE-AID/AIDetector/code/ai-service/ai-service-code
-AI_SERVICE_PYTHON=/path/to/server/python
-AI_REMOTE_INFER_URL=http://127.0.0.1:18080/infer
-AI_REMOTE_INFER_TIMEOUT=1800
-AI_REMOTE_INFER_TOKEN=replace-with-a-long-random-string
+AI_SERVICE_PYTHON=/root/miniconda3/envs/se/bin/python
 ```
 
 说明：
 
-- 只要设置了 `AI_REMOTE_INFER_URL`，后端就会优先走远程推理
-- 不再在服务器本机启动 `local_infer.py`
+- 只要设置了 `AI_REMOTE_INFER_URL`
+- 后端就不会再走服务器本地推理
+- 而是把请求发给你笔记本上的 GPU 服务
 
-### 第 5 步：重启后端
+---
 
-重启 Django / uWSGI / Gunicorn 后生效。
+## 六、服务器端怎么验证隧道是否打通
 
-## 可选：用 systemd 常驻笔记本服务
+修改 `.env` 后，重启后端。
 
-如果笔记本是 Linux，推荐把 GPU 推理服务和反向 SSH 隧道都做成 `systemd` 服务。
-
-### 1. `gpu-infer.service`
-
-示例：
-
-```ini
-[Unit]
-Description=BUAA GPU Infer Service
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/path/to/AIDetector/code/ai-service/ai-service-code
-Environment=AI_SERVICE_PYTHON=/path/to/python
-Environment=AI_REMOTE_INFER_HOST=127.0.0.1
-Environment=AI_REMOTE_INFER_PORT=18080
-Environment=AI_REMOTE_INFER_TOKEN=replace-with-a-long-random-string
-ExecStart=/path/to/python /path/to/AIDetector/code/ai-service/ai-service-code/gpu_infer_service.py
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### 2. `gpu-infer-tunnel.service`
-
-示例：
-
-```ini
-[Unit]
-Description=Reverse SSH Tunnel For BUAA GPU Infer
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/autossh -M 0 -N -R 127.0.0.1:18080:127.0.0.1:18080 <server-user>@<server-host>
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-启用方式：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now gpu-infer.service
-sudo systemctl enable --now gpu-infer-tunnel.service
-```
-
-## 验证步骤
-
-### 1. 检查笔记本服务
-
-在笔记本：
+然后在服务器执行：
 
 ```bash
 curl http://127.0.0.1:18080/health
 ```
 
-### 2. 检查服务器是否能穿透到笔记本
+如果返回 JSON，说明以下几件事都对了：
 
-在服务器：
+- 笔记本上的 `gpu_infer_service.py` 正常运行
+- SSH 反向隧道正常
+- 服务器已经能访问你笔记本本地服务
+
+如果这一步不通，不要去前端点检测，先解决这里。
+
+---
+
+## 七、第一次联调怎么做
+
+确认下面 3 件事都成立：
+
+1. 笔记本本地：
 
 ```bash
 curl http://127.0.0.1:18080/health
 ```
 
-如果反向隧道正常，这里也应返回健康检查 JSON。
+2. 服务器本地：
 
-### 3. 从前端提交一张测试图片
+```bash
+curl http://127.0.0.1:18080/health
+```
 
-提交一张图片检测任务，观察：
+3. 后端已重启并读取到新 `.env`
 
-- Django 日志
-- 笔记本 `gpu_infer_service.py` 日志
+然后再去前端做一次图片检测：
 
-若正常，应出现：
+1. 上传一张测试图片
+2. 提交检测任务
+3. 同时观察：
+   - 服务器 Django 日志
+   - 笔记本 `gpu_infer_service.py` 终端日志
 
-- 后端任务进入 `completed`
-- 检测结果和报告正常生成
+如果成功，你会看到：
 
-## 并发与限制
+- 服务器收到任务
+- 笔记本收到 `/infer` 请求
+- 本地开始推理
+- 结果返回服务器
+- 前端能看到检测结果
 
-当前实现有一个重要限制：
+---
 
-- `local_infer.py` 及其下游 pipeline 会使用固定缓存目录和固定输入文件名
-- 因此不适合同时并发跑多个图像推理请求
-
-为避免相互覆盖，`gpu_infer_service.py` 默认对推理请求加了串行锁，一次只处理一个请求。
-
-这意味着：
-
-- 单任务稳定
-- 多任务并发时会排队
-
-对于课程项目、演示环境、轻量内部使用，这通常是可接受的。
-
-## 安全建议
-
-建议至少这样做：
-
-- `gpu_infer_service.py` 只监听 `127.0.0.1`
-- 仅通过反向 SSH 隧道暴露给服务器
-- 设置 `AI_REMOTE_INFER_TOKEN`
-- 不要把笔记本推理端口直接暴露到公网
-
-## 常见问题
+## 八、常见错误
 
 ### 1. 服务器报 401 unauthorized
 
-说明：
+原因：
 
-- 服务器配置的 `AI_REMOTE_INFER_TOKEN`
-- 和笔记本服务启动时的 `AI_REMOTE_INFER_TOKEN`
+- 服务器 `.env` 里的 `AI_REMOTE_INFER_TOKEN`
+- 和笔记本启动时设置的 `AI_REMOTE_INFER_TOKEN`
 
 不一致。
 
 ### 2. 服务器报连接失败
 
-检查：
+先检查：
 
-- 笔记本 `gpu_infer_service.py` 是否还在运行
-- 反向 SSH 隧道是否仍然在线
-- 服务器上 `curl http://127.0.0.1:18080/health` 是否成功
+```bash
+curl http://127.0.0.1:18080/health
+```
 
-### 3. 推理很慢或首次很慢
+如果服务器本地都不通，问题通常是：
 
-这是正常的。当前 pipeline 初始化时会加载多组模型权重，首次启动成本较高。
+- 笔记本 `gpu_infer_service.py` 没启动
+- SSH 隧道断了
+- 笔记本把终端关了
 
-### 4. 论文检测也失败了
+### 3. 报 `Remote AI inference request failed with HTTP 500`
 
-论文任务中的图片检测也复用这条图像检测链路。如果远程 GPU 不可用，论文里的文本分析可能还能继续，但图片检测部分会失败。
+说明：
 
-## 相关文件
+- 服务器到笔记本的链路已经通了
+- 但笔记本本地 `local_infer.py` 启动失败
 
-- 后端桥接：
+这时要看笔记本终端里的完整 traceback。
+
+最常见原因：
+
+- 缺 Python 包
+- 缺模型权重
+- 本地环境不完整
+
+### 4. 第一次推理很慢
+
+这是正常的。
+
+原因：
+
+- `local_infer.py` 首次启动时会加载模型权重
+
+### 5. 同时多个任务很慢
+
+当前实现是串行处理的，一次只处理一个推理请求。
+
+这是为了避免本地图像缓存和临时文件互相覆盖。
+
+---
+
+## 九、最短操作清单
+
+如果你只想照着做，按下面顺序执行：
+
+### 笔记本
+
+1. 启动 GPU 推理服务
+2. 本地 `curl 127.0.0.1:18080/health`
+3. 建立 SSH 反向隧道
+
+### 服务器
+
+4. 修改 `.env`：
+   - `AI_REMOTE_INFER_URL`
+   - `AI_REMOTE_INFER_TOKEN`
+5. 重启 Django 后端
+6. 服务器执行：
+
+```bash
+curl http://127.0.0.1:18080/health
+```
+
+### 前端
+
+7. 上传测试图片并提交检测
+
+---
+
+## 十、相关文件
+
+- 服务器后端桥接：
   - `AIDetector/code/backend/backend-code/core/services/capabilities/image/local_inference_client.py`
 - 笔记本推理服务：
   - `AIDetector/code/ai-service/ai-service-code/gpu_infer_service.py`
