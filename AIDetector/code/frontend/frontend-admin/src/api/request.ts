@@ -1,8 +1,9 @@
 //引入axios
 import axios from 'axios'
 import router from '@/router'
-// 根据环境变量或代理，设置baseURL
-const baseApiUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL + '/api' : '/api'
+
+const apiBaseUrl = import.meta.env.VITE_API_URL || ''
+const baseApiUrl = apiBaseUrl ? `${apiBaseUrl}/api` : '/api'
 // 创建axios实例
 const instance = axios.create({
     //配置
@@ -58,7 +59,7 @@ const refreshToken = async () => {
     
     try {
         const response = await axios.post(
-            import.meta.env.VITE_API_URL + '/api/token/refresh/',
+            `${baseApiUrl}/token/refresh/`,
             { refresh: refresh }
         )
         

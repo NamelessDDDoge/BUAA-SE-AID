@@ -6,6 +6,8 @@ import sys
 import zipfile
 from pathlib import Path
 
+import requests
+
 
 CODE_DIR = Path(__file__).resolve().parents[6]
 WORKSPACE_ROOT = CODE_DIR.parents[1]
@@ -59,6 +61,9 @@ AI_SERVICE_TMP_DIR = Path(
 AI_SERVICE_TORCH_HOME = Path(
     os.environ.get("AI_SERVICE_TORCH_HOME", str(DEFAULT_SHARED_ROOT / ".torch_cache"))
 )
+AI_REMOTE_INFER_URL = os.environ.get("AI_REMOTE_INFER_URL", "").strip()
+AI_REMOTE_INFER_TIMEOUT = int(os.environ.get("AI_REMOTE_INFER_TIMEOUT", "1800"))
+AI_REMOTE_INFER_TOKEN = os.environ.get("AI_REMOTE_INFER_TOKEN", "").strip()
 
 
 def _prepare_inputs(local_path, json_path):
@@ -94,7 +99,79 @@ def _decode_output(output):
     return output.decode("utf-8", errors="ignore")
 
 
+def _load_remote_infer_config():
+    url = (os.environ.get("AI_REMOTE_INFER_URL", "") or AI_REMOTE_INFER_URL).strip()
+    token = (os.environ.get("AI_REMOTE_INFER_TOKEN", "") or AI_REMOTE_INFER_TOKEN).strip()
+    timeout_raw = os.environ.get("AI_REMOTE_INFER_TIMEOUT")
+    if timeout_raw in (None, ""):
+        timeout = AI_REMOTE_INFER_TIMEOUT
+    else:
+        timeout = int(timeout_raw)
+    return {"url": url, "token": token, "timeout": timeout}
+
+
+def _run_remote_inference():
+    config = _load_remote_infer_config()
+    infer_url = config["url"]
+    if not infer_url:
+        raise RuntimeError("AI_REMOTE_INFER_URL is not configured.")
+
+    zip_path = AI_SERVICE_TEST_DIR / "img.zip"
+    data_path = AI_SERVICE_TEST_DIR / "data.json"
+    if not zip_path.exists():
+        raise FileNotFoundError(f"Remote inference input zip not found: {zip_path}")
+    if not data_path.exists():
+        raise FileNotFoundError(f"Remote inference input json not found: {data_path}")
+
+    headers = {}
+    if config["token"]:
+        headers["Authorization"] = f"Bearer {config['token']}"
+
+    request_payload = {
+        "img_zip_base64": base64.b64encode(zip_path.read_bytes()).decode("utf-8"),
+        "data_json_base64": base64.b64encode(data_path.read_bytes()).decode("utf-8"),
+    }
+    headers["Content-Type"] = "application/json"
+
+    response = requests.post(
+        infer_url,
+        headers=headers,
+        json=request_payload,
+        timeout=config["timeout"],
+    )
+
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        body_preview = response.text[:500] if response.text else ""
+        raise RuntimeError(
+            f"Remote AI inference request failed with HTTP {response.status_code}. "
+            f"Response: {body_preview}"
+        ) from exc
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        body_preview = response.text[:500] if response.text else ""
+        raise RuntimeError(
+            "Remote AI inference response was not valid JSON. "
+            f"Response: {body_preview}"
+        ) from exc
+
+    encoded_payload = payload.get("result_base64")
+    if not encoded_payload:
+        raise RuntimeError("Remote AI inference response did not contain result_base64.")
+
+    import pickle
+
+    return pickle.loads(base64.b64decode(encoded_payload))
+
+
 def _run_local_inference():
+    remote_config = _load_remote_infer_config()
+    if remote_config["url"]:
+        return _run_remote_inference()
+
     ai_service_dir = AI_SERVICE_DIR or _discover_ai_service_dir()
     ai_service_entrypoint = Path(
         AI_SERVICE_ENTRYPOINT

@@ -2,7 +2,12 @@
 
 面向学术场景的 AI 鉴伪与人工复核协同系统。
 
-当前仓库包含两个前端、一个 Django 后端，以及一个由后端直接拉起的本地 AI 推理服务。图像鉴伪主链路已经整理为纯本地同步执行路径，不再依赖 Redis、Celery 或远程 GPU 服务。
+当前仓库包含两个前端、一个 Django 后端，以及一个由后端直接拉起的图像 AI 推理链路。当前支持两种运行方式：
+
+- 服务器本地直接拉起 `local_infer.py`
+- 服务器业务 + 通过 HTTP 桥接到笔记本 GPU 推理
+
+图像鉴伪主链路当前不依赖 Redis 或 Celery。
 
 ## 仓库结构
 
@@ -61,36 +66,41 @@
 
 - 目录：`AIDetector/code/ai-service/ai-service-code`
 - 后端实际调用入口：`AIDetector/code/ai-service/ai-service-code/local_infer.py`
-- 职责：读取批量图片和参数，执行本地图像鉴伪 pipeline，并通过标准输出把序列化结果回传给后端
+- 可选远程服务入口：`AIDetector/code/ai-service/ai-service-code/gpu_infer_service.py`
+- 职责：读取批量图片和参数，执行图像鉴伪 pipeline，并把序列化结果回传给后端
 
 更详细说明见：
 
 - [AI Service 介绍文档](./AIDetector/code/ai-service/README.md)
+- [AI 推理服务启动方式](./AIDetector/code/ai-service/AI推理服务启动方式.md)
 - [图像鉴伪模块说明](./图像鉴伪模块说明.md)
 
 ## 当前图像检测链路
 
-当前图像检测为同步本地执行，核心流程如下：
+当前图像检测为同步执行，核心流程如下：
 
 1. 前端调用 `/api/detection/submit/`。
 2. 后端 `submit_detection2` 创建 `DetectionTask`，并校验组织配额、任务参数与图片列表。
 3. `core/local_detection.py` 为每批图片生成 `img.zip` 与 `data.json`。
-4. `core/call_figure_detection.py` 将输入复制到共享目录，并用子进程启动 `local_infer.py`。
-5. `local_infer.py` 解压图片、载入参数、执行 `PipelineSingleImage.run_multi_images(...)`。
-6. `PipelineSingleImage` 调用 `SingleImageMethod` 中的各个方法，得到 LLM、ELA、EXIF、CMD 和多个 URN 子方法结果。
-7. AI Service 将结果 `pickle + base64` 后输出到 stdout。
-8. 后端解析返回值，落库到 `DetectionResult` 与 `SubDetectionResult`，同时生成掩码图、ELA 图和任务报告。
-9. 任务状态更新为 `completed` 或 `failed`，前端再通过结果接口拉取详情。
+4. 后端桥接层将输入复制到共享目录。
+5. 若未配置 `AI_REMOTE_INFER_URL`，后端用子进程启动 `local_infer.py`。
+6. 若配置了 `AI_REMOTE_INFER_URL`，后端将 `img.zip` 与 `data.json` POST 到远程 GPU 推理服务。
+7. `local_infer.py` 解压图片、载入参数、执行 `PipelineSingleImage.run_multi_images(...)`。
+8. `PipelineSingleImage` 调用 `SingleImageMethod` 中的各个方法，得到 LLM、ELA、EXIF、CMD 和多个 URN 子方法结果。
+9. AI Service 将结果 `pickle + base64` 后返回给后端。
+10. 后端解析返回值，落库到 `DetectionResult` 与 `SubDetectionResult`，同时生成掩码图、ELA 图和任务报告。
+11. 任务状态更新为 `completed` 或 `failed`，前端再通过结果接口拉取详情。
 
 ## AI Service 当前实现
 
-当前实际生效的是“后端桥接层 + 本地推理脚本”模式，不是独立常驻服务。
+当前实际生效的是“后端桥接层 + 本地推理脚本”模式，也支持“后端桥接层 + 远程 GPU 推理服务”模式。
 
 ### 入口与桥接
 
-- `core/call_figure_detection.py` 是后端到 AI Service 的桥接层。
-- 它负责准备 `img.zip` / `data.json`，设置临时目录和 `TORCH_HOME`，再直接启动 `local_infer.py`。
-- 结果通过标准输出中的 `start results` 标记和下一行的 base64 负载传回。
+- 后端桥接层位于 `core/services/capabilities/image/local_inference_client.py`。
+- 它负责准备 `img.zip` / `data.json`，设置临时目录和 `TORCH_HOME`。
+- 本地模式下，它会直接启动 `local_infer.py`。
+- 远程模式下，它会把输入 POST 给 `gpu_infer_service.py`。
 
 ### AI Service 内部结构
 
@@ -144,11 +154,15 @@
 - `AI_SERVICE_TEST_DIR`
 - `AI_SERVICE_TMP_DIR`
 - `AI_SERVICE_TORCH_HOME`
+- `AI_REMOTE_INFER_URL`
+- `AI_REMOTE_INFER_TIMEOUT`
+- `AI_REMOTE_INFER_TOKEN`
 
 其中最常用的是：
 
 - `AI_SERVICE_DIR`：AI Service 代码目录
 - `AI_SERVICE_PYTHON`：用于启动 `local_infer.py` 的 Python 解释器
+- `AI_REMOTE_INFER_URL`：远程 GPU 推理服务地址；设置后优先走远程推理
 
 ## 本地运行
 
@@ -197,15 +211,20 @@ npm run dev
 
 ### AI Service
 
-AI Service 不需要单独启动常驻进程。只要后端环境可用，后端会在处理图像任务时直接启动：
+本地模式下，AI Service 不需要单独启动常驻进程。只要后端环境可用，后端会在处理图像任务时直接启动：
 
 - `AIDetector/code/ai-service/ai-service-code/local_infer.py`
+
+远程 GPU 模式下，需要在笔记本额外启动：
+
+- `AIDetector/code/ai-service/ai-service-code/gpu_infer_service.py`
 
 建议至少确认：
 
 - `AI_SERVICE_DIR` 指向 `AIDetector/code/ai-service/ai-service-code`
 - `AI_SERVICE_PYTHON` 与当前可用环境一致
 - 本地模型权重已经放在算法代码要求的位置
+- 若使用笔记本 GPU，则已正确配置 `AI_REMOTE_INFER_URL`
 
 ## 当前已移除的旧链路
 
@@ -213,7 +232,6 @@ AI Service 不需要单独启动常驻进程。只要后端环境可用，后端
 
 - Redis 作为图像检测队列中间件
 - Celery 作为图像检测执行器
-- 远程 GPU / 远程 AI 服务
 - 独立守护式 AI 服务监听脚本
 
 ## 已知限制

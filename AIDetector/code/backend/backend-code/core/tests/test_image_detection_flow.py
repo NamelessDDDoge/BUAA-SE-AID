@@ -383,6 +383,40 @@ class LocalBridgeTests(TestCase):
         self.assertEqual(result[1][0], "ela")
         self.assertEqual(len(result), len(expected_payload))
 
+    @patch.dict(
+        "os.environ",
+        {
+            "AI_REMOTE_INFER_URL": "http://127.0.0.1:18080/infer",
+            "AI_REMOTE_INFER_TIMEOUT": "20",
+            "AI_REMOTE_INFER_TOKEN": "demo-token",
+        },
+        clear=False,
+    )
+    @patch("core.services.capabilities.image.local_inference_client.requests.post")
+    def test_run_local_inference_can_use_remote_http_bridge(self, mock_post):
+        expected_payload = fake_detection_payload()
+        encoded_payload = base64.b64encode(pickle.dumps(expected_payload)).decode("utf-8")
+
+        fake_shared_root = Path(self.temp_media) / "remote-shared"
+        fake_shared_root.mkdir(parents=True, exist_ok=True)
+        (fake_shared_root / "img.zip").write_bytes(b"PK\x05\x06" + b"\x00" * 18)
+        (fake_shared_root / "data.json").write_text('{"cmd_block_size": 64}', encoding="utf-8")
+
+        mock_post.return_value = SimpleNamespace(
+            status_code=200,
+            json=lambda: {"result_base64": encoded_payload},
+            text='{"result_base64":"..."}',
+            raise_for_status=lambda: None,
+        )
+
+        with patch.object(local_inference_client, "AI_SERVICE_TEST_DIR", fake_shared_root):
+            result = _run_local_inference()
+
+        self.assertEqual(result, expected_payload)
+        _, kwargs = mock_post.call_args
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer demo-token")
+        self.assertEqual(kwargs["timeout"], 20)
+
     @patch.dict("os.environ", {}, clear=True)
     @patch(
         "core.services.capabilities.image.local_inference_client.DEFAULT_AI_SERVICE_DIR_CANDIDATES",
