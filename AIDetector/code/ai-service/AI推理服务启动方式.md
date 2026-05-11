@@ -45,7 +45,7 @@
 
 ## 二、你需要准备什么
 
-### 服务器
+### 服务器（已完成）
 
 - 已经跑起来的 Django 后端
 - 后端 `.env` 可修改
@@ -71,7 +71,7 @@ cd AIDetector/code/ai-service/ai-service-code
 ```
 
 ### 第 2 步：启动 GPU 推理服务
-下面这些配置可以直接写到 AIDetector/code/backend/backend-code/.env 中
+下面这些配置可以直接写到 AIDetector/code/backend/backend-code/.env（.env 使用 .env.example 的模板即可）中。
 
 Linux / macOS：
 
@@ -111,7 +111,7 @@ curl http://127.0.0.1:18080/health
 ssh -N -R 127.0.0.1:18080:127.0.0.1:18080 root@你的服务器公网IP
 ```
 
-例如：
+若使用课程组给的华为云服务器，则具体为：
 
 ```bash
 ssh -N -R 127.0.0.1:18080:127.0.0.1:18080 root@122.9.32.72
@@ -129,7 +129,7 @@ ssh -N -R 127.0.0.1:18080:127.0.0.1:18080 root@122.9.32.72
 
 ---
 
-## 五、服务器端怎么配置
+## 五、服务器端怎么配置（已完成）
 
 修改服务器后端实际生效的 `.env`：
 
@@ -158,7 +158,7 @@ AI_SERVICE_PYTHON=/root/miniconda3/envs/se/bin/python
 
 ---
 
-## 六、服务器端怎么验证隧道是否打通
+## 六、服务器端怎么验证隧道是否打通（已完成）
 
 修改 `.env` 后，重启后端。
 
