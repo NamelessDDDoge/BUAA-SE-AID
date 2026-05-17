@@ -1,46 +1,52 @@
 <template>
   <div class="login-page">
-    <!-- 左侧功能介绍区域 -->
-    <div class="feature-section">
-      <div class="feature-content">
-        <div class="feature-kicker">AIDetect</div>
-        <h1 class="feature-title">学术诚信检测平台</h1>
-        <p class="feature-copy">面向出版社与审稿专家的检测、复核与报告工作台。</p>
-        <div class="feature-list">
-          <div class="feature-item">
-            <div class="feature-icon">
-              <v-icon size="26" color="primary">mdi-file-search-outline</v-icon>
-            </div>
-            <div class="feature-text">
-              <div class="text-subtitle-1 font-weight-bold">多对象检测</div>
-              <div class="text-body-2 text-grey">支持图像、论文全文与 Review 检测。</div>
-            </div>
+    <section class="feature-section" aria-label="平台介绍">
+      <div class="brand-shell">
+        <div class="brand-topline">
+          <div class="brand-mark">
+            <v-icon size="24">mdi-shield-search</v-icon>
           </div>
-          <div class="feature-item">
-            <div class="feature-icon">
-              <v-icon size="26" color="primary">mdi-account-check-outline</v-icon>
-            </div>
-            <div class="feature-text">
-              <div class="text-subtitle-1 font-weight-bold">人工复核</div>
-              <div class="text-body-2 text-grey">AI 初检结果可进入人工审核流程。</div>
-            </div>
+          <span>AIDetect</span>
+        </div>
+
+        <div class="feature-content">
+          <div class="feature-kicker">Academic Integrity</div>
+          <h1 class="feature-title">学术诚信检测平台</h1>
+          <p class="feature-copy">面向论文、Review 与学术图像的综合检测、复核和报告工作台。</p>
+        </div>
+
+        <div class="flow-card" aria-label="检测流程">
+          <div class="flow-step">
+            <v-icon size="20">mdi-cloud-upload-outline</v-icon>
+            <span>上传材料</span>
           </div>
-          <div class="feature-item">
-            <div class="feature-icon">
-              <v-icon size="26" color="primary">mdi-file-chart-outline</v-icon>
-            </div>
-            <div class="feature-text">
-              <div class="text-subtitle-1 font-weight-bold">报告归档</div>
-              <div class="text-body-2 text-grey">检测结果和处理记录集中保存。</div>
-            </div>
+          <div class="flow-line"></div>
+          <div class="flow-step">
+            <v-icon size="20">mdi-radar</v-icon>
+            <span>AI 初筛</span>
+          </div>
+          <div class="flow-line"></div>
+          <div class="flow-step">
+            <v-icon size="20">mdi-account-check-outline</v-icon>
+            <span>复核归档</span>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- 右侧登录区域 -->
-    <div class="login-section">
+        <div class="brand-footnote">
+          <span class="footnote-dot"></span>
+          <span>统一管理检测历史、人工审核和报告查阅。</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="login-section" aria-label="账号登录">
       <div class="login-container">
+        <div class="login-heading">
+          <div class="login-kicker">{{ loginType === 'login' ? 'Sign in' : 'Create account' }}</div>
+          <h2>{{ loginType === 'login' ? '欢迎回来' : '创建账号' }}</h2>
+          <p>{{ loginType === 'login' ? '登录后继续处理检测任务。' : '请使用邀请码完成身份绑定。' }}</p>
+        </div>
+
         <div class="login-tabs mb-8">
           <v-btn-toggle v-model="loginType" mandatory divided class="login-toggle">
             <v-btn value="login" class="flex-grow-1" :class="{ 'active-tab': loginType === 'login' }">登录</v-btn>
@@ -138,7 +144,7 @@
           </div>
         </v-form>
       </div>
-    </div>
+    </section>
 
     <!-- 忘记密码对话框 -->
     <v-dialog v-model="showForgotPasswordDialog" max-width="500" persistent>
@@ -709,37 +715,85 @@ const registering = ref(false)
 <style scoped>
 .login-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 500px;
+  grid-template-columns: minmax(420px, 0.9fr) minmax(560px, 1.1fr);
   min-height: 100vh;
-  padding: 0;
+  padding: 28px;
   background:
-    radial-gradient(circle at 12% 12%, rgba(15, 159, 122, 0.16), transparent 28rem),
-    radial-gradient(circle at 88% 10%, rgba(37, 99, 235, 0.14), transparent 26rem),
-    linear-gradient(135deg, #f2faf7 0%, #f7fbff 48%, #eef6f3 100%);
-  gap: 0;
+    radial-gradient(circle at 8% 10%, rgba(14, 116, 144, 0.18), transparent 28rem),
+    radial-gradient(circle at 92% 8%, rgba(20, 184, 166, 0.16), transparent 30rem),
+    linear-gradient(135deg, #e9f5f1 0%, #f7fbf9 46%, #ecf4ff 100%);
+  gap: 28px;
   align-items: stretch;
   justify-content: stretch;
 }
 
 .feature-section {
-  min-height: 100vh;
-  padding: clamp(56px, 7vw, 108px);
+  min-height: calc(100vh - 56px);
+  padding: clamp(34px, 5vw, 72px);
   display: flex;
-  align-items: center;
-  justify-content: flex-start;
+  align-items: stretch;
+  justify-content: stretch;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(235, 248, 244, 0.74)),
-    radial-gradient(circle at 18% 20%, rgba(15, 159, 122, 0.18), transparent 24rem);
-  border-right: 1px solid rgba(21, 34, 56, 0.08);
+    linear-gradient(145deg, rgba(11, 72, 84, 0.94), rgba(19, 118, 105, 0.9)),
+    radial-gradient(circle at 20% 12%, rgba(255, 255, 255, 0.16), transparent 22rem);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 28px;
+  box-shadow: 0 28px 80px rgba(15, 54, 66, 0.22);
+  color: #ffffff;
+  overflow: hidden;
+  position: relative;
+}
+
+.feature-section::before {
+  content: "";
+  position: absolute;
+  inset: auto -20% -18% 8%;
+  height: 300px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.22) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+  opacity: 0.55;
+  transform: rotate(-5deg);
+}
+
+.brand-shell {
+  width: 100%;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 40px;
+}
+
+.brand-topline {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .feature-content {
-  max-width: 720px;
-  margin-top: 0;
+  max-width: 560px;
 }
 
 .feature-kicker {
-  color: rgb(var(--v-theme-primary));
+  color: rgba(204, 251, 241, 0.92);
   font-size: 0.78rem;
   font-weight: 900;
   letter-spacing: 0.12em;
@@ -748,75 +802,116 @@ const registering = ref(false)
 }
 
 .feature-title {
-  font-size: clamp(2.35rem, 4.2vw, 4.2rem);
-  line-height: 1.08;
+  font-size: clamp(2.05rem, 3.6vw, 3.35rem);
+  line-height: 1.12;
   font-weight: 900;
-  letter-spacing: -0.06em;
-  margin-bottom: 18px;
+  letter-spacing: -0.04em;
+  margin-bottom: 16px;
 }
 
 .feature-copy {
-  max-width: 560px;
-  color: #667085;
-  font-size: 1.12rem;
-  line-height: 1.75;
-  margin-bottom: 38px;
+  max-width: 500px;
+  color: rgba(240, 253, 250, 0.82);
+  font-size: 1.05rem;
+  line-height: 1.72;
 }
 
-.feature-list {
+.flow-card {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-  max-width: 780px;
-}
-
-.feature-item {
-  display: flex;
-  flex-direction: column;
+  grid-template-columns: auto 1fr auto 1fr auto;
+  align-items: center;
   gap: 14px;
-  min-height: 156px;
-  padding: 20px;
-  border: 1px solid rgba(21, 34, 56, 0.08);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 14px 36px rgba(21, 34, 56, 0.06);
+  max-width: 580px;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
-.feature-icon {
-  padding: 12px;
-  background: #eef8f5;
-  border-radius: 12px;
-  border: 1px solid rgba(15, 159, 122, 0.12);
+.flow-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 700;
+  font-size: 0.92rem;
 }
 
-.feature-text {
-  flex: 1;
+.flow-line {
+  height: 1px;
+  min-width: 48px;
+  background: linear-gradient(90deg, rgba(204, 251, 241, 0.65), rgba(204, 251, 241, 0.08));
+}
+
+.brand-footnote {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(240, 253, 250, 0.78);
+  font-size: 0.95rem;
+}
+
+.footnote-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #5eead4;
+  box-shadow: 0 0 0 6px rgba(94, 234, 212, 0.16);
 }
 
 .login-section {
-  width: 500px;
-  min-height: 100vh;
+  min-height: calc(100vh - 56px);
   background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 56px;
-  border-left: 1px solid rgba(21, 34, 56, 0.08);
-  box-shadow: -24px 0 60px rgba(21, 34, 56, 0.08);
+  padding: clamp(34px, 5vw, 80px);
+  border: 1px solid rgba(21, 34, 56, 0.08);
+  border-radius: 28px;
+  box-shadow: 0 28px 80px rgba(21, 34, 56, 0.1);
 }
 
 .login-container {
   width: 100%;
-  max-width: 420px;
+  max-width: 500px;
   background: #ffffff;
+}
+
+.login-heading {
+  margin-bottom: 28px;
+}
+
+.login-heading h2 {
+  font-size: clamp(1.8rem, 2.4vw, 2.35rem);
+  line-height: 1.16;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: #102a43;
+  margin: 0 0 8px;
+}
+
+.login-heading p {
+  margin: 0;
+  color: #667085;
+  line-height: 1.7;
+}
+
+.login-kicker {
+  color: #0f9f7a;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
 }
 
 .login-toggle {
   width: 100%;
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
-  background: #eef4f7;
+  background: #eef5f2;
   padding: 4px;
 }
 
@@ -830,7 +925,7 @@ const registering = ref(false)
 
 .login-toggle .active-tab {
   background: #ffffff;
-  color: rgb(var(--v-theme-primary));
+  color: #0f9f7a;
   box-shadow: 0 6px 18px rgba(21, 34, 56, 0.1);
 }
 
@@ -844,9 +939,10 @@ const registering = ref(false)
 
 .role-btn {
   flex: 1;
-  background: #f3f6f8 !important;
+  background: #f6faf8 !important;
   color: #344054 !important;
   border: 1px solid rgba(21, 34, 56, 0.08) !important;
+  border-radius: 12px !important;
   transition: all 0.3s ease;
   height: 40px;
   font-weight: 500;
@@ -858,7 +954,7 @@ const registering = ref(false)
 }
 
 .active-role {
-  background: rgb(var(--v-theme-primary)) !important;
+  background: #0f9f7a !important;
   color: #ffffff !important;
   border: none !important;
 }
@@ -870,10 +966,11 @@ const registering = ref(false)
 }
 
 .v-btn.v-btn--size-large {
-  height: 44px;
+  height: 48px;
   font-size: 16px;
-  font-weight: 500;
-  box-shadow: 0 2px 4px rgba(64, 158, 255, 0.2);
+  font-weight: 700;
+  border-radius: 14px;
+  box-shadow: 0 12px 24px rgba(15, 159, 122, 0.18);
   transition: all 0.3s ease;
 }
 
@@ -910,28 +1007,32 @@ const registering = ref(false)
 
   .feature-section {
     min-height: auto;
-    padding: 24px;
+    padding: 28px;
     border-right: 0;
     border-radius: 22px;
   }
 
-  .feature-content {
-    margin-top: 0;
+  .brand-shell {
+    gap: 28px;
   }
 
   .login-section {
-    width: 100%;
     min-height: auto;
     min-width: 0;
     max-width: none;
     margin-top: 0;
-    padding: 24px;
+    padding: 28px;
     border-left: 0;
     border-radius: 22px;
   }
 
-  .feature-list {
+  .flow-card {
     grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .flow-line {
+    display: none;
   }
 }
 

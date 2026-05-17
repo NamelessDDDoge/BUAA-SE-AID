@@ -337,16 +337,6 @@ watch(
   },
 )
 
-const headers = [
-  { title: '展示名称', align: 'start' as const, key: 'display_name' },
-  { title: '模型标识', key: 'model_name' },
-  { title: '用途', key: 'model_type' },
-  { title: '供应商', key: 'provider' },
-  { title: 'API Key', key: 'has_api_key' },
-  { title: '启用状态', key: 'is_active' },
-  { title: '操作', key: 'actions', sortable: false, align: 'end' as const },
-];
-
 function defaultForm(): Partial<LLMModel> {
   return {
     model_name: '',

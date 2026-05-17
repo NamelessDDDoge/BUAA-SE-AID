@@ -2,7 +2,7 @@
   <v-app :theme="theme">
     <Snackbar />
     <!-- 只在非移动端显示侧边导航栏 -->
-    <aside v-if="!isMobile" class="navigation-drawer">
+    <aside v-if="!isMobile && !isLoginPage" class="navigation-drawer">
       <div class="brand-block">
         <div class="brand-mark">
           <v-icon size="26">mdi-shield-crown-outline</v-icon>
@@ -49,7 +49,7 @@
       </v-list>
     </aside>
 
-    <v-app-bar class="app-bar" elevation="0">
+    <v-app-bar v-if="!isLoginPage" class="app-bar" elevation="0">
       <v-toolbar-title class="toolbar-title">
         <span>学术诚信检测管理端</span>
       </v-toolbar-title>
@@ -61,15 +61,15 @@
       <v-btn icon="mdi-broadcast" v-if="isLoggedIn && userStore.admin_type === 'software_admin'" @click="showBroadcastDialog = true"></v-btn>
     </v-app-bar>
 
-    <v-main class="main-stage">
-      <div class="route-frame">
+    <v-main class="main-stage" :class="{ 'auth-stage': isLoginPage }">
+      <div class="route-frame" :class="{ 'auth-frame': isLoginPage }">
         <router-view />
       </div>
     </v-main>
 
     <!-- 移动端底部导航栏 -->
-    <v-bottom-navigation v-if="isMobile">
-      <v-btn to="/" value="home">
+    <v-bottom-navigation v-if="isMobile && !isLoginPage">
+      <v-btn to="/analytics" value="home">
         <v-icon>mdi-home</v-icon>
         <span>主页</span>
       </v-btn>
@@ -193,11 +193,11 @@ const router = useRouter()
 const route = useRoute()
 
 const normalizePath = (path: string) => path.replace(/\/+$/, '') || '/'
+const isLoginPage = computed(() => normalizePath(route.path) === '/login')
 
 const activeSection = computed(() => {
   const path = normalizePath(route.path)
-  if (path === '/') return 'home'
-  if (path === '/analytics') return 'analytics'
+  if (path === '/login' || path === '/analytics') return 'home'
   if (path === '/organizations') return 'organizations'
   if (path === '/organization_profile') return 'organization_profile'
   if (path === '/files') return 'files'
@@ -284,7 +284,7 @@ const sendBroadcast = async () => {
 }
 
 const goToHome = () => {
-  router.push('/')
+  router.push(isLoggedIn.value ? '/analytics' : '/login')
 }
 
 const goToLogin = () => {
@@ -451,8 +451,19 @@ onMounted(async () => {
   min-height: 100vh;
 }
 
+.auth-stage.v-main {
+  margin-left: 0 !important;
+  padding-top: 0 !important;
+  padding-left: 0 !important;
+}
+
 .route-frame {
   padding: 18px 22px 22px 12px;
+}
+
+.auth-frame {
+  min-height: 100vh;
+  padding: 0;
 }
 
 .route-frame > .v-container {

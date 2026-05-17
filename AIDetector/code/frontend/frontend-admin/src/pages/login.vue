@@ -1,46 +1,52 @@
 <template>
     <div class="login-page">
-      <!-- 左侧功能介绍区域 -->
-      <div class="feature-section">
-        <div class="feature-content">
-          <div class="feature-kicker">AID Admin</div>
-          <h1 class="feature-title">检测管理端</h1>
-          <p class="feature-copy">用于组织、用户、资源、模型与人工审核流程管理。</p>
-          <div class="feature-list">
-            <div class="feature-item">
-              <div class="feature-icon">
-                <v-icon size="26" color="primary">mdi-view-dashboard-outline</v-icon>
-              </div>
-              <div class="feature-text">
-                <div class="text-subtitle-1 font-weight-bold">平台总览</div>
-                <div class="text-body-2 text-grey">集中查看任务、组织和资源状态。</div>
-              </div>
+      <section class="feature-section" aria-label="管理端介绍">
+        <div class="brand-shell">
+          <div class="brand-topline">
+            <div class="brand-mark">
+              <v-icon size="24">mdi-view-dashboard-outline</v-icon>
             </div>
-            <div class="feature-item">
-              <div class="feature-icon">
-                <v-icon size="26" color="primary">mdi-account-cog-outline</v-icon>
-              </div>
-              <div class="feature-text">
-                <div class="text-subtitle-1 font-weight-bold">权限管理</div>
-                <div class="text-body-2 text-grey">管理用户、组织与系统角色。</div>
-              </div>
+            <span>AID Admin</span>
+          </div>
+
+          <div class="feature-content">
+            <div class="feature-kicker">Admin Console</div>
+            <h1 class="feature-title">检测管理端</h1>
+            <p class="feature-copy">集中处理组织、用户、资源和人工审核流程。</p>
+          </div>
+
+          <div class="flow-card" aria-label="管理范围">
+            <div class="flow-step">
+              <v-icon size="20">mdi-domain</v-icon>
+              <span>组织</span>
             </div>
-            <div class="feature-item">
-              <div class="feature-icon">
-                <v-icon size="26" color="primary">mdi-robot-outline</v-icon>
-              </div>
-              <div class="feature-text">
-                <div class="text-subtitle-1 font-weight-bold">模型配置</div>
-                <div class="text-body-2 text-grey">维护检测模型与服务配置。</div>
-              </div>
+            <div class="flow-line"></div>
+            <div class="flow-step">
+              <v-icon size="20">mdi-account-group-outline</v-icon>
+              <span>用户</span>
+            </div>
+            <div class="flow-line"></div>
+            <div class="flow-step">
+              <v-icon size="20">mdi-clipboard-check-outline</v-icon>
+              <span>审核</span>
             </div>
           </div>
+
+          <div class="brand-footnote">
+            <span class="footnote-dot"></span>
+            <span>管理操作请使用已授权账号登录。</span>
+          </div>
         </div>
-      </div>
+      </section>
   
-      <!-- 右侧登录区域 -->
-      <div class="login-section">
+      <section class="login-section" aria-label="管理员登录">
         <div class="login-container">
+          <div class="login-heading">
+            <div class="login-kicker">Secure access</div>
+            <h2>管理员登录</h2>
+            <p>进入后台管理工作台。</p>
+          </div>
+
           <v-form ref="form" @submit.prevent="handleSubmit">
             <v-text-field
               v-model="email"
@@ -101,7 +107,7 @@
             </v-btn>
           </v-form>
         </div>
-      </div>
+      </section>
     </div>
   </template>
   
@@ -184,7 +190,7 @@
       await userStore.fetchUserInfo();
       
       snackbar.showMessage('登录成功', 'success')
-      router.push('/')
+      router.push('/analytics')
     }).catch((error: { response?: { status: number } }) => {
       console.log(error)
       let errorMessage = '网络错误，请稍后重试'
@@ -206,37 +212,85 @@
   <style scoped>
   .login-page {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 500px;
+    grid-template-columns: minmax(420px, 0.9fr) minmax(560px, 1.1fr);
     min-height: 100vh;
-    padding: 0;
+    padding: 28px;
     background:
-      radial-gradient(circle at 10% 12%, rgba(47, 111, 237, 0.16), transparent 28rem),
-      radial-gradient(circle at 88% 10%, rgba(13, 148, 136, 0.14), transparent 26rem),
-      linear-gradient(135deg, #f4f8ff 0%, #f8fbff 48%, #eef5ff 100%);
-    gap: 0;
+      radial-gradient(circle at 8% 10%, rgba(37, 99, 235, 0.18), transparent 28rem),
+      radial-gradient(circle at 92% 8%, rgba(15, 23, 42, 0.12), transparent 30rem),
+      linear-gradient(135deg, #eef4ff 0%, #f8fbff 46%, #eef2f7 100%);
+    gap: 28px;
     align-items: stretch;
     justify-content: stretch;
   }
   
   .feature-section {
-    min-height: 100vh;
-    padding: clamp(56px, 7vw, 108px);
+    min-height: calc(100vh - 56px);
+    padding: clamp(34px, 5vw, 72px);
     display: flex;
-    align-items: center;
-    justify-content: flex-start;
+    align-items: stretch;
+    justify-content: stretch;
     background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(236, 244, 255, 0.76)),
-      radial-gradient(circle at 18% 20%, rgba(47, 111, 237, 0.18), transparent 24rem);
-    border-right: 1px solid rgba(23, 32, 51, 0.08);
+      linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(30, 64, 175, 0.9)),
+      radial-gradient(circle at 20% 12%, rgba(255, 255, 255, 0.14), transparent 22rem);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 28px;
+    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.22);
+    color: #ffffff;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .feature-section::before {
+    content: "";
+    position: absolute;
+    inset: auto -20% -18% 8%;
+    height: 300px;
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+      linear-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+    background-size: 34px 34px;
+    mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+    opacity: 0.55;
+    transform: rotate(-5deg);
+  }
+
+  .brand-shell {
+    width: 100%;
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 40px;
+  }
+
+  .brand-topline {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.2);
   }
   
   .feature-content {
-    max-width: 720px;
-    margin-top: 0;
+    max-width: 540px;
   }
   
   .feature-kicker {
-    color: rgb(var(--v-theme-primary));
+    color: rgba(219, 234, 254, 0.92);
     font-size: 0.78rem;
     font-weight: 900;
     letter-spacing: 0.12em;
@@ -245,67 +299,108 @@
   }
 
   .feature-title {
-    font-size: clamp(2.35rem, 4.2vw, 4.2rem);
-    line-height: 1.08;
+    font-size: clamp(2.05rem, 3.6vw, 3.35rem);
+    line-height: 1.12;
     font-weight: 900;
-    letter-spacing: -0.06em;
-    margin-bottom: 18px;
+    letter-spacing: -0.04em;
+    margin-bottom: 16px;
   }
 
   .feature-copy {
-    max-width: 560px;
-    color: #667085;
-    font-size: 1.12rem;
-    line-height: 1.75;
-    margin-bottom: 38px;
+    max-width: 500px;
+    color: rgba(239, 246, 255, 0.8);
+    font-size: 1.05rem;
+    line-height: 1.72;
   }
 
-  .feature-list {
+  .flow-card {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 18px;
-    max-width: 780px;
-  }
-  
-  .feature-item {
-    display: flex;
-    flex-direction: column;
+    grid-template-columns: auto 1fr auto 1fr auto;
+    align-items: center;
     gap: 14px;
-    min-height: 156px;
-    padding: 20px;
-    border: 1px solid rgba(23, 32, 51, 0.08);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.72);
-    box-shadow: 0 14px 36px rgba(23, 32, 51, 0.06);
+    max-width: 540px;
+    padding: 18px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.11);
+    border: 1px solid rgba(255, 255, 255, 0.18);
   }
-  
-  .feature-icon {
-    padding: 12px;
-    background: #eef4ff;
-    border-radius: 12px;
-    border: 1px solid rgba(47, 111, 237, 0.12);
+
+  .flow-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 700;
+    font-size: 0.92rem;
   }
-  
-  .feature-text {
-    flex: 1;
+
+  .flow-line {
+    height: 1px;
+    min-width: 48px;
+    background: linear-gradient(90deg, rgba(191, 219, 254, 0.65), rgba(191, 219, 254, 0.08));
+  }
+
+  .brand-footnote {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: rgba(239, 246, 255, 0.74);
+    font-size: 0.95rem;
+  }
+
+  .footnote-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #93c5fd;
+    box-shadow: 0 0 0 6px rgba(147, 197, 253, 0.16);
   }
   
   .login-section {
-    width: 500px;
-    min-height: 100vh;
+    min-height: calc(100vh - 56px);
     background: #ffffff;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 56px;
-    border-left: 1px solid rgba(23, 32, 51, 0.08);
-    box-shadow: -24px 0 60px rgba(23, 32, 51, 0.08);
+    padding: clamp(34px, 5vw, 80px);
+    border: 1px solid rgba(23, 32, 51, 0.08);
+    border-radius: 28px;
+    box-shadow: 0 28px 80px rgba(23, 32, 51, 0.1);
   }
   
   .login-container {
     width: 100%;
-    max-width: 420px;
+    max-width: 500px;
     background: #ffffff;
+  }
+
+  .login-heading {
+    margin-bottom: 32px;
+  }
+
+  .login-heading h2 {
+    font-size: clamp(1.8rem, 2.4vw, 2.35rem);
+    line-height: 1.16;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    color: #102a43;
+    margin: 0 0 8px;
+  }
+
+  .login-heading p {
+    margin: 0;
+    color: #667085;
+    line-height: 1.7;
+  }
+
+  .login-kicker {
+    color: #2563eb;
+    font-size: 0.76rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
   }
   
   .v-btn {
@@ -315,10 +410,11 @@
   }
   
   .v-btn.v-btn--size-large {
-    height: 44px;
+    height: 48px;
     font-size: 16px;
-    font-weight: 500;
-    box-shadow: 0 2px 4px rgba(64, 158, 255, 0.2);
+    font-weight: 700;
+    border-radius: 14px;
+    box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
     transition: all 0.3s ease;
   }
   
@@ -355,28 +451,32 @@
   
     .feature-section {
       min-height: auto;
-      padding: 24px;
+      padding: 28px;
       border-right: 0;
       border-radius: 22px;
     }
   
-    .feature-content {
-      margin-top: 0;
+    .brand-shell {
+      gap: 28px;
     }
   
     .login-section {
-      width: 100%;
       min-height: auto;
       min-width: 0;
       max-width: none;
       margin-top: 0;
-      padding: 24px;
+      padding: 28px;
       border-left: 0;
       border-radius: 22px;
     }
   
-    .feature-list {
+    .flow-card {
       grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+
+    .flow-line {
+      display: none;
     }
   }
   </style> 
