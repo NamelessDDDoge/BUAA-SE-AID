@@ -173,7 +173,7 @@ def assess_data_authenticity_finding(*, paragraph_index, claim_text, evidence, a
     }
 
 
-def analyze_review_text(*, paper_text, review_paragraphs, api_key=None, timeout=60):
+def analyze_review_text(*, paper_text, review_paragraphs, api_key=None, llm_model_name=None, timeout=60):
     response_json = _request_structured_json(
         system_prompt=REVIEW_ANALYSIS_SYSTEM_PROMPT,
         user_prompt=render_prompt(
@@ -182,6 +182,7 @@ def analyze_review_text(*, paper_text, review_paragraphs, api_key=None, timeout=
             review_paragraphs=_format_review_paragraphs(review_paragraphs),
         ),
         api_key=api_key,
+        llm_model_name=llm_model_name,
         timeout=timeout,
     )
     if not isinstance(response_json, dict):
