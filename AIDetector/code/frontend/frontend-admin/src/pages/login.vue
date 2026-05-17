@@ -101,7 +101,8 @@
               color="primary"
               size="large"
               type="submit"
-              :disabled="!isFormValid"
+              :loading="submitting"
+              :disabled="submitting"
             >
               登录
             </v-btn>
@@ -126,6 +127,7 @@
   const email = ref('')
   const password = ref('')
   const agreement = ref(false)
+  const submitting = ref(false)
   const form = ref(null)
   
   // 验证码相关
@@ -169,31 +171,52 @@
     //        password.value.length >= 6
     return email.value && password.value 
   })
+
+  const getValidationMessage = () => {
+    if (!email.value) return '请输入邮箱'
+    if (!password.value) return '请输入密码'
+    if (!captchaInput.value) return '请输入验证码'
+    if (!agreement.value) return '请先勾选隐私政策和使用协议'
+    return ''
+  }
   
   const handleSubmit = async () => {
-    if (!validateCaptcha()) {
+    const validationMessage = getValidationMessage()
+    if (validationMessage) {
+      snackbar.showMessage(validationMessage, 'error')
       return
     }
-    // localStorage.setItem("isLoggedIn", "true")
-    // return
 
-    const response = await user.login({
-      email: email.value,
-      password: password.value,
-      // role: 'admin'//TODO：admin
-    }).then(async (res: { data: { access: string; refresh: string } }) => {
+    if (!validateCaptcha()) {
+      snackbar.showMessage(captchaError.value || '验证码错误', 'error')
+      return
+    }
+
+    if (submitting.value) return
+    submitting.value = true
+
+    try {
+      const res = await user.login({
+        email: email.value,
+        password: password.value,
+        // role: 'admin'//TODO：admin
+      }) as { data: { access: string; refresh: string } }
+
       localStorage.setItem("1-token", res.data.access)
       localStorage.setItem("1-refresh", res.data.refresh)
       localStorage.setItem("1-isLoggedIn", "true")
       
       // 获取用户信息并存储到 user store
-      await userStore.fetchUserInfo();
+      const loaded = await userStore.fetchUserInfo();
+      if (!loaded) {
+        throw new Error('USER_INFO_FAILED')
+      }
       
       snackbar.showMessage('登录成功', 'success')
       router.push('/analytics')
-    }).catch((error: { response?: { status: number } }) => {
+    } catch (error: any) {
       console.log(error)
-      let errorMessage = '网络错误，请稍后重试'
+      let errorMessage = error.message === 'USER_INFO_FAILED' ? '登录成功，但管理员信息加载失败，请稍后重试' : '网络错误，请稍后重试'
       if (error.response) {
         switch (error.response.status) {
           case 401:
@@ -205,7 +228,9 @@
         }
       }
       snackbar.showMessage(errorMessage, 'error')
-    })
+    } finally {
+      submitting.value = false
+    }
   }
   </script>
   

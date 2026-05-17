@@ -129,7 +129,7 @@
             </v-btn>
           </template>
 
-          <v-btn block color="primary" size="large" type="submit" :disabled="!isFormValid">
+          <v-btn block color="primary" size="large" type="submit" :loading="submitting" :disabled="submitting">
             {{ loginType === 'login' ? '登录' : '注册' }}
           </v-btn>
 
@@ -316,6 +316,7 @@ const agreement = ref(false)
 const showForgotPasswordDialog = ref(false)
 const showCreateOrgDialog = ref(false)
 const creatingOrg = ref(false)
+const submitting = ref(false)
 const form = ref(null)
 const orgForm = ref(null)
 
@@ -439,29 +440,79 @@ const isFormValid = computed(() => {
   }
 })
 
+const getValidationMessage = () => {
+  if (loginType.value === 'login') {
+    if (!email.value) return '请输入邮箱'
+    if (!/.+@.+\..+/.test(email.value)) return '请输入有效的邮箱地址'
+    if (!password.value) return '请输入密码'
+    if (password.value.length < 6) return '密码至少6个字符'
+  } else {
+    if (!registerFormData.value.username) return '请输入用户名'
+    if (!registerFormData.value.email) return '请输入邮箱'
+    if (!/.+@.+\..+/.test(registerFormData.value.email)) return '请输入有效的邮箱地址'
+    if (!registerFormData.value.password) return '请输入密码'
+    if (registerFormData.value.password.length < 6) return '密码长度不能少于6位'
+    if (!registerFormData.value.confirmPassword) return '请确认密码'
+    if (registerFormData.value.confirmPassword !== registerFormData.value.password) return '两次输入的密码不一致'
+    if (!registerFormData.value.inviteCode) return '请输入邀请码'
+    if (registerFormData.value.inviteCode.length < 6) return '邀请码格式不正确'
+  }
+
+  if (!captchaInput.value) return '请输入验证码'
+  if (!agreement.value) return '请先勾选隐私政策和使用协议'
+  return ''
+}
+
 const handleSubmit = async () => {
-  if (!validateCaptcha()) {
+  const validationMessage = getValidationMessage()
+  if (validationMessage) {
+    snackbar.showMessage(validationMessage, 'error')
     return
   }
-  // 继续登录/注册流程...
-  if (loginType.value === 'login') {
-    const response = await user.login({
-      email: email.value,
-      password: password.value,
-      role: selectedRole.value
-    }).then(async res => {
+
+  if (!validateCaptcha()) {
+    snackbar.showMessage(captchaError.value || '验证码错误', 'error')
+    return
+  }
+
+  if (submitting.value) return
+  submitting.value = true
+
+  try {
+    if (loginType.value === 'login') {
+      const res = await user.login({
+        email: email.value,
+        password: password.value,
+        role: selectedRole.value
+      })
+
       localStorage.setItem("2-token", res.data.access)
       localStorage.setItem("2-refresh", res.data.refresh)
       localStorage.setItem("2-isLoggedIn", "true")
 
       // 获取用户信息并存储到 user store
-      await userStore.fetchUserInfo();
+      const loaded = await userStore.fetchUserInfo();
+      if (!loaded) {
+        throw new Error('USER_INFO_FAILED')
+      }
 
       snackbar.showMessage('登录成功', 'success')
       router.push('/')
-    }).catch(error => {
+    } else {
+      await user.register({
+        username: registerFormData.value.username,
+        email: registerFormData.value.email,
+        password: registerFormData.value.password,
+        role: selectedRole.value,
+        invitation_code: registerFormData.value.inviteCode
+      })
+      snackbar.showMessage('注册成功', 'success')
+      loginType.value = 'login'
+    }
+  } catch (error: any) {
+    if (loginType.value === 'login') {
       console.log(error)
-      let errorMessage = '网络错误，请稍后重试'
+      let errorMessage = error.message === 'USER_INFO_FAILED' ? '登录成功，但用户信息加载失败，请稍后重试' : '网络错误，请稍后重试'
       if (error.response) {
         switch (error.response.status) {
           case 401:
@@ -473,19 +524,7 @@ const handleSubmit = async () => {
         }
       }
       snackbar.showMessage(errorMessage, 'error')
-    })
-  } else {
-    try {
-      const response = await user.register({
-        username: registerFormData.value.username,
-        email: registerFormData.value.email,
-        password: registerFormData.value.password,
-        role: selectedRole.value,
-        invitation_code: registerFormData.value.inviteCode
-      })
-      snackbar.showMessage('注册成功', 'success')
-      loginType.value = 'login'
-    } catch (error: any) {
+    } else {
       let errorMessage = '注册失败，请稍后重试'
       if (error.response) {
         if (error.response.status === 400) {
@@ -501,6 +540,8 @@ const handleSubmit = async () => {
       }
       snackbar.showMessage(errorMessage, 'error')
     }
+  } finally {
+    submitting.value = false
   }
 }
 
