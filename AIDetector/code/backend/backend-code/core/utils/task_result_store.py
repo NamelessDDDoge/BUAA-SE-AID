@@ -122,7 +122,7 @@ def store_review_task_results(*, detection_task, paper_file, review_file, result
                 paper_paragraph_index=_coerce_optional_int(
                     analysis_map.get(item.get("paragraph_index", index), {}).get("paper_paragraph_index")
                 ),
-                paper_text="",
+                paper_text=analysis_map.get(item.get("paragraph_index", index), {}).get("paper_text", ""),
                 relevance_score=_coerce_optional_float(
                     analysis_map.get(item.get("paragraph_index", index), {}).get("relevance_score")
                 ),

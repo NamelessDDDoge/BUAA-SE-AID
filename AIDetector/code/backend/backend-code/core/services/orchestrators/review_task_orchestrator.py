@@ -8,7 +8,8 @@ from ..event_logger import log_user_event
 from ...models import DetectionTask, User
 from ...utils.report_generator import generate_task_report
 from ...utils.task_result_store import store_review_task_results
-from ..capabilities.review_analysis_service import evaluate_review_analysis
+from ..capabilities.review_analysis_service import build_review_qualification, evaluate_review_analysis
+from ..capabilities.review_relevance_service import analyze_review_relevance
 from ..resources.document_preprocessor import preprocess_document
 from ..resources.document_preprocessor import (
     extract_document_paragraphs,
@@ -123,6 +124,20 @@ def run_review_detection_task(task_id, api_key=None):
         api_key=api_key,
         llm_model_name=detection_task.llm_model_name,
     )
+    local_relevance_results = analyze_review_relevance(
+        review_segments=review_document.get("paragraphs") or [],
+        paper_segments=paper_document.get("paragraphs") or [],
+    )
+    analysis_results["paragraph_results"] = _merge_review_analysis_with_relevance(
+        analysis_results.get("paragraph_results", []),
+        local_relevance_results,
+    )
+    if analysis_results.get("overall", {}).get("qualification_label") != "unavailable":
+        overall = analysis_results.get("overall") or {}
+        analysis_results["overall"] = {
+            **overall,
+            **build_review_qualification(overall, analysis_results.get("paragraph_results", [])),
+        }
     paragraph_results = []
     analysis_map = {
         item.get("review_paragraph_index"): item
@@ -133,23 +148,38 @@ def run_review_detection_task(task_id, api_key=None):
         analysis_item = analysis_map.get(index, {})
         template_level = analysis_item.get("template_like_level", "low")
         wrongness_level = analysis_item.get("wrongness_level", "low")
-        relevance_score = float(analysis_item.get("relevance_score") or 0.0)
+        relevance_score = _coerce_optional_float(analysis_item.get("relevance_score"))
+        relevance_level = analysis_item.get("relevance_level", "")
+        if analysis_results.get("overall", {}).get("qualification_label") == "unavailable":
+            probability = 0.0
+            label = "unavailable"
+        else:
+            probability = _build_review_paragraph_risk(
+                template_level=template_level,
+                wrongness_level=wrongness_level,
+                relevance_level=relevance_level,
+                relevance_score=relevance_score,
+            )
+            label = (
+                "suspicious"
+                if template_level == "high"
+                or wrongness_level == "high"
+                or _normalize_relevance_level(relevance_level) == "low"
+                or (relevance_score is not None and relevance_score < 0.45)
+                else "clean"
+            )
         paragraph_results.append(
             {
                 "paragraph_index": index,
                 "text": paragraph,
-                "probability": max(
-                    relevance_score,
-                    0.85 if template_level == "high" or wrongness_level == "high" else 0.55 if template_level == "medium" or wrongness_level == "medium" else 0.15,
-                ),
-                "label": "suspicious"
-                if template_level == "high" or wrongness_level == "high" or relevance_score < 0.45
-                else "clean",
+                "probability": probability,
+                "label": label,
                 "details": {
                     **analysis_item,
                     "template_like_level": template_level,
                     "wrongness_level": wrongness_level,
                     "relevance_score": relevance_score,
+                    "relevance_level": relevance_level,
                 },
             }
         )
@@ -224,3 +254,102 @@ def _get_text_override(detection_task, key="text_override"):
         return ""
     text_override = raw_payload.get(key)
     return text_override if isinstance(text_override, str) else ""
+
+
+def _build_review_paragraph_risk(*, template_level, wrongness_level, relevance_level, relevance_score):
+    template_risk = _risk_from_bad_level(template_level)
+    wrongness_risk = _risk_from_bad_level(wrongness_level)
+    relevance_risk = _risk_from_relevance(relevance_level, relevance_score)
+    return max(template_risk, wrongness_risk, relevance_risk)
+
+
+def _risk_from_bad_level(level):
+    normalized = str(level or "").strip().lower()
+    if normalized == "high":
+        return 0.85
+    if normalized == "medium":
+        return 0.55
+    return 0.15
+
+
+def _risk_from_relevance(level, score):
+    normalized = _normalize_relevance_level(level)
+    level_risk = {
+        "high": 0.15,
+        "medium": 0.55,
+        "low": 0.85,
+    }.get(normalized, 0.35)
+    if score is None:
+        return level_risk
+    return max(level_risk, 1 - max(0.0, min(1.0, score)))
+
+
+def _normalize_relevance_level(level):
+    normalized = str(level or "").strip().lower()
+    if normalized in {"high", "relevant"}:
+        return "high"
+    if normalized == "medium":
+        return "medium"
+    if normalized in {"low", "weak_match"}:
+        return "low"
+    return "unknown"
+
+
+def _coerce_optional_float(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _merge_review_analysis_with_relevance(analysis_results, relevance_results):
+    analysis_results = analysis_results if isinstance(analysis_results, list) else []
+    relevance_results = relevance_results if isinstance(relevance_results, list) else []
+    analysis_map = {
+        item.get("review_paragraph_index"): item
+        for item in analysis_results
+        if isinstance(item, dict) and item.get("review_paragraph_index") is not None
+    }
+    relevance_map = {
+        item.get("review_paragraph_index"): item
+        for item in relevance_results
+        if isinstance(item, dict) and item.get("review_paragraph_index") is not None
+    }
+    merged_results = []
+    for review_index in sorted(set(analysis_map.keys()) | set(relevance_map.keys())):
+        analysis_item = analysis_map.get(review_index) or {}
+        relevance_item = relevance_map.get(review_index) or {}
+        merged_results.append(
+            {
+                **relevance_item,
+                **analysis_item,
+                "review_paragraph_index": review_index,
+                "review_text": analysis_item.get("review_text") or relevance_item.get("review_text"),
+                "paper_paragraph_index": relevance_item.get("paper_paragraph_index"),
+                "paper_text": relevance_item.get("paper_text", ""),
+                "relevance_score": (
+                    analysis_item.get("relevance_score")
+                    if analysis_item.get("relevance_score") is not None
+                    else relevance_item.get("relevance_score")
+                ),
+                "relevance_level": (
+                    analysis_item.get("relevance_level")
+                    or _relevance_level_from_label(relevance_item.get("label"))
+                ),
+                "local_relevance_score": relevance_item.get("relevance_score"),
+                "local_relevance_label": relevance_item.get("label"),
+                "local_relevance_explanation": relevance_item.get("explanation"),
+            }
+        )
+    return merged_results
+
+
+def _relevance_level_from_label(label):
+    normalized = str(label or "").strip().lower()
+    if normalized == "relevant":
+        return "high"
+    if normalized == "weak_match":
+        return "low"
+    return ""

@@ -37,6 +37,10 @@ def build_task_result_summary(task):
         raw_results = task.text_detection_results or {}
         review_results = raw_results.get("review_analysis_results") or {}
         overall = review_results.get("overall") or raw_results.get("overall_evaluation") or {}
+        qualification_text = overall.get("qualification_text")
+        qualification_reason = overall.get("qualification_reason")
+        if qualification_text:
+            return f"Review 检测已完成，综合结论：{qualification_text}。{qualification_reason or ''}".strip()
         template_level = overall.get("template_like_level")
         relevance_level = overall.get("relevance_level")
 

@@ -14,6 +14,8 @@
       </v-card-title>
       <v-card-text>
         <v-alert :type="overallAlertType" variant="tonal" class="mb-4">
+          <div class="mb-1"><strong>综合结论：</strong>{{ qualificationText }}</div>
+          <div v-if="qualificationReason" class="mb-1"><strong>判定原因：</strong>{{ qualificationReason }}</div>
           <div class="mb-1"><strong>模板化倾向：</strong>{{ riskLevelText(overallEvaluation.template_like_level) }}</div>
           <div class="mb-1"><strong>内容错误风险：</strong>{{ riskLevelText(overallEvaluation.wrongness_level) }}</div>
           <div class="mb-1"><strong>与论文相关度：</strong>{{ relevanceLevelText(overallEvaluation.relevance_level) }}</div>
@@ -230,11 +232,39 @@ const buildReviewIndexMap = (items: any[]) => {
 
 const normalizeLevel = (level?: string) => String(level || '').toLowerCase()
 
+const inferQualificationLabel = (overall?: any) => {
+  const explicitLabel = String(overall?.qualification_label || '').toLowerCase()
+  if (['qualified', 'attention', 'unqualified', 'unavailable'].includes(explicitLabel)) {
+    return explicitLabel
+  }
+  const templateLevel = normalizeLevel(overall?.template_like_level)
+  const wrongnessLevel = normalizeLevel(overall?.wrongness_level)
+  const relevanceLevel = normalizeLevel(overall?.relevance_level)
+  if (overall?.source === 'api_unavailable') return 'unavailable'
+  if (templateLevel === 'high' || wrongnessLevel === 'high') return 'unqualified'
+  if (relevanceLevel === 'low' || relevanceLevel === 'weak_match') return 'unqualified'
+  if (templateLevel === 'medium' || wrongnessLevel === 'medium' || relevanceLevel === 'medium') return 'attention'
+  if (templateLevel === 'unknown' || wrongnessLevel === 'unknown' || relevanceLevel === 'unknown') return 'attention'
+  return 'qualified'
+}
+
+const qualificationLabel = computed(() => inferQualificationLabel(overallEvaluation.value))
+
+const qualificationText = computed(() => {
+  if (overallEvaluation.value?.qualification_text) return overallEvaluation.value.qualification_text
+  if (qualificationLabel.value === 'qualified') return '合格'
+  if (qualificationLabel.value === 'attention') return '需关注'
+  if (qualificationLabel.value === 'unqualified') return '不合格'
+  if (qualificationLabel.value === 'unavailable') return '分析不可用'
+  return '未知'
+})
+
+const qualificationReason = computed(() => overallEvaluation.value?.qualification_reason || '')
+
 const overallAlertType = computed(() => {
-  const templateLevel = normalizeLevel(overallEvaluation.value?.template_like_level)
-  const wrongnessLevel = normalizeLevel(overallEvaluation.value?.wrongness_level)
-  if (templateLevel === 'high' || wrongnessLevel === 'high') return 'error'
-  if (templateLevel === 'medium' || wrongnessLevel === 'medium') return 'warning'
+  if (qualificationLabel.value === 'unqualified') return 'error'
+  if (qualificationLabel.value === 'attention') return 'warning'
+  if (qualificationLabel.value === 'unavailable') return 'info'
   return 'success'
 })
 
@@ -271,10 +301,19 @@ const relevanceLevelColor = (level?: string) => {
 }
 
 const paragraphAvatarColor = (item: any) => {
-  if (normalizeLevel(item.template_like_level) === 'high' || normalizeLevel(item.wrongness_level) === 'high') {
+  if (
+    normalizeLevel(item.template_like_level) === 'high'
+    || normalizeLevel(item.wrongness_level) === 'high'
+    || normalizeLevel(item.relevance_level) === 'low'
+    || normalizeLevel(item.relevance_level) === 'weak_match'
+  ) {
     return 'error'
   }
-  if (normalizeLevel(item.template_like_level) === 'medium' || normalizeLevel(item.wrongness_level) === 'medium') {
+  if (
+    normalizeLevel(item.template_like_level) === 'medium'
+    || normalizeLevel(item.wrongness_level) === 'medium'
+    || normalizeLevel(item.relevance_level) === 'medium'
+  ) {
     return 'warning'
   }
   return 'success'
@@ -288,10 +327,19 @@ const relevanceAlertType = (level?: string) => {
 }
 
 const paragraphExplanationAlertType = (item: any) => {
-  if (normalizeLevel(item.template_like_level) === 'high' || normalizeLevel(item.wrongness_level) === 'high') {
+  if (
+    normalizeLevel(item.template_like_level) === 'high'
+    || normalizeLevel(item.wrongness_level) === 'high'
+    || normalizeLevel(item.relevance_level) === 'low'
+    || normalizeLevel(item.relevance_level) === 'weak_match'
+  ) {
     return 'error'
   }
-  if (normalizeLevel(item.template_like_level) === 'medium' || normalizeLevel(item.wrongness_level) === 'medium') {
+  if (
+    normalizeLevel(item.template_like_level) === 'medium'
+    || normalizeLevel(item.wrongness_level) === 'medium'
+    || normalizeLevel(item.relevance_level) === 'medium'
+  ) {
     return 'warning'
   }
   return 'info'

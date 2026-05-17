@@ -313,7 +313,7 @@ def _coerce_optional_int(value):
 
 def _normalize_level(value):
     level = str(value or "").strip().lower()
-    return level if level in {"low", "medium", "high"} else "low"
+    return level if level in {"low", "medium", "high"} else "unknown"
 
 
 def _format_review_paragraphs(review_paragraphs):

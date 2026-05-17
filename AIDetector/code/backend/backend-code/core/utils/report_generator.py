@@ -1006,6 +1006,7 @@ def generate_review_detection_task_report(task: DetectionTask) -> str:
             ("论文分段数", _stringify_report_value(document.get("paper_segment_count"))),
             ("评审分段数", _stringify_report_value(document.get("review_segment_count"))),
             ("评审段落数", _stringify_report_value(document.get("review_paragraph_count"))),
+            ("综合结论", _stringify_report_value(overall_evaluation.get("qualification_text"))),
             ("模板化倾向", _stringify_report_value(overall_evaluation.get("template_like_level"))),
             ("内容错误风险", overall_evaluation.get("wrongness_level")),
             ("与论文相关度", overall_evaluation.get("relevance_level")),
@@ -1017,6 +1018,8 @@ def generate_review_detection_task_report(task: DetectionTask) -> str:
         c,
         y,
         [
+            ("综合结论", overall_evaluation.get("qualification_text")),
+            ("判定原因", overall_evaluation.get("qualification_reason")),
             ("模板化倾向", overall_evaluation.get("template_like_level")),
             ("内容错误风险", overall_evaluation.get("wrongness_level")),
             ("与论文相关度", overall_evaluation.get("relevance_level")),

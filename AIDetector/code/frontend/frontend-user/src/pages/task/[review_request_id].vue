@@ -383,25 +383,34 @@ const paperAigcRate = computed(() => {
 })
 
 const reviewVerdict = computed(() => {
+  const explicitLabel = String(reviewOverallEvaluation.value?.qualification_label || '').toLowerCase()
+  if (['qualified', 'attention', 'unqualified', 'unavailable'].includes(explicitLabel)) {
+    if (explicitLabel === 'qualified') return 'pass'
+    if (explicitLabel === 'unqualified') return 'suspicious'
+    if (explicitLabel === 'unavailable') return 'unavailable'
+    return 'attention'
+  }
+  if (reviewOverallEvaluation.value?.source === 'api_unavailable') return 'unavailable'
   const templateLevel = normalizeLevel(reviewOverallEvaluation.value?.template_like_level)
   const wrongnessLevel = normalizeLevel(reviewOverallEvaluation.value?.wrongness_level)
   const relevanceLevel = normalizeLevel(reviewOverallEvaluation.value?.relevance_level)
   if (templateLevel === 'high' || wrongnessLevel === 'high') return 'suspicious'
-  if (templateLevel === 'medium' || wrongnessLevel === 'medium') return 'attention'
-  if (relevanceLevel === 'low' || relevanceLevel === 'weak_match') return 'attention'
+  if (relevanceLevel === 'low' || relevanceLevel === 'weak_match') return 'suspicious'
+  if (templateLevel === 'medium' || wrongnessLevel === 'medium' || relevanceLevel === 'medium') return 'attention'
+  if (templateLevel === 'unknown' || wrongnessLevel === 'unknown' || relevanceLevel === 'unknown') return 'attention'
   return 'pass'
 })
 
 const primaryMetricValue = computed(() => {
   if (requestType.value === 'image') return formatNumber(aiDetection.value)
   if (resourceTaskType.value === 'paper') return formatNumber(paperAigcRate.value)
-  return reviewVerdict.value === 'pass' ? '否' : '是'
+  return resourceVerdictText.value
 })
 
 const primaryMetricLabel = computed(() => {
   if (requestType.value === 'image') return 'AI 判定为假'
   if (resourceTaskType.value === 'paper') return '整体 AIGC 率'
-  return 'Review 是否可疑'
+  return 'Review 综合结论'
 })
 
 const taskFocusLabel = computed(() => {
@@ -424,6 +433,8 @@ const resourceVerdictText = computed(() => {
   }
   if (reviewVerdict.value === 'suspicious') return '可疑'
   if (reviewVerdict.value === 'attention') return '需关注'
+  if (reviewVerdict.value === 'unavailable') return '分析不可用'
+  if (reviewOverallEvaluation.value?.qualification_text) return reviewOverallEvaluation.value.qualification_text
   return '通过'
 })
 
@@ -431,6 +442,7 @@ const resourceVerdictColor = computed(() => {
   if (resourceTaskType.value === 'paper') return riskLevelColor(paperOverallEvaluation.value?.risk_level)
   if (reviewVerdict.value === 'suspicious') return 'error'
   if (reviewVerdict.value === 'attention') return 'warning'
+  if (reviewVerdict.value === 'unavailable') return 'info'
   return 'success'
 })
 

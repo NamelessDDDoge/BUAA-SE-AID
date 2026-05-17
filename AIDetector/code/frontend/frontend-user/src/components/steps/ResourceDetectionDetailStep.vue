@@ -138,7 +138,11 @@
 
             <v-divider class="my-4" />
 
-            <v-alert type="info" variant="tonal">
+            <v-alert :type="reviewSummaryAlertType" variant="tonal">
+              <div class="mb-1"><strong>综合结论：</strong>{{ reviewQualificationText }}</div>
+              <div v-if="reviewOverallEvaluation?.qualification_reason" class="mb-1">
+                <strong>判定原因：</strong>{{ reviewOverallEvaluation.qualification_reason }}
+              </div>
               <div class="mb-1"><strong>总结：</strong>{{ reviewOverallEvaluation?.summary || '暂无总结' }}</div>
               <div v-if="(reviewOverallEvaluation?.key_findings || []).length" class="mt-2">
                 <strong>关键发现：</strong>{{ (reviewOverallEvaluation?.key_findings || []).join('；') }}
@@ -238,12 +242,12 @@
         <v-card class="mt-6" elevation="2" rounded="lg">
           <v-card-title class="text-h6">审核配置</v-card-title>
           <v-card-text>
-            <v-alert v-if="reviewMode" :type="fakeFiles.length > 0 ? 'warning' : 'success'" variant="tonal" class="mb-4">
-              <template v-if="fakeFiles.length > 0">
-                当前 Review 检测结果为疑似造假。选择审核员后将提交本任务全部内容进行人工审核。
+            <v-alert v-if="reviewMode" :type="reviewSummaryAlertType" variant="tonal" class="mb-4">
+              <template v-if="reviewNeedsAttention">
+                当前 Review 检测结论为{{ reviewQualificationText }}。选择审核员后将提交本任务全部内容进行人工审核。
               </template>
               <template v-else>
-                当前 Review 检测结果为正常。选择审核员后仍可提交本任务全部内容进行人工审核。
+                当前 Review 检测结论为{{ reviewQualificationText }}。选择审核员后仍可提交本任务全部内容进行人工审核。
               </template>
             </v-alert>
             <v-autocomplete
@@ -327,6 +331,10 @@ interface TaskDetail {
       template_like_level?: string
       wrongness_level?: string
       relevance_level?: string
+      qualification_label?: string
+      qualification_text?: string
+      qualification_reason?: string
+      source?: string
       key_findings?: string[]
     }
     review_analysis_results?: {
@@ -334,6 +342,10 @@ interface TaskDetail {
         template_like_level?: string
         wrongness_level?: string
         relevance_level?: string
+        qualification_label?: string
+        qualification_text?: string
+        qualification_reason?: string
+        source?: string
         summary?: string
         key_findings?: string[]
       }
@@ -400,17 +412,54 @@ const paperOverallSummary = computed(() => String(
   paperOverallEvaluation.value?.summary || '暂无整篇评价，建议查看段落级结果。',
 ))
 const reviewOverallEvaluation = computed(() => props.task?.results?.review_analysis_results?.overall || props.task?.results?.overall_evaluation || null)
-const reviewIsFake = computed(() => reviewMode.value && fakeFiles.value.length > 0)
+const reviewQualificationLabel = computed(() => inferReviewQualificationLabel(reviewOverallEvaluation.value))
+const reviewNeedsAttention = computed(() => reviewMode.value && ['unqualified', 'attention'].includes(reviewQualificationLabel.value))
+const reviewIsFake = computed(() => reviewMode.value && reviewQualificationLabel.value === 'unqualified')
 
 const reviewOverallLevelText = (level?: string) => {
-  const normalized = String(level || 'low').toLowerCase()
+  const normalized = normalizeReviewLevel(level)
   if (normalized === 'high') return '高'
   if (normalized === 'medium') return '中'
-  return '低'
+  if (normalized === 'low') return '低'
+  return '未知'
 }
 
-const showFakeCard = computed(() => !reviewMode.value || reviewIsFake.value)
-const showNormalCard = computed(() => !reviewMode.value || !reviewIsFake.value)
+const reviewQualificationText = computed(() => {
+  if (reviewOverallEvaluation.value?.qualification_text) return reviewOverallEvaluation.value.qualification_text
+  if (reviewQualificationLabel.value === 'qualified') return '合格'
+  if (reviewQualificationLabel.value === 'attention') return '需关注'
+  if (reviewQualificationLabel.value === 'unqualified') return '不合格'
+  if (reviewQualificationLabel.value === 'unavailable') return '分析不可用'
+  return '未知'
+})
+
+const reviewSummaryAlertType = computed(() => {
+  if (reviewQualificationLabel.value === 'unqualified') return 'error'
+  if (reviewQualificationLabel.value === 'attention') return 'warning'
+  if (reviewQualificationLabel.value === 'unavailable') return 'info'
+  return 'success'
+})
+
+const inferReviewQualificationLabel = (overall?: any) => {
+  const explicitLabel = String(overall?.qualification_label || '').toLowerCase()
+  if (['qualified', 'attention', 'unqualified', 'unavailable'].includes(explicitLabel)) {
+    return explicitLabel
+  }
+  if (overall?.source === 'api_unavailable') return 'unavailable'
+  const templateLevel = normalizeReviewLevel(overall?.template_like_level)
+  const wrongnessLevel = normalizeReviewLevel(overall?.wrongness_level)
+  const relevanceLevel = normalizeReviewLevel(overall?.relevance_level)
+  if (templateLevel === 'high' || wrongnessLevel === 'high') return 'unqualified'
+  if (relevanceLevel === 'low' || relevanceLevel === 'weak_match') return 'unqualified'
+  if (templateLevel === 'medium' || wrongnessLevel === 'medium' || relevanceLevel === 'medium') return 'attention'
+  if (templateLevel === 'unknown' || wrongnessLevel === 'unknown' || relevanceLevel === 'unknown') return 'attention'
+  return 'qualified'
+}
+
+const normalizeReviewLevel = (level?: string) => String(level || '').toLowerCase()
+
+const showFakeCard = computed(() => !reviewMode.value || reviewNeedsAttention.value)
+const showNormalCard = computed(() => !reviewMode.value || !reviewNeedsAttention.value)
 
 const detailTitle = computed(() => props.task.task_type === 'paper' ? '论文检测详情' : '同行评审 Review 检测详情')
 
@@ -466,6 +515,7 @@ const totalCount = computed(() => {
 })
 const fakeCount = computed(() => {
   if (isPaper.value) return paperSuspiciousParagraphs.value.length
+  if (reviewMode.value) return reviewNeedsAttention.value ? 1 : 0
   return fakeFiles.value.length
 })
 const riskRatio = computed(() => {
@@ -478,19 +528,22 @@ const riskRatio = computed(() => {
 const circleValue = computed(() => reviewMode.value ? 100 : riskRatio.value)
 const circleColor = computed(() => {
   if (reviewMode.value) {
-    return reviewIsFake.value ? 'error' : 'success'
+    if (reviewQualificationLabel.value === 'unqualified') return 'error'
+    if (reviewQualificationLabel.value === 'attention') return 'warning'
+    if (reviewQualificationLabel.value === 'unavailable') return 'info'
+    return 'success'
   }
   return 'primary'
 })
 const circleMainText = computed(() => {
   if (reviewMode.value) {
-    return reviewIsFake.value ? '造假Review' : '正常Review'
+    return reviewQualificationText.value
   }
   return `${fakeCount.value}/${totalCount.value}`
 })
 const circleSubText = computed(() => {
   if (reviewMode.value) {
-    return ''
+    return 'Review 综合结论'
   }
   return fakeCountLabel.value
 })
