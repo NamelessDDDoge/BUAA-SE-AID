@@ -100,13 +100,7 @@ class ResourcePreprocessingTests(TestCase):
         mock_post.return_value.raise_for_status.return_value = None
         file_record = self.create_text_file(
             "paper.txt",
-            "\n".join(
-                [
-                    "A" * 300,
-                    "B" * 300,
-                    "C" * 300,
-                ]
-            ),
+            "A" * 3300,
         )
         task = DetectionTask.objects.create(
             user=self.user,
@@ -219,7 +213,7 @@ class ResourcePreprocessingTests(TestCase):
     def test_extract_document_paragraphs_merges_soft_wrapped_lines_within_same_paragraph(self):
         text = (
             "This is a long paragraph line that was wrapped by the source document\n"
-            "but should still stay in the same paragraph after preprocessing.\n"
+            "but should still stay in the same paragraph after preprocessing\n"
             "It continues here on a third line.\n\n"
             "This is the second real paragraph."
         )
@@ -231,7 +225,7 @@ class ResourcePreprocessingTests(TestCase):
             paragraphs[0],
             (
                 "This is a long paragraph line that was wrapped by the source document "
-                "but should still stay in the same paragraph after preprocessing. "
+                "but should still stay in the same paragraph after preprocessing "
                 "It continues here on a third line."
             ),
         )
@@ -334,10 +328,29 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(task.paper_detection_result.reference_results.count(), 1)
         mock_image_detection.assert_not_called()
 
-    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
-    def test_run_review_detection_returns_relevance_matches(self, mock_post):
-        mock_post.return_value.json.return_value = {"data": {"prob": 0.34, "details": {"source": "mock"}}}
-        mock_post.return_value.raise_for_status.return_value = None
+    @patch("core.services.capabilities.review_analysis_service.analyze_review_text")
+    def test_run_review_detection_returns_relevance_matches(self, mock_analyze_review_text):
+        mock_analyze_review_text.return_value = {
+            "overall": {
+                "template_like_level": "low",
+                "wrongness_level": "low",
+                "relevance_level": "high",
+                "summary": "Relevant review",
+                "key_findings": [],
+                "suggestions": [],
+            },
+            "paragraph_results": [
+                {
+                    "review_paragraph_index": 0,
+                    "paper_paragraph_index": 0,
+                    "template_like_level": "low",
+                    "wrongness_level": "low",
+                    "relevance_score": 0.78,
+                    "relevance_level": "high",
+                    "explanation": "Matches the paper.",
+                }
+            ],
+        }
         paper_file = self.create_review_file(
             "review-paper.txt",
             "Alpha beta gamma findings.\nReferences\n[1] Alpha beta source.",

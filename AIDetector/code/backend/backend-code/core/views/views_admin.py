@@ -32,6 +32,8 @@ from ..utils.report_generator import ensure_task_report_file
 
 
 def _is_software_admin(user):
+    if not getattr(user, "is_authenticated", False):
+        return False
     return user.email == 'admin@mail.com' or (user.is_staff and user.organization is None)
 
 
@@ -92,7 +94,8 @@ class AdminDashboardView(APIView):
     管理员仪表盘视图
     """
 
-    @permission_classes([IsAdminUser])
+    permission_classes = [IsAdminUser]
+
     def get(self, request):
         # 获取所有用户信息
         if _is_software_admin(request.user):
@@ -597,7 +600,8 @@ class UserPermissionView(APIView):
     用户权限管理视图
     """
 
-    @permission_classes([IsAdminUser])
+    permission_classes = [IsAdminUser]
+
     def post(self, request, user_id):
         try:
             user = User.objects.get(id=user_id)
@@ -683,7 +687,8 @@ class UserActionLogGetView(APIView):
     用户操作日志视图
     """
 
-    @permission_classes([IsAdminUser])
+    permission_classes = [IsAdminUser]
+
     def get(self, request):
         user_id = request.user.id
         user = User.objects.get(id=user_id)
@@ -751,7 +756,8 @@ class UserActionLogGetView(APIView):
 
 
 class UserActionLogDeleteView(APIView):
-    @permission_classes([IsAdminUser])
+    permission_classes = [IsAdminUser]
+
     def delete(self, request, log_id):
         try:
             # 删除指定的日志记录
@@ -763,7 +769,8 @@ class UserActionLogDeleteView(APIView):
 
 
 class UserActionLogDownloadView(APIView):
-    @permission_classes([IsAdminUser])
+    permission_classes = [IsAdminUser]
+
     def get(self, request):
         """
         下载日志文件
