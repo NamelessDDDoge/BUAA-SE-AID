@@ -1,0 +1,13 @@
+[tool.pytest.ini_options]
+minversion = "7.0"
+markers = [
+    "unit: 纯函数 / 小范围逻辑单测，禁止访问数据库/网络/文件系统（tmp_path 除外）",
+    "integration: 走真实 Django ORM / APIClient / 文件系统的集成测试",
+    "e2e: 跨子系统端到端，需多服务联跑",
+    "slow: 单次 > 2s 的慢测试",
+    "gpu: 真跑 AI 模型/CUDA 的测试",
+    "external: 依赖外部服务（LLM API、SMTP 等）",
+    "report: 报告生成相关测试（耗时 + 写文件）",
+    "contract: 前后端/后端-推理服务的 schema 契约测试",
+]
+addopts = "-ra --strict-markers"
