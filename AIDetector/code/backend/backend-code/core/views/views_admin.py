@@ -865,18 +865,6 @@ def get_task_summary(request):
     completed_task_count = completed_tasks.count()
     recent_task_count = recent_tasks.count()
 
-    # 获取最近任务的详细信息
-    task_details = []
-    for task in recent_tasks:
-        task_details.append({
-            "task_id": task.id,
-            "task_name": task.task_name,
-            "status": task.status,
-            "upload_time": timezone.localtime(task.upload_time),
-            "completion_time": timezone.localtime(task.completion_time),
-            "organization": task.organization.name if task.organization else None,
-        })
-
     task_type_counts = {
         "image": tasks.filter(task_type='image').count(),
         "paper": tasks.filter(task_type='paper').count(),
@@ -895,7 +883,7 @@ def get_task_summary(request):
         "recent_task_count": recent_task_count,
         "task_type_counts": task_type_counts,
         "status_counts": status_counts,
-        "recent_tasks": task_details,
+        "recent_tasks": [],
     })
 
 
@@ -947,7 +935,7 @@ def get_all_user_tasks(request):
     user_id = request.user.id
     user = User.objects.get(id=user_id)
     page = int(request.query_params.get('page', 1))
-    page_size = int(request.query_params.get('page_size', 10))
+    page_size = min(int(request.query_params.get('page_size', 10)), 100)
     status_filter = request.query_params.get('status', '').strip()
     task_type = request.query_params.get('task_type', '').strip()
     keyword = request.query_params.get('keyword', '').strip()

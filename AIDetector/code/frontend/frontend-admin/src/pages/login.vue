@@ -3,60 +3,35 @@
       <!-- 左侧功能介绍区域 -->
       <div class="feature-section">
         <div class="feature-content">
-          <h1 class="text-h4 font-weight-bold mb-12">学术图像造假检测平台</h1>
-          <div class="feature-grid">
+          <div class="feature-kicker">AID Admin</div>
+          <h1 class="feature-title">检测管理端</h1>
+          <p class="feature-copy">用于组织、用户、资源、模型与人工审核流程管理。</p>
+          <div class="feature-list">
             <div class="feature-item">
               <div class="feature-icon">
-                <v-icon size="32" color="primary">mdi-magnify</v-icon>
+                <v-icon size="26" color="primary">mdi-view-dashboard-outline</v-icon>
               </div>
               <div class="feature-text">
-                <div class="text-subtitle-1 font-weight-medium">AI精准检测</div>
-                <div class="text-body-2 text-grey">基于深度学习与图像分析技术，精准识别重复、篡改、拼接等学术图像异常。</div>
+                <div class="text-subtitle-1 font-weight-bold">平台总览</div>
+                <div class="text-body-2 text-grey">集中查看任务、组织和资源状态。</div>
               </div>
             </div>
             <div class="feature-item">
               <div class="feature-icon">
-                <v-icon size="32" color="primary">mdi-compare</v-icon>
+                <v-icon size="26" color="primary">mdi-account-cog-outline</v-icon>
               </div>
               <div class="feature-text">
-                <div class="text-subtitle-1 font-weight-medium">秒级快速筛查</div>
-                <div class="text-body-2 text-grey">AI预检测可在数秒内完成初筛，大幅降低人工审核成本，提升出版社工作效率</div>
+                <div class="text-subtitle-1 font-weight-bold">权限管理</div>
+                <div class="text-body-2 text-grey">管理用户、组织与系统角色。</div>
               </div>
             </div>
             <div class="feature-item">
               <div class="feature-icon">
-                <v-icon size="32" color="primary">mdi-account-group</v-icon>
+                <v-icon size="26" color="primary">mdi-robot-outline</v-icon>
               </div>
               <div class="feature-text">
-                <div class="text-subtitle-1 font-weight-medium">双重验证机制</div>
-                <div class="text-body-2 text-grey">AI初检+人工复核双保险，确保结果客观可信，降低误判风险。</div>
-              </div>
-            </div>
-            <div class="feature-item">
-              <div class="feature-icon">
-                <v-icon size="32" color="primary">mdi-pencil</v-icon>
-              </div>
-              <div class="feature-text">
-                <div class="text-subtitle-1 font-weight-medium">多角色协同平台</div>
-                <div class="text-body-2 text-grey">支持出版社、审稿人多端登录，任务进度实时追踪，反馈结果集中归档。</div>
-              </div>
-            </div>
-            <div class="feature-item">
-              <div class="feature-icon">
-                <v-icon size="32" color="primary">mdi-school</v-icon>
-              </div>
-              <div class="feature-text">
-                <div class="text-subtitle-1 font-weight-medium">可追溯审计</div>
-                <div class="text-body-2 text-grey">所有操作留痕，满足出版机构对流程透明性与合规性的严格要求</div>
-              </div>
-            </div>
-            <div class="feature-item">
-              <div class="feature-icon">
-                <v-icon size="32" color="primary">mdi-chart-bar</v-icon>
-              </div>
-              <div class="feature-text">
-                <div class="text-subtitle-1 font-weight-medium">多维统计分析</div>
-                <div class="text-body-2 text-grey">自动生成结构化检测报告，附带篡改区域标记与证据链，助力学术争议裁定。</div>
+                <div class="text-subtitle-1 font-weight-bold">模型配置</div>
+                <div class="text-body-2 text-grey">维护检测模型与服务配置。</div>
               </div>
             </div>
           </div>
@@ -230,42 +205,85 @@
   
   <style scoped>
   .login-page {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 500px;
     min-height: 100vh;
-    background-color: var(--v-theme-background);
-    padding-top: 40px;
+    padding: 0;
+    background:
+      radial-gradient(circle at 10% 12%, rgba(47, 111, 237, 0.16), transparent 28rem),
+      radial-gradient(circle at 88% 10%, rgba(13, 148, 136, 0.14), transparent 26rem),
+      linear-gradient(135deg, #f4f8ff 0%, #f8fbff 48%, #eef5ff 100%);
+    gap: 0;
+    align-items: stretch;
+    justify-content: stretch;
   }
   
   .feature-section {
-    flex: 1;
-    padding: 24px 48px;
+    min-height: 100vh;
+    padding: clamp(56px, 7vw, 108px);
     display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    background-color: var(--v-theme-surface);
+    align-items: center;
+    justify-content: flex-start;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(236, 244, 255, 0.76)),
+      radial-gradient(circle at 18% 20%, rgba(47, 111, 237, 0.18), transparent 24rem);
+    border-right: 1px solid rgba(23, 32, 51, 0.08);
   }
   
   .feature-content {
-    max-width: 800px;
-    margin-top: -20px;
+    max-width: 720px;
+    margin-top: 0;
   }
   
-  .feature-grid {
+  .feature-kicker {
+    color: rgb(var(--v-theme-primary));
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .feature-title {
+    font-size: clamp(2.35rem, 4.2vw, 4.2rem);
+    line-height: 1.08;
+    font-weight: 900;
+    letter-spacing: -0.06em;
+    margin-bottom: 18px;
+  }
+
+  .feature-copy {
+    max-width: 560px;
+    color: #667085;
+    font-size: 1.12rem;
+    line-height: 1.75;
+    margin-bottom: 38px;
+  }
+
+  .feature-list {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 32px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    max-width: 780px;
   }
   
   .feature-item {
     display: flex;
-    align-items: flex-start;
-    gap: 16px;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 156px;
+    padding: 20px;
+    border: 1px solid rgba(23, 32, 51, 0.08);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: 0 14px 36px rgba(23, 32, 51, 0.06);
   }
   
   .feature-icon {
     padding: 12px;
-    background: rgba(255, 255, 255, 0.1);
+    background: #eef4ff;
     border-radius: 12px;
+    border: 1px solid rgba(47, 111, 237, 0.12);
   }
   
   .feature-text {
@@ -273,19 +291,21 @@
   }
   
   .login-section {
-    width: 480px;
-    background-color: var(--v-theme-surface);
+    width: 500px;
+    min-height: 100vh;
+    background: #ffffff;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
-    padding: 32px 48px;
-    margin-top: -20px;
+    padding: 56px;
+    border-left: 1px solid rgba(23, 32, 51, 0.08);
+    box-shadow: -24px 0 60px rgba(23, 32, 51, 0.08);
   }
   
   .login-container {
     width: 100%;
-    max-width: 360px;
-    background-color: var(--v-theme-surface);
+    max-width: 420px;
+    background: #ffffff;
   }
   
   .v-btn {
@@ -327,12 +347,17 @@
   
   @media (max-width: 1024px) {
     .login-page {
+      display: flex;
       flex-direction: column;
-      padding-top: 20px;
+      padding: 18px;
+      align-items: stretch;
     }
   
     .feature-section {
+      min-height: auto;
       padding: 24px;
+      border-right: 0;
+      border-radius: 22px;
     }
   
     .feature-content {
@@ -341,11 +366,16 @@
   
     .login-section {
       width: 100%;
+      min-height: auto;
+      min-width: 0;
+      max-width: none;
       margin-top: 0;
       padding: 24px;
+      border-left: 0;
+      border-radius: 22px;
     }
   
-    .feature-grid {
+    .feature-list {
       grid-template-columns: 1fr;
     }
   }

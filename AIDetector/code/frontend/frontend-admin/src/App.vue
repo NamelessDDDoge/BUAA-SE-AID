@@ -2,48 +2,57 @@
   <v-app :theme="theme">
     <Snackbar />
     <!-- 只在非移动端显示侧边导航栏 -->
-    <v-navigation-drawer v-if="!isMobile" v-model="drawer" :rail="rail" :permanent="true" :temporary="false"
-      location="left" class="navigation-drawer" @mouseenter="rail = false" @mouseleave="rail = true"
-      :width="rail ? 56 : 200">
+    <aside v-if="!isMobile" class="navigation-drawer">
+      <div class="brand-block">
+        <div class="brand-mark">
+          <v-icon size="26">mdi-shield-crown-outline</v-icon>
+        </div>
+        <div class="brand-copy">
+          <div class="brand-title">AID Admin</div>
+          <div class="brand-subtitle">检测管理台</div>
+        </div>
+      </div>
+
       <v-list>
         <v-list-item :prepend-avatar="isLoggedIn ? userStore.avatar : undefined" :subtitle="getSubTitle(userStore.admin_type)"
-          :title="userStore.displayName">
+          :title="userStore.displayName || '管理员'">
         </v-list-item>
       </v-list>
 
       <v-divider></v-divider>
 
       <v-list density="compact" nav>
-        <v-list-item prepend-icon="mdi-home" title="主页" value="home" @click="goToHome"></v-list-item>
-        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-chart-bar" title="统计分析" value="analytics"
+        <v-list-item prepend-icon="mdi-home" title="主页" value="home" color="primary" :active="activeSection === 'home'" @click="goToHome"></v-list-item>
+        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-chart-bar" title="统计分析" value="analytics" color="primary" :active="activeSection === 'analytics'"
           @click="goToAnalytics"></v-list-item>
         <v-list-item v-if="isLoggedIn && userStore.admin_type === 'software_admin'" 
-          prepend-icon="mdi-office-building" title="组织管理" value="organizations"
+          prepend-icon="mdi-office-building" title="组织管理" value="organizations" color="primary" :active="activeSection === 'organizations'"
           @click="goToOrganizations"></v-list-item>
         <v-list-item v-if="isLoggedIn && userStore.admin_type === 'organization_admin'" 
-          prepend-icon="mdi-account-circle" title="组织信息" value="organization_profile"
+          prepend-icon="mdi-account-circle" title="组织信息" value="organization_profile" color="primary" :active="activeSection === 'organization_profile'"
           @click="goToOrganizationProfile"></v-list-item>
-        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-folder" title="资源管理" value="files"
+        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-folder" title="资源管理" value="files" color="primary" :active="activeSection === 'files'"
           @click="goToFiles"></v-list-item>
-        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-account-group" title="用户管理" value="users"
+        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-account-group" title="用户管理" value="users" color="primary" :active="activeSection === 'users'"
           @click="goToUsers"></v-list-item>
-                <v-list-item v-if="isLoggedIn && userStore.admin_type === 'software_admin'" prepend-icon="mdi-robot-outline" title="模型配置" value="llms"
+                <v-list-item v-if="isLoggedIn && userStore.admin_type === 'software_admin'" prepend-icon="mdi-robot-outline" title="模型配置" value="llms" color="primary" :active="activeSection === 'llms'"
           @click="goToLLMs"></v-list-item>
-        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-clipboard-text-clock" title="日志记录" value="logs"
+        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-clipboard-text-clock" title="日志记录" value="logs" color="primary" :active="activeSection === 'logs'"
           @click="goToLogs"></v-list-item>
         <v-list-item v-if="isLoggedIn" 
-          prepend-icon="mdi-gavel" title="人工审核" value="reviewRequests"
+          prepend-icon="mdi-gavel" title="人工审核" value="reviewRequests" color="primary" :active="activeSection === 'reviews'"
           @click="goToReviews"></v-list-item>
         <v-divider class="my-2"></v-divider>
         <v-list-item v-if="isLoggedIn" prepend-icon="mdi-logout" title="退出登录" value="logout"
           @click="handleLogout"></v-list-item>
         <v-list-item v-else prepend-icon="mdi-login" title="登录" value="login" @click="goToLogin"></v-list-item>
       </v-list>
-    </v-navigation-drawer>
+    </aside>
 
-    <v-app-bar class="app-bar">
-      <v-app-bar-nav-icon @click="drawer = !drawer" v-if="!isMobile"></v-app-bar-nav-icon>
-      <v-toolbar-title>学术图像检测系统</v-toolbar-title>
+    <v-app-bar class="app-bar" elevation="0">
+      <v-toolbar-title class="toolbar-title">
+        <span>学术诚信检测管理端</span>
+      </v-toolbar-title>
       <v-spacer></v-spacer>
       <v-btn :icon="theme === 'light' ? 'mdi-weather-sunny' : 'mdi-weather-night'" @click="toggleTheme"></v-btn>
       <!-- <v-btn v-if="isAdmin" :color="hasUnreadNotifications ? 'red' : ''"
@@ -52,10 +61,10 @@
       <v-btn icon="mdi-broadcast" v-if="isLoggedIn && userStore.admin_type === 'software_admin'" @click="showBroadcastDialog = true"></v-btn>
     </v-app-bar>
 
-    <v-main>
-      <v-container fluid>
+    <v-main class="main-stage">
+      <div class="route-frame">
         <router-view />
-      </v-container>
+      </div>
     </v-main>
 
     <!-- 移动端底部导航栏 -->
@@ -167,7 +176,7 @@
 
 <script lang="ts" setup>
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { marked } from 'marked'
 import { useThemeStore } from '@/stores/theme'
@@ -176,12 +185,28 @@ const { mobile } = useDisplay()
 const isMobile = computed(() => mobile.value)
 
 const drawer = ref(true)
-const rail = ref(true)
 const themeStore = useThemeStore()
 const theme = computed(() => themeStore.theme)
 const showNotifications = ref(false)
 const hasUnreadNotifications = ref(false)
 const router = useRouter()
+const route = useRoute()
+
+const normalizePath = (path: string) => path.replace(/\/+$/, '') || '/'
+
+const activeSection = computed(() => {
+  const path = normalizePath(route.path)
+  if (path === '/') return 'home'
+  if (path === '/analytics') return 'analytics'
+  if (path === '/organizations') return 'organizations'
+  if (path === '/organization_profile') return 'organization_profile'
+  if (path === '/files') return 'files'
+  if (path === '/users') return 'users'
+  if (path === '/llms') return 'llms'
+  if (path === '/logs') return 'logs'
+  if (path === '/reviews') return 'reviews'
+  return ''
+})
 
 import { isLoggedIn } from './api/user'
 
@@ -339,44 +364,127 @@ onMounted(async () => {
 }
 
 .navigation-drawer {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 248px;
+  height: 100vh;
+  overflow-y: auto;
   position: fixed !important;
   z-index: 1000;
   transition: all 0.3s ease-in-out !important;
   background-color: rgb(var(--v-theme-surface)) !important;
 }
 
-/* 移除主内容区域的左边距 */
+.navigation-drawer .v-list-item--active {
+  background: rgba(var(--v-theme-primary), 0.12) !important;
+  box-shadow: inset 4px 0 0 rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-primary)) !important;
+  font-weight: 800;
+}
+
+.navigation-drawer .v-list-item--active .v-icon {
+  color: rgb(var(--v-theme-primary)) !important;
+}
+
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 16px 18px 10px;
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, #2f6fed, #0d9488);
+  box-shadow: 0 12px 26px rgba(47, 111, 237, 0.28);
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-title {
+  font-size: 0.98rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.brand-subtitle {
+  font-size: 0.76rem;
+  color: rgba(23, 32, 51, 0.58);
+}
+
+/* 左侧导航使用固定 aside，主内容只偏移一次。 */
 .v-main {
-  margin-left: 0 !important;
-  padding-left: 56px !important;
-}
-
-/* 确保导航栏展开时不会影响主内容区域 */
-.v-navigation-drawer--rail {
-  position: fixed !important;
-  z-index: 1000;
-}
-
-.v-navigation-drawer--rail:not(:hover) {
-  width: 56px !important;
-}
-
-.v-navigation-drawer--rail:hover {
-  width: 200px !important;
+  margin-left: 248px !important;
+  padding-left: 0 !important;
 }
 
 /* 固定顶部栏 */
 .app-bar {
   position: fixed !important;
   z-index: 1001 !important;
-  width: 100% !important;
-  left: 0 !important;
+  width: calc(100% - 248px) !important;
+  left: 248px !important;
   right: 0 !important;
+}
+
+.toolbar-title {
+  line-height: 1.2;
+  font-weight: 900;
 }
 
 /* 调整主内容区域的上边距，为固定顶部栏留出空间 */
 .v-main {
   padding-top: 64px !important;
+}
+
+.main-stage {
+  min-height: 100vh;
+}
+
+.route-frame {
+  padding: 18px 22px 22px 12px;
+}
+
+.route-frame > .v-container {
+  width: 100%;
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding: 0 !important;
+}
+
+.route-frame :is(.workspace-shell, .page-shell, .analytics-container) {
+  width: 100%;
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+@media (max-width: 960px) {
+  .app-bar {
+    width: 100% !important;
+    left: 0 !important;
+  }
+
+  .v-main {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+    padding-bottom: 72px !important;
+  }
+
+  .route-frame {
+    padding: 14px;
+  }
 }
 
 .preview-content {

@@ -1,9 +1,9 @@
 <template>
-  <v-card flat border="0">
-    <v-card-title class="d-flex flex-wrap align-center pa-0 ga-3">
+  <v-container class="workspace-shell history-page" fluid>
+    <v-card class="history-card">
+      <v-card-title class="d-flex flex-wrap align-center ga-3 px-6 pt-6 pb-2">
       <div>
         <h1 class="text-h4 font-weight-bold">检测历史</h1>
-        <div class="text-caption text-medium-emphasis mt-1">默认按时间倒序显示当前账号最近的图像、论文和 Review 检测任务。</div>
       </div>
       <v-spacer />
       <v-text-field
@@ -23,9 +23,9 @@
       <v-btn color="error" variant="outlined" prepend-icon="mdi-delete-sweep" :disabled="!tasks.length" @click="showClearDialog = true">
         清空历史
       </v-btn>
-    </v-card-title>
+      </v-card-title>
 
-    <v-card-text class="pa-0 mt-4">
+      <v-card-text class="px-6 pb-6 pt-3">
       <v-data-table
         :headers="headers"
         :items="tasks"
@@ -91,7 +91,7 @@
         </div>
         <v-pagination v-model="currentPage" :length="totalPages" :total-visible="7" class="ml-4" @update:model-value="handlePageChange" />
       </div>
-    </v-card-text>
+      </v-card-text>
 
     <v-dialog v-model="showFilter" max-width="520">
       <v-card class="elevation-4">
@@ -169,7 +169,8 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
-  </v-card>
+    </v-card>
+  </v-container>
 </template>
 
 <script lang="ts" setup>
@@ -511,5 +512,15 @@ onBeforeUnmount(() => {
 .search-input {
   min-width: 320px;
   max-width: 420px;
+}
+
+.history-card {
+  overflow: hidden;
+}
+
+@media (max-width: 700px) {
+  .search-input {
+    min-width: 100%;
+  }
 }
 </style>

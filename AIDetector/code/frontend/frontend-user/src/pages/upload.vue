@@ -1,7 +1,18 @@
 <template>
-  <div v-show="!showProgress">
+  <v-container class="workspace-shell upload-page" fluid>
+    <div v-show="!showProgress">
     <v-row>
-      <v-col cols="12" lg="10" class="mx-auto">
+      <v-col cols="12">
+        <v-card class="page-hero mb-6">
+          <v-card-text class="pa-7 pa-md-8">
+            <div class="section-eyebrow mb-3">New Detection</div>
+            <h1 class="hero-title mb-3">创建检测任务</h1>
+            <p class="hero-copy mb-0">
+              选择检测对象并上传文件，确认内容后提交。
+            </p>
+          </v-card-text>
+        </v-card>
+
         <DetectionTypeSwitcher v-model="detectionType" />
 
         <ImageTaskForm
@@ -47,9 +58,9 @@
         />
       </v-col>
     </v-row>
-  </div>
+    </div>
 
-  <TaskProgressPanel
+    <TaskProgressPanel
     v-show="showProgress"
     :task-type="progressTaskType"
     :file-id="fileId"
@@ -100,7 +111,7 @@
     @confirm="confirmTaskSelection"
   />
 
-  <v-dialog v-model="zipSelectionDialog" max-width="820" persistent>
+    <v-dialog v-model="zipSelectionDialog" max-width="820" persistent>
     <v-card rounded="lg">
       <v-card-title class="d-flex align-center justify-space-between">
         <span class="text-h6">选择 ZIP 内文件</span>
@@ -157,7 +168,8 @@
         </v-btn>
       </v-card-actions>
     </v-card>
-  </v-dialog>
+    </v-dialog>
+  </v-container>
 </template>
 
 <script setup lang="ts">

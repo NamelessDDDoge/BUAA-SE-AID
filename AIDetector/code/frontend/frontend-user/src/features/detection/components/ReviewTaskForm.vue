@@ -1,15 +1,18 @@
 <template>
-  <v-card variant="outlined">
-    <v-card-title class="text-h6">Review 检测上传</v-card-title>
-    <v-card-subtitle>请同时上传原论文与对应的 Review 文件。</v-card-subtitle>
+  <v-card class="upload-card">
+    <v-card-title class="d-flex align-center text-h6">
+      <v-icon color="orange" class="mr-2">mdi-comment-text-multiple-outline</v-icon>
+      Review 检测上传
+    </v-card-title>
+    <v-card-subtitle>同时上传原论文与对应 Review，后续可分别确认两份文本。</v-card-subtitle>
     <v-card-text>
       <v-row>
         <v-col cols="12" md="6">
           <div class="text-subtitle-1 mb-2">1. 上传原论文</div>
           <div class="upload-area pa-6" @dragover.prevent @drop.prevent="handlePaperDrop" @click="triggerPaperInput">
-            <v-icon size="44" color="grey">mdi-file-document-outline</v-icon>
+            <v-icon size="50" color="teal">mdi-file-document-outline</v-icon>
             <div class="text-body-1 mt-2">点击或拖拽论文文件</div>
-            <div class="text-caption text-grey">支持 DOCX / PDF / ZIP，单文件不超过 100MB。</div>
+            <div class="text-caption text-medium-emphasis">支持 DOCX / PDF / ZIP，单文件不超过 100MB。</div>
             <input ref="paperInputRef" type="file" accept=".docx,.pdf,.zip" style="display: none" @change="handlePaperSelect">
           </div>
 
@@ -31,9 +34,9 @@
         <v-col cols="12" md="6">
           <div class="text-subtitle-1 mb-2">2. 上传对应 Review 文件</div>
           <div class="upload-area pa-6" @dragover.prevent @drop.prevent="handleReviewDrop" @click="triggerReviewInput">
-            <v-icon size="44" color="grey">mdi-comment-text-outline</v-icon>
+            <v-icon size="50" color="orange">mdi-comment-text-outline</v-icon>
             <div class="text-body-1 mt-2">点击或拖拽 Review 文件</div>
-            <div class="text-caption text-grey">支持 DOCX / PDF / TXT / ZIP，单文件不超过 100MB。</div>
+            <div class="text-caption text-medium-emphasis">支持 DOCX / PDF / TXT / ZIP，单文件不超过 100MB。</div>
             <input ref="reviewInputRef" type="file" accept=".docx,.pdf,.txt,.zip" style="display: none" @change="handleReviewSelect">
           </div>
 
@@ -134,15 +137,22 @@ const formatFileSize = (bytes: number) => {
 
 <style scoped>
 .upload-area {
-  border: 2px dashed #ccc;
-  border-radius: 8px;
+  border: 2px dashed rgba(234, 122, 26, 0.34);
+  border-radius: 14px;
   cursor: pointer;
   transition: all 0.3s;
   text-align: center;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.82), rgba(255,247,237,0.72));
 }
 
 .upload-area:hover {
   border-color: rgb(var(--v-theme-primary));
-  background-color: rgba(var(--v-theme-primary), 0.05);
+  transform: translateY(-2px);
+  background-color: rgba(var(--v-theme-primary), 0.06);
+}
+
+.upload-card {
+  overflow: hidden;
 }
 </style>

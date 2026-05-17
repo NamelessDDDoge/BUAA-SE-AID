@@ -3,48 +3,57 @@
     <Snackbar />
 
     <!-- 只在非移动端显示侧边导航栏 -->
-    <v-navigation-drawer v-if="!isMobile" v-model="drawer" :rail="rail" :permanent="true" :temporary="false"
-      location="left" class="navigation-drawer" @mouseenter="rail = false" @mouseleave="rail = true"
-      :width="rail ? 56 : 200">
+    <aside v-if="!isMobile" class="navigation-drawer">
+      <div class="brand-block">
+        <div class="brand-mark">
+          <v-icon size="26">mdi-text-box-search-outline</v-icon>
+        </div>
+        <div class="brand-copy">
+          <div class="brand-title">AIDetect</div>
+          <div class="brand-subtitle">学术诚信工作台</div>
+        </div>
+      </div>
+
       <v-list>
-        <v-list-item :prepend-avatar="isLoggedIn ? userStore.avatar : undefined" :subtitle="userStore.role"
-          :title="userStore.displayName">
+        <v-list-item :prepend-avatar="isLoggedIn ? userStore.avatar : undefined" :subtitle="roleText(userStore.role)"
+          :title="userStore.displayName || '用户'">
         </v-list-item>
       </v-list>
 
       <v-divider></v-divider>
 
       <v-list density="compact" nav>
-        <v-list-item prepend-icon="mdi-home" title="主页" value="home" @click="goToHome"></v-list-item>
-        <v-list-item v-if="userStore.role === 'publisher'" prepend-icon="mdi-image" title="上传任务" value="upload"
+        <v-list-item prepend-icon="mdi-home" title="主页" value="home" color="primary" :active="activeSection === 'home'" @click="goToHome"></v-list-item>
+        <v-list-item v-if="userStore.role === 'publisher'" prepend-icon="mdi-image" title="上传任务" value="upload" color="primary" :active="activeSection === 'upload'"
           @click="goToUpload"></v-list-item>
-        <v-list-item v-if="userStore.role === 'publisher'" prepend-icon="mdi-history" title="检测历史" value="history"
+        <v-list-item v-if="userStore.role === 'publisher'" prepend-icon="mdi-history" title="检测历史" value="history" color="primary" :active="activeSection === 'history'"
           @click="goToHistory"></v-list-item>
-        <v-list-item v-if="userStore.role === 'publisher'" prepend-icon="mdi-gavel" title="人工审核" value="annual"
+        <v-list-item v-if="userStore.role === 'publisher'" prepend-icon="mdi-gavel" title="人工审核" value="annual" color="primary" :active="activeSection === 'annual'"
           @click="gotoAnnual"></v-list-item>
         <v-list-item v-if="userStore.role === 'reviewer'" prepend-icon="mdi-book-open-page-variant" title="审阅"
-          value="review" @click="goToReview"></v-list-item>
-        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-account" title="个人主页" value="profile"
+          value="review" color="primary" :active="activeSection === 'review'" @click="goToReview"></v-list-item>
+        <v-list-item v-if="isLoggedIn" prepend-icon="mdi-account" title="个人主页" value="profile" color="primary" :active="activeSection === 'profile'"
           @click="goToProfile"></v-list-item>
         <v-list-item v-if="isLoggedIn" prepend-icon="mdi-logout" title="退出登录" value="logout"
           @click="handleLogout"></v-list-item>
         <v-list-item v-else prepend-icon="mdi-login" title="登录" value="login" @click="goToLogin"></v-list-item>
       </v-list>
-    </v-navigation-drawer>
+    </aside>
 
-    <v-app-bar class="app-bar">
-      <v-app-bar-nav-icon @click="drawer = !drawer" v-if="!isMobile"></v-app-bar-nav-icon>
-      <v-toolbar-title>学术图像检测系统</v-toolbar-title>
+    <v-app-bar class="app-bar" elevation="0">
+      <v-toolbar-title class="toolbar-title">
+        <span>学术诚信检测系统</span>
+      </v-toolbar-title>
       <v-spacer></v-spacer>
       <v-btn :icon="theme === 'light' ? 'mdi-weather-sunny' : 'mdi-weather-night'" @click="toggleTheme"></v-btn>
       <v-btn v-if="isLoggedIn" :color="hasUnreadNotifications ? 'red' : ''"
         :icon="hasUnreadNotifications ? 'mdi-bell-badge' : 'mdi-bell-outline'" @click="toggleNotification()"></v-btn>
     </v-app-bar>
 
-    <v-main>
-      <v-container fluid>
+    <v-main class="main-stage">
+      <div class="route-frame">
         <router-view />
-      </v-container>
+      </div>
     </v-main>
 
     <!-- 移动端底部导航栏 -->
@@ -162,7 +171,7 @@
 
 <script lang="ts" setup>
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { isLoggedIn } from './api/user'
 import { marked } from 'marked'
@@ -181,11 +190,24 @@ const snackbar = useSnackbarStore();
 
 
 const drawer = ref(true)
-const rail = ref(true)
 const theme = ref('light')
 const hasUnreadNotifications = ref(false)
 const router = useRouter()
+const route = useRoute()
 const notifications = ref<Notification[]>([])
+
+const normalizePath = (path: string) => path.replace(/\/+$/, '') || '/'
+
+const activeSection = computed(() => {
+  const path = normalizePath(route.path)
+  if (path === '/') return 'home'
+  if (path === '/upload') return 'upload'
+  if (path === '/history' || path.startsWith('/step/')) return 'history'
+  if (path === '/annual' || (path.startsWith('/task/') && !path.startsWith('/task/detail/'))) return 'annual'
+  if (path === '/review' || path.startsWith('/task/detail/')) return 'review'
+  if (path === '/profile') return 'profile'
+  return ''
+})
 
 const showDrawer = ref(false)
 const showDetailDialog = ref(false)
@@ -256,6 +278,13 @@ const getCategoryColor = (category: string) => {
     case 'R2P': return 'purple'
     default: return 'grey'
   }
+}
+
+const roleText = (role?: string) => {
+  if (role === 'publisher') return '出版社用户'
+  if (role === 'reviewer') return '审稿人'
+  if (role === 'admin') return '管理员'
+  return role || '未登录'
 }
 
 
@@ -382,43 +411,126 @@ onMounted(async () => {
 }
 
 .navigation-drawer {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 248px;
+  height: 100vh;
+  overflow-y: auto;
   position: fixed !important;
   z-index: 1000;
   transition: all 0.3s ease-in-out !important;
   background-color: rgb(var(--v-theme-surface)) !important;
 }
 
-/* 移除主内容区域的左边距 */
+.navigation-drawer .v-list-item--active {
+  background: rgba(var(--v-theme-primary), 0.12) !important;
+  box-shadow: inset 4px 0 0 rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-primary)) !important;
+  font-weight: 800;
+}
+
+.navigation-drawer .v-list-item--active .v-icon {
+  color: rgb(var(--v-theme-primary)) !important;
+}
+
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 16px 18px 10px;
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, #0f9f7a, #2563eb);
+  box-shadow: 0 12px 26px rgba(15, 159, 122, 0.28);
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-title {
+  font-size: 0.98rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.brand-subtitle {
+  font-size: 0.76rem;
+  color: rgba(21, 34, 56, 0.58);
+}
+
+/* 左侧导航使用固定 aside，主内容只偏移一次。 */
 .v-main {
-  margin-left: 0 !important;
-  padding-left: 56px !important;
-}
-
-/* 确保导航栏展开时不会影响主内容区域 */
-.v-navigation-drawer--rail {
-  position: fixed !important;
-  z-index: 1000;
-}
-
-.v-navigation-drawer--rail:not(:hover) {
-  width: 56px !important;
-}
-
-.v-navigation-drawer--rail:hover {
-  width: 200px !important;
+  margin-left: 248px !important;
+  padding-left: 0 !important;
 }
 
 /* 固定顶部栏 */
 .app-bar {
   position: fixed !important;
   z-index: 1001 !important;
-  width: 100% !important;
-  left: 0 !important;
+  width: calc(100% - 248px) !important;
+  left: 248px !important;
   right: 0 !important;
+}
+
+.toolbar-title {
+  line-height: 1.2;
+  font-weight: 900;
 }
 
 /* 调整主内容区域的上边距，为固定顶部栏留出空间 */
 .v-main {
   padding-top: 64px !important;
+}
+
+.main-stage {
+  min-height: 100vh;
+}
+
+.route-frame {
+  padding: 18px 22px 22px 12px;
+}
+
+.route-frame > .v-container {
+  width: 100%;
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding: 0 !important;
+}
+
+.route-frame :is(.workspace-shell, .page-shell, .analytics-container) {
+  width: 100%;
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+@media (max-width: 960px) {
+  .app-bar {
+    width: 100% !important;
+    left: 0 !important;
+  }
+
+  .v-main {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+    padding-bottom: 72px !important;
+  }
+
+  .route-frame {
+    padding: 14px;
+  }
 }
 </style>

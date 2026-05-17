@@ -1,12 +1,15 @@
 <template>
-  <v-card variant="outlined">
-    <v-card-title class="text-h6">全文论文上传</v-card-title>
-    <v-card-subtitle>上传论文文件后可进行段落、参考文献和可选的图像分析。</v-card-subtitle>
+  <v-card class="upload-card">
+    <v-card-title class="d-flex align-center text-h6">
+      <v-icon color="teal" class="mr-2">mdi-file-document-edit-outline</v-icon>
+      全文论文上传
+    </v-card-title>
+    <v-card-subtitle>上传后可预览文本，并在提交检测前修订提取结果。</v-card-subtitle>
     <v-card-text>
       <div class="upload-area pa-8" @dragover.prevent @drop.prevent="handleDrop" @click="triggerInput">
-        <v-icon size="64" color="grey">mdi-file-document-outline</v-icon>
+        <v-icon size="68" color="teal">mdi-file-document-outline</v-icon>
         <div class="text-h6 mt-4">点击或拖拽论文文件到此处上传</div>
-        <div class="text-caption text-grey">支持 DOCX / PDF / ZIP，单文件不超过 100MB。</div>
+        <div class="text-caption text-medium-emphasis">支持 DOCX / PDF / ZIP，单文件不超过 100MB。</div>
         <input ref="inputRef" type="file" accept=".docx,.pdf,.zip" style="display: none" @change="handleSelect">
       </div>
 
@@ -85,15 +88,22 @@ const formatFileSize = (bytes: number) => {
 
 <style scoped>
 .upload-area {
-  border: 2px dashed #ccc;
-  border-radius: 8px;
+  border: 2px dashed rgba(15, 159, 122, 0.35);
+  border-radius: 14px;
   cursor: pointer;
   transition: all 0.3s;
   text-align: center;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.82), rgba(240,247,245,0.78));
 }
 
 .upload-area:hover {
   border-color: rgb(var(--v-theme-primary));
-  background-color: rgba(var(--v-theme-primary), 0.05);
+  transform: translateY(-2px);
+  background-color: rgba(var(--v-theme-primary), 0.06);
+}
+
+.upload-card {
+  overflow: hidden;
 }
 </style>

@@ -172,7 +172,7 @@ REPORT_THEME = {
         "warning": colors.HexColor("#B45309"),
         "danger": colors.HexColor("#B91C1C"),
         "title": "论文检测报告 / Paper Detection Report",
-        "subtitle": "从段落 AIGC、参考文献真实性、数据真实性和整体风险四个层面进行综合鉴伪。",
+        "subtitle": "从段落 AIGC、参考文献真实性和整体风险三个层面进行综合鉴伪。",
     },
     "review": {
         "primary": colors.HexColor("#7C2D12"),
@@ -919,32 +919,6 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
         height=height,
         margin=margin,
         theme=theme,
-    )
-
-    y = _draw_report_section_title(c, y, title="数据真实性检查", height=height, margin=margin, theme=theme, subtitle="数据支撑与事实一致性")
-    y = _draw_report_text_block(
-        c,
-        y,
-        data_authenticity_results.get("summary") or "-",
-        height=height,
-        margin=margin,
-        theme=theme,
-    )
-    findings = data_authenticity_results.get("findings")
-    if isinstance(findings, dict):
-        findings = [findings]
-    elif isinstance(findings, (str, int, float, bool)):
-        findings = [findings]
-    elif not isinstance(findings, list):
-        findings = []
-    y = _draw_report_items(
-        c,
-        y,
-        findings,
-        height=height,
-        margin=margin,
-        theme=theme,
-        max_lines_overrides={"evidence": 6, "summary": 6},
     )
 
     y = _draw_report_section_title(c, y, title="整篇论文综合评价", height=height, margin=margin, theme=theme, subtitle="综合风险与证据摘要")

@@ -9,6 +9,8 @@ import { createRouter, createWebHistory } from 'vue-router/auto'
 import { setupLayouts } from 'virtual:generated-layouts'
 import { routes } from 'vue-router/auto-routes'
 import { isLoggedIn } from '@/api/user'
+import pinia from '@/stores'
+import { useUserStore } from '@/stores/user'
 
 
 const router = createRouter({
@@ -35,7 +37,24 @@ router.isReady().then(() => {
   localStorage.removeItem('vuetify:dynamic-reload')
 })
 
-router.beforeEach((to, from, next) => {
+const normalizePath = (path: string) => path.replace(/\/+$/, '') || '/'
+
+const startsWithRoute = (path: string, prefix: string) => {
+  return path === prefix || path.startsWith(`${prefix}/`)
+}
+
+const isPublisherOnlyRoute = (path: string) => {
+  if (['/upload', '/history', '/annual'].includes(path)) return true
+  if (startsWithRoute(path, '/step')) return true
+  if (startsWithRoute(path, '/task') && !startsWithRoute(path, '/task/detail')) return true
+  return false
+}
+
+const isReviewerOnlyRoute = (path: string) => {
+  return path === '/review' || startsWithRoute(path, '/task/detail')
+}
+
+router.beforeEach(async (to, from, next) => {
   if (!isLoggedIn.value) {
     if (to.path === '/login') {
       next()
@@ -43,8 +62,26 @@ router.beforeEach((to, from, next) => {
       next('/login')
     }
   } else {
+    const userStore = useUserStore(pinia)
+    if (!userStore.isLoaded) {
+      const loaded = await userStore.fetchUserInfo()
+      if (!loaded) {
+        isLoggedIn.value = false
+        localStorage.setItem('2-isLoggedIn', 'false')
+        next('/login')
+        return
+      }
+    }
+
+    const path = normalizePath(to.path)
+    const role = userStore.role
+
     if (to.path === '/login') {
       next('/')
+    } else if (role === 'reviewer' && isPublisherOnlyRoute(path)) {
+      next('/review')
+    } else if (role === 'publisher' && isReviewerOnlyRoute(path)) {
+      next('/history')
     } else {
       next()
     }

@@ -1,0 +1,180 @@
+:root {
+  --aid-ink: #172033;
+  --aid-muted: #667085;
+  --aid-line: rgba(23, 32, 51, 0.1);
+  --aid-panel: rgba(255, 255, 255, 0.82);
+  --aid-panel-strong: rgba(255, 255, 255, 0.94);
+  --aid-blue: #2f6fed;
+  --aid-teal: #0d9488;
+  --aid-amber: #f59e0b;
+  --aid-rose: #e11d48;
+  font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+html {
+  background: #eef4ff;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(47, 111, 237, 0.18), transparent 32rem),
+    radial-gradient(circle at 88% 10%, rgba(13, 148, 136, 0.16), transparent 28rem),
+    linear-gradient(145deg, #f8fbff 0%, #eef4ff 48%, #f8fafc 100%);
+}
+
+.v-application {
+  background: transparent !important;
+  color: var(--aid-ink);
+}
+
+.v-main {
+  background:
+    linear-gradient(120deg, rgba(255,255,255,0.15), transparent 24rem),
+    transparent !important;
+}
+
+.workspace-shell {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.page-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(47, 111, 237, 0.12);
+  border-radius: 18px !important;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(238, 244, 255, 0.82)),
+    radial-gradient(circle at 90% 20%, rgba(13, 148, 136, 0.18), transparent 18rem);
+  box-shadow: 0 18px 44px rgba(23, 32, 51, 0.07) !important;
+}
+
+.page-hero::after {
+  content: "";
+  position: absolute;
+  right: -64px;
+  top: -84px;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(47, 111, 237, 0.2), rgba(13, 148, 136, 0.18));
+  filter: blur(2px);
+}
+
+.hero-title {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(1.8rem, 3.2vw, 3rem);
+  line-height: 1.12;
+  font-weight: 900;
+  letter-spacing: -0.06em;
+}
+
+.hero-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 760px;
+  color: var(--aid-muted);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.soft-card,
+.v-card {
+  border: 1px solid var(--aid-line) !important;
+  border-radius: 16px !important;
+  background: var(--aid-panel-strong) !important;
+  box-shadow: 0 10px 28px rgba(23, 32, 51, 0.06) !important;
+}
+
+.v-data-table {
+  border-radius: 14px !important;
+  overflow: hidden;
+}
+
+.v-data-table thead th {
+  background: rgba(47, 111, 237, 0.06);
+  color: #344054 !important;
+  font-weight: 800 !important;
+}
+
+.v-data-table tbody tr:hover {
+  background: rgba(47, 111, 237, 0.045) !important;
+}
+
+.metric-card {
+  min-height: 140px;
+  padding: 20px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255,255,255,0.96), rgba(248,250,252,0.9));
+  border: 1px solid rgba(47, 111, 237, 0.1);
+  box-shadow: 0 16px 42px rgba(23, 32, 51, 0.06);
+}
+
+.metric-value {
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.guide-card {
+  border-radius: 16px;
+  padding: 20px;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.95), rgba(241,245,249,0.88));
+  border: 1px solid rgba(23, 32, 51, 0.08);
+}
+
+.aid-chip {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.app-bar {
+  backdrop-filter: blur(18px);
+  background: rgba(255, 255, 255, 0.78) !important;
+  border-bottom: 1px solid rgba(23, 32, 51, 0.08) !important;
+  box-shadow: 0 10px 34px rgba(23, 32, 51, 0.06) !important;
+}
+
+.navigation-drawer {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.94), rgba(241,245,249,0.92)) !important;
+  border-right: 1px solid rgba(23, 32, 51, 0.08) !important;
+  box-shadow: 14px 0 42px rgba(23, 32, 51, 0.06);
+}
+
+.navigation-drawer .v-list-item {
+  border-radius: 12px !important;
+  margin: 3px 12px;
+  min-height: 44px;
+}
+
+.navigation-drawer .v-list-item--active,
+.navigation-drawer .v-list-item:hover {
+  background: rgba(47, 111, 237, 0.1) !important;
+}
+
+.section-eyebrow {
+  color: var(--aid-blue);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.subtle-text {
+  color: var(--aid-muted);
+}
+
+@media (max-width: 720px) {
+  .workspace-shell {
+    padding: 14px;
+  }
+
+  .page-hero {
+    border-radius: 16px !important;
+  }
+}
