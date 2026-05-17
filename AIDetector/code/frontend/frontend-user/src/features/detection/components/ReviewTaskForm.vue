@@ -40,18 +40,18 @@
             <input ref="reviewInputRef" type="file" accept=".docx,.pdf,.txt,.zip" multiple style="display: none" @change="handleReviewSelect">
           </div>
 
-          <v-card v-if="reviewFiles.length" variant="outlined" class="mt-3">
+          <v-card v-if="reviewFileItems.length" variant="outlined" class="mt-3">
             <v-card-text>
-              <div class="text-subtitle-2 mb-3">已选择 {{ reviewFiles.length }} 份 Review 文件</div>
+              <div class="text-subtitle-2 mb-3">已选择 {{ reviewFileItems.length }} 份 Review 文件</div>
               <v-list density="compact" lines="two">
-                <v-list-item v-for="(selectedFile, idx) in reviewFiles" :key="`${selectedFile.name}_${idx}`">
+                <v-list-item v-for="(item, idx) in reviewFileItems" :key="`${item.file.name}_${idx}`">
                   <template #prepend>
                     <v-icon color="primary" class="mr-2">mdi-file-document-edit-outline</v-icon>
                   </template>
-                  <v-list-item-title>{{ idx === 0 ? (reviewDisplayName || selectedFile.name) : selectedFile.name }}</v-list-item-title>
+                  <v-list-item-title>{{ item.displayName || item.file.name }}</v-list-item-title>
                   <v-list-item-subtitle>
-                    {{ formatFileSize(idx === 0 && reviewDisplaySize ? reviewDisplaySize : selectedFile.size) }}
-                    <template v-if="idx === 0 && reviewDisplayHint"> · {{ reviewDisplayHint }}</template>
+                    {{ formatFileSize(item.displaySize ?? item.file.size) }}
+                    <template v-if="item.displayHint"> · {{ item.displayHint }}</template>
                   </v-list-item-subtitle>
                 </v-list-item>
               </v-list>
@@ -84,7 +84,12 @@ import { ref } from 'vue'
 
 defineProps<{
   paperFile: File | null
-  reviewFiles: File[]
+  reviewFileItems: Array<{
+    file: File
+    displayName?: string
+    displaySize?: number
+    displayHint?: string
+  }>
   uploading: boolean
   uploadProgress: number
   paperDisplayName?: string

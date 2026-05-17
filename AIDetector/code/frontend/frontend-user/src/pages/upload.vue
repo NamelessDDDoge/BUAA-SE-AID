@@ -27,12 +27,9 @@
 
         <PaperTaskForm
           v-else-if="detectionType === 'paper'"
-          :files="mainFiles"
+          :file-items="paperFileItems"
           :uploading="uploading"
           :upload-progress="uploadProgress"
-          :display-name="paperDisplayName"
-          :display-size="paperDisplaySize"
-          :display-hint="paperDisplayHint"
           @select="handlePaperFile"
           @clear="clearMainFiles"
           @submit="submitUpload"
@@ -41,7 +38,7 @@
         <ReviewTaskForm
           v-else
           :paper-file="reviewPaperFile"
-          :review-files="reviewFiles"
+          :review-file-items="reviewFileItems"
           :uploading="uploading"
           :upload-progress="uploadProgress"
           :paper-display-name="reviewPaperDisplayName"
@@ -234,6 +231,8 @@ interface ReviewUploadGroup {
   reviewZipSelection?: ZipSelectionState | null
 }
 
+type ZipSelectionMap = Record<string, ZipSelectionState>
+
 const router = useRouter()
 const route = useRoute()
 const snackbar = useSnackbarStore()
@@ -251,6 +250,8 @@ const reviewUploadGroups = ref<ReviewUploadGroup[]>([])
 const paperZipSelection = ref<ZipSelectionState | null>(null)
 const reviewPaperZipSelection = ref<ZipSelectionState | null>(null)
 const reviewFileZipSelection = ref<ZipSelectionState | null>(null)
+const paperZipSelections = ref<ZipSelectionMap>({})
+const reviewZipSelections = ref<ZipSelectionMap>({})
 
 const uploading = ref(false)
 const submittingDetection = ref(false)
@@ -329,6 +330,24 @@ const reviewFileDisplayHint = computed(() => (
 const selectedEntryDisplayName = (selection: ZipSelectionState | null) => (
   selection?.entry.display_name || selection?.entry.file_name || ''
 )
+const paperFileItems = computed(() => mainFiles.value.map((file) => {
+  const selection = paperZipSelections.value[file.name]
+  return {
+    file,
+    displayName: selectedEntryDisplayName(selection || null) || file.name,
+    displaySize: selection?.entry.file_size,
+    displayHint: selection ? `来自 ZIP：${selection.zipFile.name}` : '',
+  }
+}))
+const reviewFileItems = computed(() => reviewFiles.value.map((file) => {
+  const selection = reviewZipSelections.value[file.name]
+  return {
+    file,
+    displayName: selectedEntryDisplayName(selection || null) || file.name,
+    displaySize: selection?.entry.file_size,
+    displayHint: selection ? `来自 ZIP：${selection.zipFile.name}` : '',
+  }
+}))
 
 const MAX_SIZE = 100 * 1024 * 1024
 const imageExt = new Set(['png', 'jpg', 'jpeg', 'pdf', 'zip'])
@@ -401,6 +420,26 @@ const formatFileSize = (bytes: number) => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
 }
 
+const mergeFilesByName = (existingFiles: File[], incomingFiles: File[]) => {
+  const merged = [...existingFiles]
+  for (const incoming of incomingFiles) {
+    const existingIndex = merged.findIndex(file => file.name === incoming.name)
+    if (existingIndex >= 0) {
+      merged[existingIndex] = incoming
+    } else {
+      merged.push(incoming)
+    }
+  }
+  return merged
+}
+
+const pruneZipSelectionMap = (map: ZipSelectionMap, files: File[]) => {
+  const names = new Set(files.map(file => file.name))
+  return Object.fromEntries(
+    Object.entries(map).filter(([fileName]) => names.has(fileName)),
+  )
+}
+
 const validateFile = (file: File, type: DetectionType | 'review-paper' | 'review-file') => {
   if (file.size > MAX_SIZE) {
     return '文件大小超限，单文件不能超过 100MB。'
@@ -425,7 +464,17 @@ const handleMainFiles = (files: File[]) => {
     snackbar.showMessage(validateFile(invalid, detectionType.value) || '文件格式错误。', 'error')
     return
   }
-  mainFiles.value = detectionType.value === 'image' ? files : [files[0]]
+  const zipFiles = files.filter(file => getExt(file) === 'zip')
+  if (zipFiles.length > 1 || (zipFiles.length === 1 && files.length > 1)) {
+    snackbar.showMessage('ZIP 文件当前仅支持单个上传，请逐个选择 ZIP 文件。', 'warning')
+    return
+  }
+  if (detectionType.value === 'image') {
+    mainFiles.value = mergeFilesByName(mainFiles.value, files)
+    return
+  }
+  mainFiles.value = mergeFilesByName(mainFiles.value, files)
+  paperZipSelections.value = pruneZipSelectionMap(paperZipSelections.value, mainFiles.value)
 }
 
 const openZipSelection = async (file: File, target: ZipSelectionTarget) => {
@@ -474,14 +523,22 @@ const confirmZipSelection = () => {
 
   const state: ZipSelectionState = { zipFile, entry }
   if (zipSelectionTarget.value === 'paper') {
-    mainFiles.value = [zipFile]
+    mainFiles.value = mergeFilesByName(mainFiles.value, [zipFile])
     paperZipSelection.value = state
+    paperZipSelections.value = {
+      ...paperZipSelections.value,
+      [zipFile.name]: state,
+    }
   } else if (zipSelectionTarget.value === 'review-paper') {
     reviewPaperFile.value = zipFile
     reviewPaperZipSelection.value = state
   } else {
-    reviewFiles.value = [zipFile]
+    reviewFiles.value = mergeFilesByName(reviewFiles.value, [zipFile])
     reviewFileZipSelection.value = state
+    reviewZipSelections.value = {
+      ...reviewZipSelections.value,
+      [zipFile.name]: state,
+    }
   }
 
   snackbar.showMessage(`已选择 ZIP 内文件：${entry.display_name || entry.file_name}`, 'success')
@@ -495,12 +552,18 @@ const handlePaperFile = async (files: File[] | File) => {
     snackbar.showMessage(validateFile(invalid, 'paper') || '论文文件格式错误。', 'error')
     return
   }
+  const zipFiles = normalizedFiles.filter(file => getExt(file) === 'zip')
+  if (zipFiles.length > 1 || (zipFiles.length === 1 && normalizedFiles.length > 1)) {
+    snackbar.showMessage('ZIP 文件当前仅支持单个上传，请逐个选择 ZIP 文件。', 'warning')
+    return
+  }
   if (normalizedFiles.length === 1 && getExt(normalizedFiles[0]) === 'zip') {
     await openZipSelection(normalizedFiles[0], 'paper')
     return
   }
   paperZipSelection.value = null
-  mainFiles.value = normalizedFiles
+  mainFiles.value = mergeFilesByName(mainFiles.value, normalizedFiles)
+  paperZipSelections.value = pruneZipSelectionMap(paperZipSelections.value, mainFiles.value)
 }
 
 const handleReviewPaper = async (file: File) => {
@@ -524,21 +587,29 @@ const handleReviewFile = async (files: File[] | File) => {
     snackbar.showMessage(validateFile(invalid, 'review-file') || 'Review 文件格式错误。', 'error')
     return
   }
+  const zipFiles = normalizedFiles.filter(file => getExt(file) === 'zip')
+  if (zipFiles.length > 1 || (zipFiles.length === 1 && normalizedFiles.length > 1)) {
+    snackbar.showMessage('ZIP 文件当前仅支持单个上传，请逐个选择 ZIP 文件。', 'warning')
+    return
+  }
   if (normalizedFiles.length === 1 && getExt(normalizedFiles[0]) === 'zip') {
     await openZipSelection(normalizedFiles[0], 'review-file')
     return
   }
   reviewFileZipSelection.value = null
-  reviewFiles.value = normalizedFiles
+  reviewFiles.value = mergeFilesByName(reviewFiles.value, normalizedFiles)
+  reviewZipSelections.value = pruneZipSelectionMap(reviewZipSelections.value, reviewFiles.value)
 }
 
 const removeMainFile = (idx: number) => {
   mainFiles.value.splice(idx, 1)
+  paperZipSelections.value = pruneZipSelectionMap(paperZipSelections.value, mainFiles.value)
 }
 
 const clearMainFiles = () => {
   mainFiles.value = []
   paperZipSelection.value = null
+  paperZipSelections.value = {}
 }
 
 const clearReviewPaper = () => {
@@ -549,6 +620,7 @@ const clearReviewPaper = () => {
 const clearReviewFile = () => {
   reviewFiles.value = []
   reviewFileZipSelection.value = null
+  reviewZipSelections.value = {}
 }
 
 const addCurrentReviewGroups = () => {

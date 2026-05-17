@@ -13,18 +13,18 @@
         <input ref="inputRef" type="file" accept=".docx,.pdf,.zip" multiple style="display: none" @change="handleSelect">
       </div>
 
-      <v-card v-if="files.length" variant="outlined" class="mt-4">
+      <v-card v-if="fileItems.length" variant="outlined" class="mt-4">
         <v-card-text>
-          <div class="text-subtitle-2 mb-3">已选择 {{ files.length }} 份论文文件</div>
+          <div class="text-subtitle-2 mb-3">已选择 {{ fileItems.length }} 份论文文件</div>
           <v-list density="compact" lines="two">
-            <v-list-item v-for="(selectedFile, idx) in files" :key="`${selectedFile.name}_${idx}`">
+            <v-list-item v-for="(item, idx) in fileItems" :key="`${item.file.name}_${idx}`">
               <template #prepend>
                 <v-icon color="primary" class="mr-2">mdi-file-document</v-icon>
               </template>
-              <v-list-item-title>{{ idx === 0 ? (displayName || selectedFile.name) : selectedFile.name }}</v-list-item-title>
+              <v-list-item-title>{{ item.displayName || item.file.name }}</v-list-item-title>
               <v-list-item-subtitle>
-                {{ formatFileSize(idx === 0 && displaySize ? displaySize : selectedFile.size) }}
-                <template v-if="idx === 0 && displayHint"> · {{ displayHint }}</template>
+                {{ formatFileSize(item.displaySize ?? item.file.size) }}
+                <template v-if="item.displayHint"> · {{ item.displayHint }}</template>
               </v-list-item-subtitle>
             </v-list-item>
           </v-list>
@@ -54,12 +54,14 @@
 import { ref } from 'vue'
 
 defineProps<{
-  files: File[]
+  fileItems: Array<{
+    file: File
+    displayName?: string
+    displaySize?: number
+    displayHint?: string
+  }>
   uploading: boolean
   uploadProgress: number
-  displayName?: string
-  displaySize?: number
-  displayHint?: string
 }>()
 
 const emit = defineEmits<{
