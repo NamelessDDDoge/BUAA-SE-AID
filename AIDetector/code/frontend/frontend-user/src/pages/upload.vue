@@ -174,7 +174,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import uploadApi from '@/api/upload'
 import detectionApi from '@/api/detection'
@@ -229,9 +229,15 @@ interface ZipSelectionState {
 }
 
 const router = useRouter()
+const route = useRoute()
 const snackbar = useSnackbarStore()
 
-const detectionType = ref<DetectionType>('image')
+const resolveDetectionTypeFromQuery = (value: unknown): DetectionType => {
+  const rawValue = Array.isArray(value) ? value[0] : value
+  return rawValue === 'paper' || rawValue === 'review' ? rawValue : 'image'
+}
+
+const detectionType = ref<DetectionType>(resolveDetectionTypeFromQuery(route.query.type))
 const mainFiles = ref<File[]>([])
 const reviewPaperFile = ref<File | null>(null)
 const reviewFile = ref<File | null>(null)
@@ -340,6 +346,16 @@ watch(detectionType, () => {
   reviewPaperTextPreviewError.value = ''
   closeZipSelectionDialog()
 })
+
+watch(
+  () => route.query.type,
+  (value) => {
+    const nextType = resolveDetectionTypeFromQuery(value)
+    if (nextType !== detectionType.value) {
+      detectionType.value = nextType
+    }
+  },
+)
 
 const resourceDomainOptions: TaskOption[] = [
   { title: '生物', value: 'Biology' },

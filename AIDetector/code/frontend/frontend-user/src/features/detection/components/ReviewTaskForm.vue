@@ -152,6 +152,11 @@ const formatFileSize = (bytes: number) => {
   background-color: rgba(var(--v-theme-primary), 0.06);
 }
 
+.text-subtitle-1,
+.upload-area .text-body-1 {
+  font-weight: 700;
+}
+
 .upload-card {
   overflow: hidden;
 }

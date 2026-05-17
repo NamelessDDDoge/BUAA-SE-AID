@@ -43,21 +43,21 @@ const publisherCards = [
     text: '上传图片、PDF 或 ZIP，选择需要检测的图像。',
     icon: 'mdi-image-search-outline',
     tone: 'tone-green',
-    to: '/upload',
+    to: { path: '/upload', query: { type: 'image' } },
   },
   {
     title: '论文全文',
     text: '上传论文文档，预览文本后提交检测。',
     icon: 'mdi-file-document-edit-outline',
     tone: 'tone-blue',
-    to: '/upload',
+    to: { path: '/upload', query: { type: 'paper' } },
   },
   {
     title: 'Review 检测',
     text: '上传原论文和 Review，检查评审内容。',
     icon: 'mdi-comment-text-multiple-outline',
     tone: 'tone-orange',
-    to: '/upload',
+    to: { path: '/upload', query: { type: 'review' } },
   },
 ]
 
