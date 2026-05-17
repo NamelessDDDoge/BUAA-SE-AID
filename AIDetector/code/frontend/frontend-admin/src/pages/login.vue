@@ -207,13 +207,7 @@
       localStorage.setItem("1-isLoggedIn", "true")
 
       snackbar.showMessage('登录成功', 'success')
-      await router.push('/analytics')
-
-      void userStore.fetchUserInfo().then((loaded) => {
-        if (!loaded) {
-          snackbar.showMessage('管理员信息加载失败，部分菜单可能暂时不可用', 'warning')
-        }
-      })
+      await router.replace('/')
     } catch (error: any) {
       console.log(error)
       let errorMessage = '网络错误，请稍后重试'

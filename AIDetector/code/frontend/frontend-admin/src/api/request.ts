@@ -1,6 +1,7 @@
 //引入axios
 import axios from 'axios'
 import router from '@/router'
+import { isLoggedIn } from './user'
 
 const apiBaseUrl = import.meta.env.VITE_API_URL || ''
 const baseApiUrl = apiBaseUrl ? `${apiBaseUrl}/api` : '/api'
@@ -42,7 +43,9 @@ instance.interceptors.response.use(response=>{
             // 刷新token失败，跳转到登录页
             localStorage.removeItem('1-token')
             localStorage.removeItem('1-refresh')
-            router.push('/login')
+            isLoggedIn.value = false
+            localStorage.setItem('1-isLoggedIn', 'false')
+            router.replace('/login')
             return Promise.reject(err)
         })
     }

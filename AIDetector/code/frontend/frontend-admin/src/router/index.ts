@@ -11,7 +11,7 @@ import { routes } from 'vue-router/auto-routes'
 import { isLoggedIn } from '@/api/user'
 
 const LOGIN_PATH = '/login'
-const DEFAULT_ADMIN_PATH = '/analytics'
+const DEFAULT_ADMIN_PATH = '/'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -38,7 +38,7 @@ router.isReady().then(() => {
 })
 
 router.beforeEach((to, from, next) => {
-  if (to.path === '/') {
+  if (to.path === '/' && !isLoggedIn.value) {
     next(LOGIN_PATH)
     return
   }
@@ -50,7 +50,7 @@ router.beforeEach((to, from, next) => {
       next(LOGIN_PATH)
     }
   } else {
-    if (to.path === LOGIN_PATH && from.path !== '/') {
+    if (to.path === LOGIN_PATH) {
       next(DEFAULT_ADMIN_PATH)
     } else {
       next()
