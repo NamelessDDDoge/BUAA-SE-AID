@@ -58,8 +58,9 @@
 图像鉴伪当前关键文件：
 
 - `AIDetector/code/backend/backend-code/core/views/views_dectection.py`
-- `AIDetector/code/backend/backend-code/core/local_detection.py`
-- `AIDetector/code/backend/backend-code/core/call_figure_detection.py`
+- `AIDetector/code/backend/backend-code/core/services/orchestrators/image_task_orchestrator.py`
+- `AIDetector/code/backend/backend-code/core/services/capabilities/image/local_detection.py`
+- `AIDetector/code/backend/backend-code/core/services/capabilities/image/local_inference_client.py`
 - `AIDetector/code/backend/backend-code/core/models.py`
 
 ### AI Service
@@ -74,22 +75,26 @@
 - [AI Service 介绍文档](./AIDetector/code/ai-service/README.md)
 - [AI 推理服务启动方式](./AIDetector/code/ai-service/AI推理服务启动方式.md)
 - [图像鉴伪模块说明](./图像鉴伪模块说明.md)
+- [图像检测并发改造设计说明](./图像检测并发改造设计说明.md)
+- [图像检测联调与上线检查清单](./图像检测联调与上线检查清单.md)
 
 ## 当前图像检测链路
 
-当前图像检测为同步执行，核心流程如下：
+当前图像检测为“异步提交 + 后台受控并发执行”，核心流程如下：
 
 1. 前端调用 `/api/detection/submit/`。
 2. 后端 `submit_detection2` 创建 `DetectionTask`，并校验组织配额、任务参数与图片列表。
-3. `core/local_detection.py` 为每批图片生成 `img.zip` 与 `data.json`。
-4. 后端桥接层将输入复制到共享目录。
-5. 若未配置 `AI_REMOTE_INFER_URL`，后端用子进程启动 `local_infer.py`。
-6. 若配置了 `AI_REMOTE_INFER_URL`，后端将 `img.zip` 与 `data.json` POST 到远程 GPU 推理服务。
-7. `local_infer.py` 解压图片、载入参数、执行 `PipelineSingleImage.run_multi_images(...)`。
-8. `PipelineSingleImage` 调用 `SingleImageMethod` 中的各个方法，得到 LLM、ELA、EXIF、CMD 和多个 URN 子方法结果。
-9. AI Service 将结果 `pickle + base64` 后返回给后端。
-10. 后端解析返回值，落库到 `DetectionResult` 与 `SubDetectionResult`，同时生成掩码图、ELA 图和任务报告。
-11. 任务状态更新为 `completed` 或 `failed`，前端再通过结果接口拉取详情。
+3. 后端将任务提交到图像检测执行池；普通图像任务走可控并发池，含 LLM 的图像任务走独立串行池。
+4. `core/services/capabilities/image/local_detection.py` 为每批图片生成 `img.zip` 与 `data.json`。
+5. 后端桥接层为每次推理创建独立 request 目录。
+6. 若未配置 `AI_REMOTE_INFER_URL`，后端用子进程启动 `local_infer.py`。
+7. 若配置了 `AI_REMOTE_INFER_URL`，后端将 request 目录中的 `img.zip` 与 `data.json` POST 到远程 GPU 推理服务。
+8. 本地与远程模式下，AI service 都会使用 request 级缓存目录，而不是共享全局 cache。
+9. `local_infer.py` 解压图片、载入参数、执行 `PipelineSingleImage.run_multi_images(...)`。
+10. `PipelineSingleImage` 调用 `SingleImageMethod` 中的各个方法，得到 LLM、ELA、EXIF、CMD 和多个 URN 子方法结果。
+11. AI Service 将结果 `pickle + base64` 后返回给后端。
+12. 后端解析返回值，落库到 `DetectionResult` 与 `SubDetectionResult`，同时生成掩码图、ELA 图和任务报告。
+13. 任务状态更新为 `completed` 或 `failed`，前端再通过结果接口拉取详情。
 
 ## AI Service 当前实现
 
@@ -98,7 +103,7 @@
 ### 入口与桥接
 
 - 后端桥接层位于 `core/services/capabilities/image/local_inference_client.py`。
-- 它负责准备 `img.zip` / `data.json`，设置临时目录和 `TORCH_HOME`。
+- 它负责准备 `img.zip` / `data.json`，设置 request 级工作目录、临时目录和 `TORCH_HOME`。
 - 本地模式下，它会直接启动 `local_infer.py`。
 - 远程模式下，它会把输入 POST 给 `gpu_infer_service.py`。
 
@@ -139,10 +144,12 @@
 
 ### 当前运行约束
 
-- 必须在本地可用 Python 环境中运行，仓库约定使用 `detect` conda 环境。
+- 必须在本地可用 Python 环境中运行。
+- 当前联调和测试中，仓库实际可用的是 `se` conda 环境。
 - AI Service 的真实入口是脚本，不需要单独常驻启动。
 - `SingleImageMethod.py` 初始化时会直接加载多组 URN 权重，因此首次启动成本较高。
-- LLM 路径依赖额外模型与环境；即使接口存在，是否可用仍取决于本地权重和运行条件。
+- LLM 路径依赖额外模型与环境；当前实现中它被单独串行调度，不与普通图像任务共享并发池。
+- 现有自动化测试不依赖真实 GPU，因为推理过程被 mock 或替换为测试夹具。
 
 ### 当前真实生效的环境变量
 
@@ -157,16 +164,20 @@
 - `AI_REMOTE_INFER_URL`
 - `AI_REMOTE_INFER_TIMEOUT`
 - `AI_REMOTE_INFER_TOKEN`
+- `IMAGE_TASK_MAX_WORKERS`
+- `AI_REMOTE_INFER_MAX_CONCURRENCY`
 
 其中最常用的是：
 
 - `AI_SERVICE_DIR`：AI Service 代码目录
 - `AI_SERVICE_PYTHON`：用于启动 `local_infer.py` 的 Python 解释器
 - `AI_REMOTE_INFER_URL`：远程 GPU 推理服务地址；设置后优先走远程推理
+- `IMAGE_TASK_MAX_WORKERS`：普通图像任务执行池大小
+- `AI_REMOTE_INFER_MAX_CONCURRENCY`：远程 GPU 服务最大并发度，默认建议保持 `1`
 
 ## 本地运行
 
-根据仓库约定，在本仓库下执行命令时优先使用 `detect` conda 环境。
+当前仓库联调与测试建议优先使用 `se` conda 环境。
 
 ### 后端
 
@@ -177,7 +188,7 @@
 最小命令：
 
 ```powershell
-conda activate detect
+conda activate se
 Copy-Item .env.example .env
 python manage.py migrate
 python manage.py runserver
@@ -238,4 +249,5 @@ npm run dev
 
 - `SingleImageMethod.py` 仍然较重，启动时会直接加载多组模型权重。
 - LLM 相关路径保留在实现中，但目前更像“可选能力”而不是稳态依赖。
+- 自动化测试已覆盖主链路和并发隔离逻辑，但未覆盖真实 GPU 权重推理。
 - 仓库内仍保留部分历史训练代码和旧文档，阅读时应以 `local_infer.py` 与后端桥接层为准。

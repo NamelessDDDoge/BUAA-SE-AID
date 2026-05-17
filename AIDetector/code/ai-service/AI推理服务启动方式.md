@@ -80,6 +80,7 @@ export AI_SERVICE_PYTHON=/你的python路径（例如/root/miniconda3/envs/se/bi
 export AI_REMOTE_INFER_HOST=127.0.0.1
 export AI_REMOTE_INFER_PORT=18080
 export AI_REMOTE_INFER_TOKEN=你自己设置的随机串
+export AI_REMOTE_INFER_MAX_CONCURRENCY=1
 python gpu_infer_service.py
 ```
 
@@ -90,6 +91,7 @@ $env:AI_SERVICE_PYTHON="你的python路径"
 $env:AI_REMOTE_INFER_HOST="127.0.0.1"
 $env:AI_REMOTE_INFER_PORT="18080"
 $env:AI_REMOTE_INFER_TOKEN="你自己设置的随机串"
+$env:AI_REMOTE_INFER_MAX_CONCURRENCY="1"
 python .\gpu_infer_service.py
 ```
 
@@ -141,6 +143,7 @@ ssh -N -R 127.0.0.1:18080:127.0.0.1:18080 root@122.9.32.72
 AI_REMOTE_INFER_URL=http://127.0.0.1:18080/infer
 AI_REMOTE_INFER_TIMEOUT=1800
 AI_REMOTE_INFER_TOKEN=和笔记本完全一致
+AI_REMOTE_INFER_MAX_CONCURRENCY=1
 ```
 
 建议同时确认：
@@ -155,6 +158,8 @@ AI_SERVICE_PYTHON=/root/miniconda3/envs/se/bin/python
 - 只要设置了 `AI_REMOTE_INFER_URL`
 - 后端就不会再走服务器本地推理
 - 而是把请求发给你笔记本上的 GPU 服务
+- `AI_REMOTE_INFER_MAX_CONCURRENCY` 默认建议先保持 `1`
+- 当你确认显存和模型加载都稳定后，再考虑调成 `2`
 
 ---
 

@@ -35,6 +35,7 @@ from core.views.views_dectection import (
     get_detection_task_status_normal,
     submit_detection2,
 )
+from core.services.orchestrators import image_task_orchestrator
 
 
 def build_test_image(name="test.png", color=(255, 0, 0)):
@@ -354,6 +355,43 @@ class LocalDetectionParsingTests(TestCase):
         self.assertEqual(parsed["sub_method_results"][0]["prob"], 0.85)
 
 
+class ImageTaskExecutorTests(TestCase):
+    @patch.object(image_task_orchestrator.IMAGE_TASK_EXECUTOR, "submit")
+    def test_start_image_detection_task_thread_submits_runner_to_executor(self, mock_submit):
+        def fake_runner(*args, **kwargs):
+            return None
+
+        future = image_task_orchestrator.start_image_detection_task_thread(
+            1,
+            [10, 11],
+            False,
+            2,
+            task_runner=fake_runner,
+        )
+
+        self.assertEqual(future, mock_submit.return_value)
+        mock_submit.assert_called_once_with(fake_runner, 1, [10, 11], False, 2)
+
+    @patch.object(image_task_orchestrator.LLM_IMAGE_TASK_EXECUTOR, "submit")
+    def test_start_image_detection_task_thread_routes_llm_tasks_to_llm_executor(self, mock_submit):
+        def fake_runner(*args, **kwargs):
+            return None
+
+        future = image_task_orchestrator.start_image_detection_task_thread(
+            2,
+            [20],
+            True,
+            1,
+            task_runner=fake_runner,
+        )
+
+        self.assertEqual(future, mock_submit.return_value)
+        mock_submit.assert_called_once_with(fake_runner, 2, [20], True, 1)
+
+    def test_image_task_executor_has_at_least_one_worker(self):
+        self.assertGreaterEqual(image_task_orchestrator.IMAGE_TASK_EXECUTOR._max_workers, 1)
+
+
 @override_settings(ENABLE_FANYI=False)
 class LocalBridgeTests(TestCase):
     def setUp(self):
@@ -382,6 +420,26 @@ class LocalBridgeTests(TestCase):
         self.assertEqual(result[0][0], "llm")
         self.assertEqual(result[1][0], "ela")
         self.assertEqual(len(result), len(expected_payload))
+        _, kwargs = mock_run.call_args
+        self.assertTrue(kwargs["env"]["AI_SERVICE_CACHE_ROOT"].endswith("/cache"))
+
+    @patch("core.services.capabilities.image.local_inference_client._run_local_inference", return_value=fake_detection_payload())
+    def test_get_result_uses_isolated_request_dir_and_cleans_it_up(self, mock_run_local_inference):
+        zip_path = Path(self.temp_media) / "input.zip"
+        json_path = Path(self.temp_media) / "input.json"
+        zip_path.write_bytes(b"PK\x05\x06" + b"\x00" * 18)
+        json_path.write_text('{"cmd_block_size": 64}', encoding="utf-8")
+
+        fake_shared_root = Path(self.temp_media) / "isolated-shared"
+        fake_shared_root.mkdir(parents=True, exist_ok=True)
+
+        with patch.object(local_inference_client, "AI_SERVICE_TEST_DIR", fake_shared_root):
+            result = local_inference_client.get_result(zip_path, json_path)
+
+        self.assertEqual(result[0][0], "llm")
+        called_request_dir = Path(mock_run_local_inference.call_args.kwargs["request_dir"])
+        self.assertEqual(called_request_dir.parent, fake_shared_root)
+        self.assertFalse(called_request_dir.exists())
 
     @patch.dict(
         "os.environ",
@@ -412,10 +470,14 @@ class LocalBridgeTests(TestCase):
         with patch.object(local_inference_client, "AI_SERVICE_TEST_DIR", fake_shared_root):
             result = _run_local_inference()
 
-        self.assertEqual(result, expected_payload)
+        self.assertEqual(result[0][0], expected_payload[0][0])
+        self.assertEqual(result[1][0], expected_payload[1][0])
+        self.assertEqual(len(result), len(expected_payload))
         _, kwargs = mock_post.call_args
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer demo-token")
         self.assertEqual(kwargs["timeout"], 20)
+        self.assertIn("img_zip_base64", kwargs["json"])
+        self.assertIn("data_json_base64", kwargs["json"])
 
     @patch.dict("os.environ", {}, clear=True)
     @patch(

@@ -1,5 +1,6 @@
 import os.path
 import json
+import os
 from pathlib import Path
 
 from pipeline.pipline_base import PipelineBase
@@ -8,7 +9,14 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import shutil
 
 
-ASCII_CACHE_ROOT = Path.home() / ".codex" / "memories" / "ai_image_cache"
+DEFAULT_CACHE_ROOT = Path.home() / ".codex" / "memories" / "ai_image_cache"
+
+
+def _resolve_cache_root():
+    configured = os.environ.get("AI_SERVICE_CACHE_ROOT", "").strip()
+    if configured:
+        return Path(configured)
+    return DEFAULT_CACHE_ROOT
 
 
 class PipelineSingleImage(PipelineBase):
@@ -21,7 +29,7 @@ class PipelineSingleImage(PipelineBase):
         # print(images.shape)
         assert len(self.images) == 1, "This pipeline only supports single image"
         image = self.images[0]
-        cache_path_root = str(ASCII_CACHE_ROOT)
+        cache_path_root = str(_resolve_cache_root())
         os.makedirs(cache_path_root, exist_ok=True)
         image_path = os.path.join(cache_path_root, 'image.jpg')
         cv2.imwrite(image_path, image)
@@ -35,7 +43,7 @@ class PipelineSingleImage(PipelineBase):
     
     def run_multi_images(self, images):
         self.results = []        
-        cache_path_root = str(ASCII_CACHE_ROOT)
+        cache_path_root = str(_resolve_cache_root())
         # 如果 cache 目录已存在，则先删除它及其所有内容
         if os.path.exists(cache_path_root):
             shutil.rmtree(cache_path_root)

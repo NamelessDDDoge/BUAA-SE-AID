@@ -323,8 +323,10 @@ class SingleImageMethod:
         # 定义路径变量
         WEIGHT_PATH = os.path.join(current_dir, 'weight/fakeshield-v1-22b')
         IMAGE_PATH = image_path
-        DTE_FDM_OUTPUT = os.path.join(current_dir, 'playground/DTE-FDM_output.jsonl')
-        MFLM_OUTPUT = os.path.join(current_dir, 'playground/MFLM_output')
+        llm_runtime_root = self.cache_path_root or tempfile.gettempdir()
+        os.makedirs(llm_runtime_root, exist_ok=True)
+        DTE_FDM_OUTPUT = os.path.join(llm_runtime_root, 'DTE-FDM_output.jsonl')
+        MFLM_OUTPUT = os.path.join(llm_runtime_root, 'MFLM_output')
         
         # 清空MFLM输出目录
         if os.path.exists(MFLM_OUTPUT):
@@ -436,4 +438,3 @@ class SingleImageMethod:
         # answer = chat_response.choices[0].message.content
         # print(answer)
         # return answer
-

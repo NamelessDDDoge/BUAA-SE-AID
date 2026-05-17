@@ -1,8 +1,10 @@
 import base64
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +20,10 @@ AI_SERVICE_PYTHON = os.environ.get("AI_SERVICE_PYTHON", sys.executable)
 AI_REMOTE_INFER_TOKEN = os.environ.get("AI_REMOTE_INFER_TOKEN", "").strip()
 AI_REMOTE_INFER_HOST = os.environ.get("AI_REMOTE_INFER_HOST", "127.0.0.1")
 AI_REMOTE_INFER_PORT = int(os.environ.get("AI_REMOTE_INFER_PORT", "18080"))
+AI_REMOTE_INFER_MAX_CONCURRENCY = max(
+    1,
+    int(os.environ.get("AI_REMOTE_INFER_MAX_CONCURRENCY", "1") or "1"),
+)
 AI_REMOTE_INFER_TMP_DIR = Path(
     os.environ.get("AI_SERVICE_TMP_DIR", str(Path.home() / ".codex" / "memories" / ".tmp_ai_service"))
 )
@@ -25,7 +31,7 @@ AI_REMOTE_INFER_TORCH_HOME = Path(
     os.environ.get("AI_SERVICE_TORCH_HOME", str(Path.home() / ".codex" / "memories" / ".torch_cache"))
 )
 
-_REQUEST_LOCK = threading.Lock()
+_REQUEST_LIMITER = threading.Semaphore(AI_REMOTE_INFER_MAX_CONCURRENCY)
 
 
 def _decode_output(output):
@@ -50,48 +56,58 @@ def _json_response(handler, status, payload):
     handler.wfile.write(body)
 
 
+def _create_request_dir():
+    SHARED_DIR.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="request_", dir=str(SHARED_DIR)))
+
+
 def _run_local_infer_with_payload(img_zip_bytes, data_json_bytes):
+    request_dir = _create_request_dir()
     SHARED_DIR.mkdir(parents=True, exist_ok=True)
     AI_REMOTE_INFER_TMP_DIR.mkdir(parents=True, exist_ok=True)
     AI_REMOTE_INFER_TORCH_HOME.mkdir(parents=True, exist_ok=True)
 
-    zip_path = SHARED_DIR / "img.zip"
-    data_path = SHARED_DIR / "data.json"
-    zip_path.write_bytes(img_zip_bytes)
-    data_path.write_bytes(data_json_bytes)
-
-    env = os.environ.copy()
-    env["AI_SERVICE_TEST_DIR"] = str(SHARED_DIR)
-    env["TMP"] = str(AI_REMOTE_INFER_TMP_DIR)
-    env["TEMP"] = str(AI_REMOTE_INFER_TMP_DIR)
-    env["TMPDIR"] = str(AI_REMOTE_INFER_TMP_DIR)
-    env["TORCH_HOME"] = str(AI_REMOTE_INFER_TORCH_HOME)
-
-    process = subprocess.run(
-        [AI_SERVICE_PYTHON, str(LOCAL_INFER_ENTRYPOINT)],
-        cwd=str(SERVICE_DIR),
-        capture_output=True,
-        env=env,
-    )
-    stdout_text = _decode_output(process.stdout)
-    stderr_text = _decode_output(process.stderr)
-    if process.returncode != 0:
-        err = stderr_text.strip() or stdout_text.strip()
-        raise RuntimeError(
-            f"Local infer subprocess exited with code {process.returncode}. "
-            + (f"Error output: {err}" if err else "No error output was captured.")
-        )
-
-    lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
     try:
-        index = next(i for i, line in enumerate(lines) if "start results" in line.lower())
-        return lines[index + 1]
-    except (StopIteration, IndexError) as exc:
-        first_line = lines[0] if lines else "(no output)"
-        raise RuntimeError(
-            "Local infer output did not contain the expected 'start results' marker. "
-            f"First line received: {first_line!r}"
-        ) from exc
+        zip_path = request_dir / "img.zip"
+        data_path = request_dir / "data.json"
+        zip_path.write_bytes(img_zip_bytes)
+        data_path.write_bytes(data_json_bytes)
+
+        env = os.environ.copy()
+        env["AI_SERVICE_TEST_DIR"] = str(request_dir)
+        env["AI_SERVICE_CACHE_ROOT"] = str(request_dir / "cache")
+        env["TMP"] = str(AI_REMOTE_INFER_TMP_DIR)
+        env["TEMP"] = str(AI_REMOTE_INFER_TMP_DIR)
+        env["TMPDIR"] = str(AI_REMOTE_INFER_TMP_DIR)
+        env["TORCH_HOME"] = str(AI_REMOTE_INFER_TORCH_HOME)
+
+        process = subprocess.run(
+            [AI_SERVICE_PYTHON, str(LOCAL_INFER_ENTRYPOINT)],
+            cwd=str(SERVICE_DIR),
+            capture_output=True,
+            env=env,
+        )
+        stdout_text = _decode_output(process.stdout)
+        stderr_text = _decode_output(process.stderr)
+        if process.returncode != 0:
+            err = stderr_text.strip() or stdout_text.strip()
+            raise RuntimeError(
+                f"Local infer subprocess exited with code {process.returncode}. "
+                + (f"Error output: {err}" if err else "No error output was captured.")
+            )
+
+        lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
+        try:
+            index = next(i for i, line in enumerate(lines) if "start results" in line.lower())
+            return lines[index + 1]
+        except (StopIteration, IndexError) as exc:
+            first_line = lines[0] if lines else "(no output)"
+            raise RuntimeError(
+                "Local infer output did not contain the expected 'start results' marker. "
+                f"First line received: {first_line!r}"
+            ) from exc
+    finally:
+        shutil.rmtree(request_dir, ignore_errors=True)
 
 
 class GPUInferRequestHandler(BaseHTTPRequestHandler):
@@ -153,7 +169,7 @@ class GPUInferRequestHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            with _REQUEST_LOCK:
+            with _REQUEST_LIMITER:
                 result_base64 = _run_local_infer_with_payload(img_zip_bytes, data_json_bytes)
         except Exception as exc:
             _json_response(
@@ -177,6 +193,7 @@ def main():
                 "status": "starting",
                 "host": AI_REMOTE_INFER_HOST,
                 "port": AI_REMOTE_INFER_PORT,
+                "max_concurrency": AI_REMOTE_INFER_MAX_CONCURRENCY,
                 "service_dir": str(SERVICE_DIR),
                 "entrypoint": str(LOCAL_INFER_ENTRYPOINT),
             },

@@ -1,4 +1,5 @@
-import threading
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 from django.db import close_old_connections, transaction
 from django.utils import timezone
@@ -6,6 +7,26 @@ from django.utils import timezone
 from ...models import DetectionResult, DetectionTask, ImageUpload
 from ..capabilities.image_detection_service import run_image_detection_task
 from ..event_logger import log_user_event
+
+
+def _get_image_task_max_workers():
+    raw = os.environ.get("IMAGE_TASK_MAX_WORKERS", "2")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = 2
+    return max(1, value)
+
+
+IMAGE_TASK_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_get_image_task_max_workers(),
+    thread_name_prefix="image-detection-task",
+)
+
+LLM_IMAGE_TASK_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="image-detection-task-llm",
+)
 
 
 def _refund_detection_usage(organization, if_use_llm, num_images):
@@ -178,10 +199,11 @@ def run_image_detection_task_async(
 
 def start_image_detection_task_thread(task_id, image_ids, if_use_llm, num_images, *, task_runner=None):
     runner = task_runner or run_image_detection_task_async
-    thread = threading.Thread(
-        target=runner,
-        args=(task_id, image_ids, if_use_llm, num_images),
-        daemon=True,
-        name=f"detection-task-{task_id}",
+    executor = LLM_IMAGE_TASK_EXECUTOR if if_use_llm else IMAGE_TASK_EXECUTOR
+    return executor.submit(
+        runner,
+        task_id,
+        image_ids,
+        if_use_llm,
+        num_images,
     )
-    thread.start()

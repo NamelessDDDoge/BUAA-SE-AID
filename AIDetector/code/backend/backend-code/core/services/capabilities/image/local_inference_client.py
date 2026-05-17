@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -66,12 +67,17 @@ AI_REMOTE_INFER_TIMEOUT = int(os.environ.get("AI_REMOTE_INFER_TIMEOUT", "1800"))
 AI_REMOTE_INFER_TOKEN = os.environ.get("AI_REMOTE_INFER_TOKEN", "").strip()
 
 
-def _prepare_inputs(local_path, json_path):
+def _create_request_dir():
     AI_SERVICE_TEST_DIR.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="request_", dir=str(AI_SERVICE_TEST_DIR)))
+
+
+def _prepare_inputs(local_path, json_path, request_dir):
+    request_dir.mkdir(parents=True, exist_ok=True)
     source_zip = Path(local_path)
     source_json = Path(json_path)
-    target_zip = AI_SERVICE_TEST_DIR / "img.zip"
-    target_json = AI_SERVICE_TEST_DIR / "data.json"
+    target_zip = request_dir / "img.zip"
+    target_json = request_dir / "data.json"
 
     if source_json.resolve() != target_json.resolve():
         shutil.copy2(source_json, target_json)
@@ -110,14 +116,15 @@ def _load_remote_infer_config():
     return {"url": url, "token": token, "timeout": timeout}
 
 
-def _run_remote_inference():
+def _run_remote_inference(request_dir=None):
     config = _load_remote_infer_config()
     infer_url = config["url"]
     if not infer_url:
         raise RuntimeError("AI_REMOTE_INFER_URL is not configured.")
 
-    zip_path = AI_SERVICE_TEST_DIR / "img.zip"
-    data_path = AI_SERVICE_TEST_DIR / "data.json"
+    io_dir = Path(request_dir) if request_dir is not None else AI_SERVICE_TEST_DIR
+    zip_path = io_dir / "img.zip"
+    data_path = io_dir / "data.json"
     if not zip_path.exists():
         raise FileNotFoundError(f"Remote inference input zip not found: {zip_path}")
     if not data_path.exists():
@@ -167,10 +174,10 @@ def _run_remote_inference():
     return pickle.loads(base64.b64decode(encoded_payload))
 
 
-def _run_local_inference():
+def _run_local_inference(request_dir=None):
     remote_config = _load_remote_infer_config()
     if remote_config["url"]:
-        return _run_remote_inference()
+        return _run_remote_inference(request_dir=request_dir)
 
     ai_service_dir = AI_SERVICE_DIR or _discover_ai_service_dir()
     ai_service_entrypoint = Path(
@@ -178,12 +185,14 @@ def _run_local_inference():
         or os.environ.get("AI_SERVICE_ENTRYPOINT", str(ai_service_dir / "local_infer.py"))
     )
 
-    AI_SERVICE_TEST_DIR.mkdir(parents=True, exist_ok=True)
+    io_dir = Path(request_dir) if request_dir is not None else AI_SERVICE_TEST_DIR
+    io_dir.mkdir(parents=True, exist_ok=True)
     AI_SERVICE_TMP_DIR.mkdir(parents=True, exist_ok=True)
     AI_SERVICE_TORCH_HOME.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
-    env["AI_SERVICE_TEST_DIR"] = str(AI_SERVICE_TEST_DIR)
+    env["AI_SERVICE_TEST_DIR"] = str(io_dir)
+    env["AI_SERVICE_CACHE_ROOT"] = str(io_dir / "cache")
     env["TMP"] = str(AI_SERVICE_TMP_DIR)
     env["TEMP"] = str(AI_SERVICE_TMP_DIR)
     env["TMPDIR"] = str(AI_SERVICE_TMP_DIR)
@@ -221,5 +230,9 @@ def _run_local_inference():
 
 
 def get_result(local_path, json_path):
-    _prepare_inputs(local_path, json_path)
-    return _run_local_inference()
+    request_dir = _create_request_dir()
+    try:
+        _prepare_inputs(local_path, json_path, request_dir)
+        return _run_local_inference(request_dir=request_dir)
+    finally:
+        shutil.rmtree(request_dir, ignore_errors=True)

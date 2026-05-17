@@ -19,8 +19,18 @@ TEST_DIR = Path(
 )
 ZIP_PATH = TEST_DIR / "img.zip"
 JSON_PATH = TEST_DIR / "data.json"
-TMP_DIR = Path.home() / ".codex" / "memories" / ".tmp_ai_service"
-TORCH_HOME_DIR = Path.home() / ".codex" / "memories" / ".torch_cache"
+TMP_DIR = Path(
+    os.environ.get(
+        "AI_SERVICE_TMP_DIR",
+        str(Path.home() / ".codex" / "memories" / ".tmp_ai_service"),
+    )
+)
+TORCH_HOME_DIR = Path(
+    os.environ.get(
+        "AI_SERVICE_TORCH_HOME",
+        str(Path.home() / ".codex" / "memories" / ".torch_cache"),
+    )
+)
 TEST_DIR.mkdir(parents=True, exist_ok=True)
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 TORCH_HOME_DIR.mkdir(parents=True, exist_ok=True)
