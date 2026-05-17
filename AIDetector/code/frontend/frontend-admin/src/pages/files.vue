@@ -119,7 +119,14 @@
             <v-row class="mb-4">
               <v-col cols="12" md="8">
                 <div class="text-h5 font-weight-bold">{{ selectedTaskSummary.task_name }}</div>
-                <div class="text-body-2 text-medium-emphasis mt-2">{{ selectedTaskDetail.result_summary || selectedTaskSummary.result_summary || '暂无摘要' }}</div>
+                <v-chip
+                  size="small"
+                  :color="summaryColor(selectedTaskSummary, selectedTaskDetail)"
+                  variant="tonal"
+                  class="mt-2 summary-chip"
+                >
+                  {{ selectedTaskDetail.result_summary || selectedTaskSummary.result_summary || '暂无摘要' }}
+                </v-chip>
               </v-col>
               <v-col cols="12" md="4" class="d-flex justify-md-end align-start">
                 <v-chip :color="statusColor(selectedTaskSummary.status)" class="mr-2">{{ statusLabel(selectedTaskSummary.status) }}</v-chip>
@@ -604,6 +611,36 @@ const statusColor = (status: string) => ({
   failed: 'error',
 }[status] || 'grey')
 
+const summaryColor = (taskSummary?: any, taskDetail?: any) => {
+  const task = taskSummary || {}
+  if (task.status === 'failed') return 'error'
+  if (task.status === 'pending') return 'warning'
+  if (task.status === 'in_progress') return 'info'
+
+  const summaryText = String(taskDetail?.result_summary || task.result_summary || '')
+  if (task.task_type === 'image') {
+    const match = summaryText.match(/疑似造假\s*(\d+)\s*\/\s*(\d+)/)
+    return match && Number(match[1]) > 0 ? 'error' : 'success'
+  }
+
+  if (task.task_type === 'paper') {
+    const confirmed = Number(summaryText.match(/基本确认AI\s*(\d+)/)?.[1] || 0)
+    const suspicious = Number(summaryText.match(/疑似段落\s*(\d+)/)?.[1] || 0)
+    if (confirmed > 0) return 'error'
+    if (suspicious > 0) return 'warning'
+    return 'success'
+  }
+
+  if (task.task_type === 'review') {
+    if (/不合格|可疑|模板高|错误高|相关低/.test(summaryText)) return 'error'
+    if (/需关注|模板中|错误中|相关中|未知/.test(summaryText)) return 'warning'
+    if (/分析不可用/.test(summaryText)) return 'info'
+    if (/合格|通过/.test(summaryText)) return 'success'
+  }
+
+  return 'grey'
+}
+
 const formatDate = (value: string | null | undefined) => value || '-'
 
 const formatConfidence = (value: number | null | undefined) => {
@@ -667,6 +704,14 @@ onMounted(async () => {
 .detail-shell {
   max-width: 1440px;
   margin: 0 auto;
+}
+
+.summary-chip {
+  max-width: 100%;
+  white-space: normal;
+  height: auto;
+  min-height: 28px;
+  line-height: 1.35;
 }
 
 @media (max-width: 600px) {

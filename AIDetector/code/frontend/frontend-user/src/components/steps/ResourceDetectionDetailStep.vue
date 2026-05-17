@@ -29,7 +29,14 @@
                 </v-chip>
               </div>
 
-              <div class="text-body-2 text-medium-emphasis mb-2">{{ task.result_summary || defaultSummary }}</div>
+              <v-chip
+                size="small"
+                :color="summaryChipColor"
+                variant="tonal"
+                class="mb-2 summary-chip"
+              >
+                {{ task.result_summary || defaultSummary }}
+              </v-chip>
               <div v-if="task.error_message" class="text-body-2 text-error mb-2">{{ task.error_message }}</div>
               <div class="text-body-2 text-medium-emphasis mb-4">{{ descriptionText }}</div>
 
@@ -518,6 +525,19 @@ const fakeCount = computed(() => {
   if (reviewMode.value) return reviewNeedsAttention.value ? 1 : 0
   return fakeFiles.value.length
 })
+
+const summaryChipColor = computed(() => {
+  if (props.task.status === 'failed') return 'error'
+  if (props.task.status === 'pending') return 'warning'
+  if (props.task.status === 'in_progress') return 'info'
+  if (reviewMode.value) return reviewSummaryAlertType.value
+  if (isPaper.value) {
+    if (paperConfirmedParagraphs.value.length > 0) return 'error'
+    if (paperSuspiciousParagraphs.value.length > 0) return 'warning'
+    return 'success'
+  }
+  return 'success'
+})
 const riskRatio = computed(() => {
   if (!totalCount.value) {
     return 0
@@ -664,5 +684,13 @@ const previewFile = async (file: ResourceFile) => {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
+}
+
+.summary-chip {
+  max-width: 100%;
+  white-space: normal;
+  height: auto;
+  min-height: 28px;
+  line-height: 1.35;
 }
 </style>

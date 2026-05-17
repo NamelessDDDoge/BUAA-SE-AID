@@ -51,6 +51,17 @@
           </v-chip>
         </template>
 
+        <template #item.result_summary="{ item }">
+          <v-chip
+            size="small"
+            :color="summaryColor(item)"
+            variant="tonal"
+            class="summary-chip"
+          >
+            {{ item.result_summary || '-' }}
+          </v-chip>
+        </template>
+
         <template #item.actions="{ item }">
           <div class="d-flex justify-center ga-2">
             <v-btn size="small" color="primary" variant="text" :disabled="item.status !== 'completed'" @click="goToTaskPage(item)">
@@ -130,7 +141,18 @@
             <v-list-item title="提交时间" :subtitle="formatDateTime(currentTask.upload_time)" />
             <v-list-item title="完成时间" :subtitle="formatDateTime(currentTask.completion_time) || '-'" />
             <v-list-item title="任务状态" :subtitle="statusLabel(currentTask.status)" />
-            <v-list-item title="结果摘要" :subtitle="currentTask.result_summary || '-'" />
+            <v-list-item title="结果摘要">
+              <template #subtitle>
+                <v-chip
+                  size="small"
+                  :color="summaryColor(currentTask)"
+                  variant="tonal"
+                  class="mt-1 summary-chip"
+                >
+                  {{ currentTask.result_summary || '-' }}
+                </v-chip>
+              </template>
+            </v-list-item>
             <v-list-item v-if="currentTask.error_message" title="错误信息" :subtitle="currentTask.error_message" />
           </v-list>
         </v-card-text>
@@ -427,6 +449,36 @@ const taskTypeColor = (taskType: string) => ({
   review: 'teal',
 }[taskType] || 'grey')
 
+const summaryColor = (task: Task | null) => {
+  if (!task) return 'grey'
+  if (task.status === 'failed') return 'error'
+  if (task.status === 'pending') return 'warning'
+  if (task.status === 'in_progress') return 'info'
+
+  const summary = String(task.result_summary || '')
+  if (task.task_type === 'image') {
+    const match = summary.match(/疑似造假\s*(\d+)\s*\/\s*(\d+)/)
+    return match && Number(match[1]) > 0 ? 'error' : 'success'
+  }
+
+  if (task.task_type === 'paper') {
+    const confirmed = Number(summary.match(/基本确认AI\s*(\d+)/)?.[1] || 0)
+    const suspicious = Number(summary.match(/疑似段落\s*(\d+)/)?.[1] || 0)
+    if (confirmed > 0) return 'error'
+    if (suspicious > 0) return 'warning'
+    return 'success'
+  }
+
+  if (task.task_type === 'review') {
+    if (/不合格|可疑|模板高|错误高|相关低/.test(summary)) return 'error'
+    if (/需关注|模板中|错误中|相关中|未知/.test(summary)) return 'warning'
+    if (/分析不可用/.test(summary)) return 'info'
+    if (/合格|通过/.test(summary)) return 'success'
+  }
+
+  return 'grey'
+}
+
 const resetFilters = () => {
   filters.value = {
     status: null,
@@ -552,6 +604,15 @@ onBeforeUnmount(() => {
 
 .history-card {
   overflow: hidden;
+}
+
+.summary-chip {
+  max-width: 100%;
+  white-space: normal;
+  height: auto;
+  min-height: 26px;
+  line-height: 1.35;
+  justify-content: center;
 }
 
 @media (max-width: 700px) {

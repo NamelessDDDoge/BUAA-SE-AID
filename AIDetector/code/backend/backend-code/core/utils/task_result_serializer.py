@@ -38,9 +38,13 @@ def build_task_result_summary(task):
         review_results = raw_results.get("review_analysis_results") or {}
         overall = review_results.get("overall") or raw_results.get("overall_evaluation") or {}
         qualification_text = overall.get("qualification_text")
-        qualification_reason = overall.get("qualification_reason")
         if qualification_text:
-            return f"Review 检测已完成，综合结论：{qualification_text}。{qualification_reason or ''}".strip()
+            return (
+                f"Review 检测完成：{qualification_text}"
+                f"，模板程度{_review_level_text(overall.get('template_like_level'))}"
+                f"，错误程度{_review_level_text(overall.get('wrongness_level'))}"
+                f"，相关程度{_review_relevance_level_text(overall.get('relevance_level'))}"
+            )
         template_level = overall.get("template_like_level")
         relevance_level = overall.get("relevance_level")
 
@@ -59,6 +63,28 @@ def build_task_result_summary(task):
             relevance_count = len(results.get("relevance_results", []))
         return f"Review 检测已完成，匹配 {relevance_count} 段"
     return "检测已完成"
+
+
+def _review_level_text(level):
+    normalized = str(level or "").strip().lower()
+    if normalized == "high":
+        return "高"
+    if normalized == "medium":
+        return "中"
+    if normalized == "low":
+        return "低"
+    return "未知"
+
+
+def _review_relevance_level_text(level):
+    normalized = str(level or "").strip().lower()
+    if normalized in {"high", "relevant"}:
+        return "高"
+    if normalized == "medium":
+        return "中"
+    if normalized in {"low", "weak_match"}:
+        return "低"
+    return "未知"
 
 
 def serialize_resource_file(file_record):
