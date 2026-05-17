@@ -795,6 +795,7 @@ def _stringify_report_value(value):
 def generate_paper_detection_task_report(task: DetectionTask) -> str:
     results = get_paper_task_results_payload(task)
     document = results.get("document", {})
+    items = results.get("items", []) or []
     paragraph_results = results.get("paragraph_results", [])
     confirmed_ai_paragraphs = results.get("confirmed_ai_paragraphs", [])
     suspicious_paragraphs = results.get("suspicious_paragraphs", [])
@@ -843,6 +844,26 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
             ("风险评分", overall_evaluation.get("risk_score")),
         ],
     )
+
+    if len(items) > 1:
+        y = _draw_report_section_title(c, y, title="批量资源总览", height=height, margin=margin, theme=theme, subtitle="任务内多篇论文处理概览")
+        y = _draw_report_items(
+            c,
+            y,
+            [
+                {
+                    "file_name": item.get("document", {}).get("file_name"),
+                    "paragraph_count": item.get("document", {}).get("paragraph_count"),
+                    "reference_count": item.get("document", {}).get("reference_count"),
+                    "confirmed_ai_count": len(item.get("confirmed_ai_paragraphs") or []),
+                    "suspicious_count": len(item.get("suspicious_paragraphs") or []),
+                }
+                for item in items
+            ],
+            height=height,
+            margin=margin,
+            theme=theme,
+        )
 
     y = _draw_report_section_title(c, y, title="段落检测结果", height=height, margin=margin, theme=theme, subtitle="Fast-Detect 段落判定")
     y = _draw_report_items(
@@ -967,6 +988,7 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
 def generate_review_detection_task_report(task: DetectionTask) -> str:
     results = get_review_task_results_payload(task)
     document = results.get("document", {})
+    items = results.get("items", []) or []
     paragraph_results = results.get("paragraph_results", [])
     review_analysis = results.get("review_analysis_results", {}) or {}
     overall_evaluation = review_analysis.get("overall", {}) or results.get("overall_evaluation", {}) or {}
@@ -1012,6 +1034,26 @@ def generate_review_detection_task_report(task: DetectionTask) -> str:
             ("与论文相关度", overall_evaluation.get("relevance_level")),
         ],
     )
+
+    if len(items) > 1:
+        y = _draw_report_section_title(c, y, title="批量资源总览", height=height, margin=margin, theme=theme, subtitle="任务内多组论文与 Review 处理概览")
+        y = _draw_report_items(
+            c,
+            y,
+            [
+                {
+                    "paper_file_name": item.get("document", {}).get("paper_file_name"),
+                    "review_file_name": item.get("document", {}).get("review_file_name"),
+                    "review_paragraph_count": item.get("document", {}).get("review_paragraph_count"),
+                    "suspicious_count": len(item.get("suspicious_paragraphs") or []),
+                    "relevance_count": len(item.get("relevance_results") or []),
+                }
+                for item in items
+            ],
+            height=height,
+            margin=margin,
+            theme=theme,
+        )
 
     y = _draw_report_section_title(c, y, title="Review 综合审查", height=height, margin=margin, theme=theme, subtitle="模板化、错误与相关性综合判断")
     y = _draw_report_pairs(
@@ -1318,4 +1360,3 @@ def generate_manual_review_report(review: ManualReview) -> str:
 #     task.report_file = rel_path
 #     task.save(update_fields=["report_file"])
 #     return rel_path
-

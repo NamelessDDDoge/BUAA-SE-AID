@@ -24,6 +24,9 @@
                 <v-chip :color="statusColor" size="small">{{ statusLabel }}</v-chip>
                 <v-chip size="small" color="grey-lighten-2">任务 #{{ task.task_id }}</v-chip>
                 <v-chip size="small" color="grey-lighten-2">{{ totalCountLabel }} {{ totalCount }}</v-chip>
+                <v-chip v-if="resourceCount > 1" size="small" color="teal" variant="tonal">
+                  资源数 {{ resourceCount }}
+                </v-chip>
                 <v-chip v-if="isPaper" size="small" color="primary" variant="tonal">
                   基本确认AI段落 {{ paperConfirmedParagraphs.length }}
                 </v-chip>
@@ -329,6 +332,10 @@ interface TaskDetail {
   pending_resource_files?: ResourceFile[]
   resource_split_note?: string | null
   results?: {
+    document?: {
+      resource_count?: number
+      [key: string]: any
+    }
     paragraph_results?: Array<{ paragraph_index: number; label?: string; probability?: number; text?: string; forgery_reason?: string }>
     confirmed_ai_paragraphs?: Array<{ paragraph_index: number; probability?: number; reason?: string }>
     overall_evaluation?: {
@@ -404,6 +411,7 @@ watch(() => props.task.task_id, () => {
 const isPaper = computed(() => props.task.task_type === 'paper')
 const reviewMode = computed(() => props.task.task_type === 'review')
 const paperParagraphs = computed(() => props.task.results?.paragraph_results || [])
+const resourceCount = computed(() => Number(props.task?.results?.document?.resource_count || props.task?.resource_files?.length || 0))
 const paperSuspiciousParagraphs = computed(() => paperParagraphs.value.filter(p => p.label === 'suspicious'))
 const paperCleanParagraphs = computed(() => paperParagraphs.value.filter(p => p.label === 'clean'))
 const paperConfirmedParagraphs = computed(() => props.task.results?.confirmed_ai_paragraphs || [])

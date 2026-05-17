@@ -44,14 +44,44 @@ def run_paper_detection_task(task_id, api_key=None):
     detection_task.error_message = ""
     detection_task.save(update_fields=["status", "error_message"])
 
-    file_management = detection_task.resource_files.filter(resource_type="paper").first()
-    if not file_management:
+    paper_files = list(detection_task.resource_files.filter(resource_type="paper").order_by("id"))
+    if not paper_files:
         return _mark_task_failed(detection_task, "No paper resource file found")
 
-    file_path = os.path.join(settings.MEDIA_ROOT, file_management.stored_path)
-    if not os.path.exists(file_path):
-        return _mark_task_failed(detection_task, "Paper file path does not exist")
+    paper_items = []
+    for file_management in paper_files:
+        file_path = os.path.join(settings.MEDIA_ROOT, file_management.stored_path)
+        if not os.path.exists(file_path):
+            return _mark_task_failed(detection_task, f"Paper file path does not exist: {file_management.file_name}")
 
+        paper_items.append(
+            _run_single_paper_detection_item(
+                detection_task=detection_task,
+                file_management=file_management,
+                file_path=file_path,
+                api_key=api_key,
+            )
+        )
+
+    primary_item = paper_items[0]
+    aggregated_payload = _build_multi_paper_payload(primary_item, paper_items)
+
+    detection_task.text_detection_results = store_paper_task_results(
+        detection_task=detection_task,
+        source_file=primary_item["source_file"],
+        results_payload=aggregated_payload,
+    )
+    detection_task.status = "completed"
+    detection_task.completion_time = timezone.now()
+    detection_task.error_message = ""
+    detection_task.save(
+        update_fields=["text_detection_results", "status", "completion_time", "error_message"]
+    )
+    generate_task_report(detection_task)
+    return "Paper detection finished"
+
+
+def _run_single_paper_detection_item(*, detection_task, file_management, file_path, api_key=None):
     processed_document = preprocess_document(file_path)
     override_text = _get_text_override(detection_task)
     if override_text:
@@ -109,7 +139,8 @@ def run_paper_detection_task(task_id, api_key=None):
     )
     image_results = _run_paper_image_detection(detection_task, file_management)
 
-    results_payload = {
+    return {
+        "source_file": file_management,
         "document": {
             "file_id": file_management.id,
             "file_name": file_management.file_name,
@@ -127,19 +158,28 @@ def run_paper_detection_task(task_id, api_key=None):
         "image_results": image_results,
     }
 
-    detection_task.text_detection_results = store_paper_task_results(
-        detection_task=detection_task,
-        source_file=file_management,
-        results_payload=results_payload,
-    )
-    detection_task.status = "completed"
-    detection_task.completion_time = timezone.now()
-    detection_task.error_message = ""
-    detection_task.save(
-        update_fields=["text_detection_results", "status", "completion_time", "error_message"]
-    )
-    generate_task_report(detection_task)
-    return "Paper detection finished"
+
+def _build_multi_paper_payload(primary_item, paper_items):
+    primary_payload = {
+        key: value
+        for key, value in primary_item.items()
+        if key != "source_file"
+    }
+    return {
+        **primary_payload,
+        "items": [
+            {
+                key: value
+                for key, value in item.items()
+                if key != "source_file"
+            }
+            for item in paper_items
+        ],
+        "document": {
+            **primary_payload.get("document", {}),
+            "resource_count": len(paper_items),
+        },
+    }
 
 
 def _run_paper_image_detection(detection_task, file_management):

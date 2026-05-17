@@ -168,6 +168,34 @@ class ResourcePreprocessingTests(TestCase):
         self.assertFalse(task.paper_detection_result.image_detection_enabled)
         mock_image_detection.assert_not_called()
 
+    @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
+    def test_run_paper_detection_aggregates_multiple_paper_files_into_items(self, mock_post, mock_image_detection):
+        mock_post.return_value.json.return_value = {"data": {"prob": 0.2, "details": {"source": "mock"}}}
+        mock_post.return_value.raise_for_status.return_value = None
+        file_record_1 = self.create_text_file("paper-a.txt", "Paper A paragraph.")
+        file_record_2 = self.create_text_file("paper-b.txt", "Paper B paragraph.")
+        task = DetectionTask.objects.create(
+            user=self.user,
+            organization=self.organization,
+            task_type="paper",
+            task_name="Multi Paper Detection",
+            status="pending",
+        )
+        task.resource_files.add(file_record_1, file_record_2)
+
+        result = run_paper_detection(task.id)
+
+        task.refresh_from_db()
+        self.assertEqual(result, "Paper detection finished")
+        self.assertEqual(task.status, "completed")
+        self.assertEqual(task.text_detection_results["document"]["resource_count"], 2)
+        self.assertEqual(len(task.text_detection_results["items"]), 2)
+        self.assertEqual(task.text_detection_results["items"][0]["document"]["file_name"], "paper-a.txt")
+        self.assertEqual(task.text_detection_results["items"][1]["document"]["file_name"], "paper-b.txt")
+        self.assertEqual(task.text_detection_results["document"]["file_name"], "paper-a.txt")
+        mock_image_detection.assert_not_called()
+
     def test_preprocess_document_extracts_text_from_pdf_when_pymupdf_is_available(self):
         file_record = self.create_pdf_file("paper.pdf", "PDF parsing should work for task creation and execution.")
         file_path = self.temp_media / file_record.stored_path
@@ -340,6 +368,52 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(task.text_detection_results["relevance_results"][0]["paper_paragraph_index"], 0)
         self.assertTrue(ReviewDetectionResult.objects.filter(detection_task=task).exists())
         self.assertEqual(task.review_detection_result.paragraph_results.count(), 1)
+
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
+    def test_run_review_detection_aggregates_multiple_review_pairs_into_items(self, mock_post):
+        mock_post.return_value.json.return_value = {"data": {"prob": 0.34, "details": {"source": "mock"}}}
+        mock_post.return_value.raise_for_status.return_value = None
+        paper_file_1 = self.create_review_file(
+            "review-paper-1.txt",
+            "Paper one content.",
+            resource_type="review_paper",
+        )
+        review_file_1 = self.create_review_file(
+            "review-comment-1.txt",
+            "Review one content.",
+            resource_type="review_file",
+            linked_file=paper_file_1,
+        )
+        paper_file_2 = self.create_review_file(
+            "review-paper-2.txt",
+            "Paper two content.",
+            resource_type="review_paper",
+        )
+        review_file_2 = self.create_review_file(
+            "review-comment-2.txt",
+            "Review two content.",
+            resource_type="review_file",
+            linked_file=paper_file_2,
+        )
+        task = DetectionTask.objects.create(
+            user=self.user,
+            organization=self.organization,
+            task_type="review",
+            task_name="Multi Review Detection",
+            status="pending",
+        )
+        task.resource_files.add(paper_file_1, review_file_1, paper_file_2, review_file_2)
+
+        result = run_review_detection(task.id)
+
+        task.refresh_from_db()
+        self.assertEqual(result, "Review detection finished")
+        self.assertEqual(task.status, "completed")
+        self.assertEqual(task.text_detection_results["document"]["resource_count"], 2)
+        self.assertEqual(len(task.text_detection_results["items"]), 2)
+        self.assertEqual(task.text_detection_results["items"][0]["document"]["paper_file_name"], "review-paper-1.txt")
+        self.assertEqual(task.text_detection_results["items"][1]["document"]["paper_file_name"], "review-paper-2.txt")
+        self.assertEqual(task.text_detection_results["document"]["paper_file_name"], "review-paper-1.txt")
 
     def test_task_compatibility_wrappers_are_plain_functions_without_celery_delay(self):
         self.assertFalse(hasattr(run_paper_detection, "delay"))

@@ -95,16 +95,51 @@ def run_review_detection_task(task_id, api_key=None):
     detection_task.error_message = ""
     detection_task.save(update_fields=["status", "error_message"])
 
-    paper_file = detection_task.resource_files.filter(resource_type="review_paper").first()
-    review_file = detection_task.resource_files.filter(resource_type="review_file").first()
-    if not paper_file or not review_file:
+    review_pairs = _build_review_file_pairs(detection_task)
+    if not review_pairs:
         return _mark_review_task_failed(detection_task, "Review task requires both review_paper and review_file")
 
-    paper_path = os.path.join(settings.MEDIA_ROOT, paper_file.stored_path)
-    review_path = os.path.join(settings.MEDIA_ROOT, review_file.stored_path)
-    if not os.path.exists(paper_path) or not os.path.exists(review_path):
-        return _mark_review_task_failed(detection_task, "Review task file path does not exist")
+    review_items = []
+    for paper_file, review_file in review_pairs:
+        paper_path = os.path.join(settings.MEDIA_ROOT, paper_file.stored_path)
+        review_path = os.path.join(settings.MEDIA_ROOT, review_file.stored_path)
+        if not os.path.exists(paper_path) or not os.path.exists(review_path):
+            return _mark_review_task_failed(
+                detection_task,
+                f"Review task file path does not exist: {paper_file.file_name} / {review_file.file_name}",
+            )
 
+        review_items.append(
+            _run_single_review_detection_item(
+                detection_task=detection_task,
+                paper_file=paper_file,
+                review_file=review_file,
+                paper_path=paper_path,
+                review_path=review_path,
+                api_key=api_key,
+            )
+        )
+
+    primary_item = review_items[0]
+    aggregated_payload = _build_multi_review_payload(primary_item, review_items)
+
+    detection_task.text_detection_results = store_review_task_results(
+        detection_task=detection_task,
+        paper_file=primary_item["paper_file"],
+        review_file=primary_item["review_file"],
+        results_payload=aggregated_payload,
+    )
+    detection_task.status = "completed"
+    detection_task.completion_time = timezone.now()
+    detection_task.error_message = ""
+    detection_task.save(
+        update_fields=["text_detection_results", "status", "completion_time", "error_message"]
+    )
+    generate_task_report(detection_task)
+    return "Review detection finished"
+
+
+def _run_single_review_detection_item(*, detection_task, paper_file, review_file, paper_path, review_path, api_key=None):
     paper_document = preprocess_document(paper_path)
     review_document = preprocess_document(review_path)
     paper_override_text = _get_text_override(detection_task, "paper_text_override")
@@ -194,35 +229,24 @@ def run_review_detection_task(task_id, api_key=None):
         if item.get("label") == "suspicious"
     ]
 
-    detection_task.text_detection_results = store_review_task_results(
-        detection_task=detection_task,
-        paper_file=paper_file,
-        review_file=review_file,
-        results_payload={
-            "document": {
-                "paper_file_id": paper_file.id,
-                "paper_file_name": paper_file.file_name,
-                "review_file_id": review_file.id,
-                "review_file_name": review_file.file_name,
-                "paper_segment_count": len(paper_document["segments"]),
-                "review_segment_count": len(review_document["segments"]),
-                "paper_paragraph_count": len(paper_document["paragraphs"]),
-                "review_paragraph_count": len(review_document["paragraphs"]),
-            },
-            "paragraph_results": paragraph_results,
-            "suspicious_paragraphs": suspicious_paragraphs,
-            "review_analysis_results": analysis_results,
-            "relevance_results": analysis_results.get("paragraph_results", []),
+    return {
+        "paper_file": paper_file,
+        "review_file": review_file,
+        "document": {
+            "paper_file_id": paper_file.id,
+            "paper_file_name": paper_file.file_name,
+            "review_file_id": review_file.id,
+            "review_file_name": review_file.file_name,
+            "paper_segment_count": len(paper_document["segments"]),
+            "review_segment_count": len(review_document["segments"]),
+            "paper_paragraph_count": len(paper_document["paragraphs"]),
+            "review_paragraph_count": len(review_document["paragraphs"]),
         },
-    )
-    detection_task.status = "completed"
-    detection_task.completion_time = timezone.now()
-    detection_task.error_message = ""
-    detection_task.save(
-        update_fields=["text_detection_results", "status", "completion_time", "error_message"]
-    )
-    generate_task_report(detection_task)
-    return "Review detection finished"
+        "paragraph_results": paragraph_results,
+        "suspicious_paragraphs": suspicious_paragraphs,
+        "review_analysis_results": analysis_results,
+        "relevance_results": analysis_results.get("paragraph_results", []),
+    }
 
 
 def _mark_review_task_failed(detection_task, message):
@@ -231,6 +255,45 @@ def _mark_review_task_failed(detection_task, message):
     detection_task.completion_time = timezone.now()
     detection_task.save(update_fields=["status", "error_message", "completion_time"])
     return message
+
+
+def _build_review_file_pairs(detection_task):
+    paper_files = {
+        file_record.id: file_record
+        for file_record in detection_task.resource_files.filter(resource_type="review_paper").order_by("id")
+    }
+    review_files = list(
+        detection_task.resource_files.filter(resource_type="review_file").select_related("linked_file").order_by("id")
+    )
+    pairs = []
+    for review_file in review_files:
+        linked_paper = review_file.linked_file
+        if linked_paper and linked_paper.id in paper_files:
+            pairs.append((paper_files[linked_paper.id], review_file))
+    return pairs
+
+
+def _build_multi_review_payload(primary_item, review_items):
+    primary_payload = {
+        key: value
+        for key, value in primary_item.items()
+        if key not in {"paper_file", "review_file"}
+    }
+    return {
+        **primary_payload,
+        "items": [
+            {
+                key: value
+                for key, value in item.items()
+                if key not in {"paper_file", "review_file"}
+            }
+            for item in review_items
+        ],
+        "document": {
+            **primary_payload.get("document", {}),
+            "resource_count": len(review_items),
+        },
+    }
 
 
 def _build_document_from_text(text_content):

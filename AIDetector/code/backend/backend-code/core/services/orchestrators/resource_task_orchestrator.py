@@ -1,4 +1,5 @@
-import threading
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 from django.db import close_old_connections, transaction
 from django.utils import timezone
@@ -7,6 +8,26 @@ from ..event_logger import log_user_event
 from ...models import DetectionTask, FileManagement
 from .paper_task_orchestrator import run_paper_detection_task
 from .review_task_orchestrator import run_review_detection_task
+
+
+def _get_resource_task_max_workers():
+    raw = os.environ.get("RESOURCE_TASK_MAX_WORKERS", "2")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = 2
+    return max(1, value)
+
+
+RESOURCE_TASK_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_get_resource_task_max_workers(),
+    thread_name_prefix="resource-detection-task",
+)
+
+LLM_RESOURCE_TASK_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="resource-detection-task-llm",
+)
 
 
 def _normalize_resource_method_switches(method_switches):
@@ -135,13 +156,10 @@ def run_resource_detection_task_async(task_type, task_id, api_key=None):
 
 
 def start_resource_detection_task_thread(task_type, task_id, api_key=None):
-    thread = threading.Thread(
-        target=run_resource_detection_task_async,
-        args=(task_type, task_id, api_key),
-        daemon=True,
-        name=f"{task_type}-task-{task_id}",
-    )
-    thread.start()
+    detection_task = DetectionTask.objects.filter(pk=task_id).only("if_use_llm").first()
+    use_llm_executor = bool(detection_task and detection_task.if_use_llm)
+    executor = LLM_RESOURCE_TASK_EXECUTOR if use_llm_executor else RESOURCE_TASK_EXECUTOR
+    return executor.submit(run_resource_detection_task_async, task_type, task_id, api_key)
 
 
 def _get_resource_task_runner(task_type):

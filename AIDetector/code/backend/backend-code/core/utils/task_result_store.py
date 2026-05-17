@@ -220,6 +220,7 @@ def get_paper_task_results_payload(task):
                 "segment_count": paper_result.segment_count,
                 "reference_count": paper_result.reference_count,
                 "image_detection_enabled": paper_result.image_detection_enabled,
+                "resource_count": raw_payload.get("document", {}).get("resource_count"),
             },
             "paragraph_results": paragraph_results,
             "confirmed_ai_paragraphs": confirmed_ai_paragraphs,
@@ -228,6 +229,7 @@ def get_paper_task_results_payload(task):
             "data_authenticity_results": raw_payload.get("data_authenticity_results") or {"summary": "-", "findings": []},
             "overall_evaluation": raw_payload.get("overall_evaluation") or {},
             "image_results": image_results,
+            "items": raw_payload.get("items") or [],
         }
     )
 
@@ -290,12 +292,14 @@ def get_review_task_results_payload(task):
                 "review_segment_count": review_result.review_segment_count,
                 "paper_paragraph_count": raw_payload.get("document", {}).get("paper_paragraph_count"),
                 "review_paragraph_count": raw_payload.get("document", {}).get("review_paragraph_count"),
+                "resource_count": raw_payload.get("document", {}).get("resource_count"),
             },
             "paragraph_results": paragraph_results,
             "suspicious_paragraphs": suspicious_paragraphs,
             "relevance_results": relevance_results,
             "review_analysis_results": review_analysis_results,
             "overall_evaluation": review_analysis_results.get("overall") or {},
+            "items": raw_payload.get("items") or [],
         }
     )
 
