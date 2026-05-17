@@ -158,7 +158,10 @@ def _start_detection_task_thread(task_id, image_ids, if_use_llm, num_images):
 @permission_classes([IsAuthenticated])
 def submit_detection2(request):
     user_id = request.user.id
-    mode = int(request.data['mode'])
+    try:
+        mode = int(request.data.get('mode', 0))
+    except (TypeError, ValueError):
+        return Response({"message": "mode must be an integer"}, status=400)
     user = User.objects.get(id=user_id)
     if not user.has_permission('submit'):
         return Response({"閿欒": "璇ョ敤鎴锋病鏈夋彁浜ゆ娴嬬殑鏉冮檺"}, status=403)

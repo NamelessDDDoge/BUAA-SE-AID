@@ -61,6 +61,7 @@ def build_raw_stored_zip_entry(raw_filename, payload):
         0,
         0,
         0,
+        0,
         crc,
         file_size,
         file_size,

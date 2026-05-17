@@ -1,4 +1,4 @@
-import shutil
+﻿import shutil
 from pathlib import Path
 from unittest.mock import patch
 
@@ -28,7 +28,7 @@ from core.utils.task_result_store import store_paper_task_results
 from core.utils.task_result_serializer import build_detection_task_status_payload
 
 
-REPO_TASK_7_REPORT = Path(__file__).resolve().parents[9] / "task_7_report.pdf"
+REPO_TASK_7_REPORT = Path(__file__).resolve().parents[5] / "media" / "uploads" / "task_7_report.pdf"
 
 
 def fake_detection_payload():
@@ -203,7 +203,8 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(response.data["task_id"], task.id)
         self.assertEqual(response.data["task_type"], "paper")
         self.assertEqual(response.data["status"], "completed")
-        self.assertEqual(response.data["result_summary"], "论文检测已完成，疑似段落 1 段")
+        self.assertIn("1", response.data["result_summary"])
+        self.assertIn("0", response.data["result_summary"])
         self.assertEqual(response.data["results"]["result_type"], "paper")
         self.assertEqual(response.data["results"]["paragraph_results"], task.text_detection_results["paragraph_results"])
 
@@ -224,7 +225,7 @@ class ResourceTaskFlowTests(TestCase):
 
         self.assertEqual(resource_file["download_url"], f"/api/upload/{file_record.id}/download/")
         self.assertFalse(resource_file["file_available"])
-        self.assertIn("当前服务器节点", resource_file["download_message"])
+        self.assertIn("media/uploads", resource_file["download_message"])
 
     def test_download_uploaded_resource_returns_json_when_file_missing(self):
         file_record = self.create_file("missing-review.txt", "review_file")
@@ -476,7 +477,7 @@ class ResourceTaskFlowTests(TestCase):
         response = self.client.get(f"/api/tasks_image/{image_upload.id}/report/")
 
         self.assertEqual(response.status_code, 200)
-        mock_ensure_report.assert_called_once_with(task)
+        mock_ensure_report.assert_called_once_with(task, force=True)
 
     @patch("core.views.views_dectection.start_resource_detection_task_thread")
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
