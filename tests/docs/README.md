@@ -1,71 +1,75 @@
-# BUAA-SE-AID 测试体系总览
+# BUAA-SE-AID Test System
 
-本仓库由四个相对独立的子系统组成，测试也按子系统自治、按测试金字塔分层组织。
+The repository keeps tests close to each subsystem, with repository-root tests reserved for cross-system contracts, E2E, smoke, and shared helpers.
 
-## 目录布局速览
+## Unified Entry
 
-```
-tests/                                          # 仓库根 — 跨子系统层
-├── e2e/                                        # 多服务联跑
-├── contract/                                   # 前后端 / 后端-推理服务契约
-├── performance/                                # 压测脚本
-├── smoke/                                      # 上线冒烟
-├── shared/{fixtures,factories,helpers}/        # 跨系统共用资产
-└── docs/                                       # 本目录
+Run the default local test gate from the repository root:
 
-AIDetector/code/backend/backend-code/core/tests/   # Django 后端
-AIDetector/code/ai-service/ai-service-code/tests/  # 推理服务
-AIDetector/code/ai-training/ai-training-code/tests/# 训练代码
-AIDetector/code/frontend/frontend-user/tests/      # Vue 用户端
-AIDetector/code/frontend/frontend-admin/tests/     # Vue 管理端
+```powershell
+.\scripts\test_all.ps1
 ```
 
-每个子系统内统一拆为 `unit/`、`integration/`、（可选）`e2e/`、`fixtures/`。
+Default behavior:
 
-## 如何跑测试
+- Runs backend migrations and backend tests in the `detect` conda environment.
+- Runs ai-service and ai-training pytest suites in the `detect` conda environment.
+- Runs frontend-user and frontend-admin Vitest suites.
+- Excludes tests marked `gpu`, `e2e`, or `slow`.
+- Stops at the first failing command and returns a non-zero exit code.
 
-### 后端（Django）
-```pwsh
+Useful variants:
+
+```powershell
+.\scripts\test_all.ps1 -Suite backend
+.\scripts\test_all.ps1 -Suite python
+.\scripts\test_all.ps1 -Suite frontend
+.\scripts\test_all.ps1 -Suite all -IncludeGPU -IncludeE2E
+.\scripts\test_all.ps1 -SkipFrontend
+.\scripts\test_all.ps1 -CondaEnv detect
+.\scripts\test_all.ps1 -DatabaseMode local
+```
+
+Windows note: the runner sets `PYTHONIOENCODING=utf-8`, `PYTHONUTF8=1`, and `DATABASE_MODE=local` before invoking pytest to avoid GBK output failures and remote SSH database timeouts during local verification.
+
+## Direct Subsystem Commands
+
+Backend:
+
+```powershell
 cd AIDetector/code/backend/backend-code
-pytest                                          # 默认跳过 gpu/e2e/slow
-pytest -m unit                                  # 只跑单测
-pytest -m "integration and not slow"            # 跑集成测试（排除慢）
-pytest --cov=core --cov-report=term-missing     # 带覆盖率
+conda run --no-capture-output -n detect python manage.py migrate
+conda run --no-capture-output -n detect pytest core/tests -m "not gpu and not e2e and not slow" -q
 ```
 
-### 推理服务
-```pwsh
+AI service:
+
+```powershell
 cd AIDetector/code/ai-service/ai-service-code
-pytest                                          # CPU 单测
-pytest -m gpu                                   # 真跑模型（需 CUDA）
+conda run --no-capture-output -n detect pytest tests -m "not gpu and not e2e and not slow" -q
 ```
 
-### 前端（Vitest + Playwright）
-```pwsh
+AI training:
+
+```powershell
+cd AIDetector/code/ai-training/ai-training-code
+conda run --no-capture-output -n detect pytest tests -m "not gpu and not e2e and not slow" -q
+```
+
+Frontend:
+
+```powershell
 cd AIDetector/code/frontend/frontend-user
-pnpm test                                       # vitest run
-pnpm test:e2e                                   # playwright
+npm test
+
+cd ../frontend-admin
+npm test
 ```
 
-### 跨子系统
-```pwsh
-cd tests
-pytest contract/                                # 契约测试
-pytest e2e/                                     # 真 E2E（需 docker-compose 先起服务）
-```
+## Adding New Tests
 
-## 如何加新测试
-
-1. **先定位测试层**：纯函数/单类 → `unit/`，走 ORM/HTTP → `integration/`，跨多个服务 → 仓库根 `tests/e2e/`。
-2. **目录镜像源码**：要测 `core/services/orchestrators/image_task_orchestrator.py`，测试放到 `core/tests/unit/services/orchestrators/test_image_task_orchestrator.py`。
-3. **设计文档单元 ↔ 测试** 双向映射见 [`test_matrix.md`](test_matrix.md)。新增功能时同步更新映射表。
-4. **覆盖率门槛** 见 [`coverage_policy.md`](coverage_policy.md)，PR 不允许下降。
-
-## 设计原则（来自 `python-plan-steady-clock.md` 第 2 节）
-
-1. 每个子系统自治，不强行做仓库级"大一统"框架
-2. 测试金字塔显式分层：unit → integration → e2e
-3. 目录镜像源码
-4. 跨子系统测试提升到仓库根
-5. fixture 集中收口，临时产物不进仓
-6. 设计文档 ↔ 测试双向映射
+1. Put pure function and small class tests under `unit/`.
+2. Put Django ORM/APIClient/file-system tests under `integration/`.
+3. Put multi-service browser or service-chain tests under repository-root `tests/e2e/`.
+4. Keep large fixtures out of git; small deterministic fixtures belong under each subsystem's `fixtures/` directory.
+5. Update `tests/docs/test_matrix.md` when a test maps to a design-document unit.
