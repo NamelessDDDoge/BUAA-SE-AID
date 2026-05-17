@@ -201,6 +201,8 @@ const loading = ref(false)
 const deleting = ref(false)
 const clearing = ref(false)
 let searchTimer: number | null = null
+let refreshTimer: number | null = null
+const refreshIntervalMs = 5000
 
 const headers = [
   { title: '任务 ID', key: 'task_id', align: 'center' as const, width: '120px' },
@@ -291,8 +293,39 @@ const hasActiveFilters = computed(() => Boolean(
   filters.value.timeRange !== null,
 ))
 
-const fetchTasks = async (page: number, size: number) => {
-  loading.value = true
+const hasLiveTasks = () => tasks.value.some((task) => ['pending', 'in_progress'].includes(task.status))
+
+const stopAutoRefresh = () => {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+const startAutoRefresh = () => {
+  if (refreshTimer) return
+  refreshTimer = window.setInterval(() => {
+    void fetchTasks(currentPage.value, pageSize.value, true)
+  }, refreshIntervalMs)
+}
+
+const syncAutoRefresh = () => {
+  if (hasLiveTasks()) {
+    startAutoRefresh()
+  } else {
+    stopAutoRefresh()
+  }
+}
+
+const syncCurrentTask = () => {
+  if (!currentTask.value) return
+  const latest = tasks.value.find((task) => task.task_id === currentTask.value?.task_id)
+  if (latest) currentTask.value = latest
+}
+
+const fetchTasks = async (page: number, size: number, silent = false) => {
+  if (silent && loading.value) return
+  if (!silent) loading.value = true
   try {
     const params: any = { page, page_size: size }
 
@@ -321,14 +354,16 @@ const fetchTasks = async (page: number, size: number) => {
     const response = await detectionApi.listUserTasks(params)
     const { tasks: taskList, current_page, total_pages, total_tasks } = response.data
     tasks.value = taskList
+    syncCurrentTask()
     currentPage.value = current_page
     totalPages.value = total_pages
     totalTasks.value = total_tasks
   } catch (error) {
     console.error('Failed to fetch tasks:', error)
-    snackbar.showMessage('获取任务列表失败。', 'error')
+    if (!silent) snackbar.showMessage('获取任务列表失败。', 'error')
   } finally {
-    loading.value = false
+    syncAutoRefresh()
+    if (!silent) loading.value = false
   }
 }
 
@@ -501,6 +536,7 @@ watch(() => filters.value.keyword, () => {
 
 onBeforeUnmount(() => {
   if (searchTimer) window.clearTimeout(searchTimer)
+  stopAutoRefresh()
 })
 </script>
 

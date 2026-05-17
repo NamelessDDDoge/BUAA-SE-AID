@@ -164,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import publisherApi from '@/api/publisher'
 import { useSnackbarStore } from '@/stores/snackbar'
@@ -198,6 +198,8 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const totalTasks = ref(0)
 const totalPages = ref(1)
+let refreshTimer: number | null = null
+const refreshIntervalMs = 6000
 
 // 筛选相关
 const showFilterDialog = ref(false)
@@ -340,8 +342,33 @@ const applyFilters = () => {
 }
 
 // 从后端获取任务数据
-const fetchTasks = async (page: number, pageSize: number) => {
-  loading.value = true
+const hasLiveTasks = () => tasks.value.some((task) => task.status !== 'completed')
+
+const stopAutoRefresh = () => {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+const startAutoRefresh = () => {
+  if (refreshTimer) return
+  refreshTimer = window.setInterval(() => {
+    void fetchTasks(currentPage.value, pageSize.value, true)
+  }, refreshIntervalMs)
+}
+
+const syncAutoRefresh = () => {
+  if (hasLiveTasks()) {
+    startAutoRefresh()
+  } else {
+    stopAutoRefresh()
+  }
+}
+
+const fetchTasks = async (page: number, pageSize: number, silent = false) => {
+  if (silent && loading.value) return
+  if (!silent) loading.value = true
   try {
     // 计算时间筛选
     let startTimeFilter: string | undefined
@@ -387,9 +414,10 @@ const fetchTasks = async (page: number, pageSize: number) => {
     totalTasks.value = total_count
   } catch (error) {
     console.error('获取任务列表失败:', error)
-    snackbar.showMessage('获取任务列表失败', 'error')
+    if (!silent) snackbar.showMessage('获取任务列表失败', 'error')
   } finally {
-    loading.value = false
+    syncAutoRefresh()
+    if (!silent) loading.value = false
   }
 }
 
@@ -421,6 +449,10 @@ const formatDateFilter = (timestamp: number) => {
 // 初始化
 onMounted(() => {
   fetchTasks(currentPage.value, pageSize.value)
+})
+
+onBeforeUnmount(() => {
+  stopAutoRefresh()
 })
 </script>
 
