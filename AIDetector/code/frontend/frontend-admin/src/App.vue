@@ -69,7 +69,7 @@
 
     <!-- 移动端底部导航栏 -->
     <v-bottom-navigation v-if="isMobile && !isLoginPage">
-      <v-btn to="/analytics" value="home">
+      <v-btn to="/" value="home">
         <v-icon>mdi-home</v-icon>
         <span>主页</span>
       </v-btn>
@@ -197,7 +197,8 @@ const isLoginPage = computed(() => normalizePath(route.path) === '/login')
 
 const activeSection = computed(() => {
   const path = normalizePath(route.path)
-  if (path === '/login' || path === '/analytics') return 'home'
+  if (path === '/') return 'home'
+  if (path === '/analytics') return 'analytics'
   if (path === '/organizations') return 'organizations'
   if (path === '/organization_profile') return 'organization_profile'
   if (path === '/files') return 'files'
@@ -284,7 +285,7 @@ const sendBroadcast = async () => {
 }
 
 const goToHome = () => {
-  router.push(isLoggedIn.value ? '/analytics' : '/login')
+  router.push(isLoggedIn.value ? '/' : '/login')
 }
 
 const goToLogin = () => {
