@@ -9,21 +9,28 @@
       <div class="upload-area pa-8" @dragover.prevent @drop.prevent="handleDrop" @click="triggerInput">
         <v-icon size="68" color="teal">mdi-file-document-outline</v-icon>
         <div class="text-h6 mt-4">点击或拖拽论文文件到此处上传</div>
-        <div class="text-caption text-medium-emphasis">支持 DOCX / PDF / ZIP，单文件不超过 100MB。</div>
-        <input ref="inputRef" type="file" accept=".docx,.pdf,.zip" style="display: none" @change="handleSelect">
+        <div class="text-caption text-medium-emphasis">支持 DOCX / PDF / ZIP，可一次选择多个文件，单文件不超过 100MB。</div>
+        <input ref="inputRef" type="file" accept=".docx,.pdf,.zip" multiple style="display: none" @change="handleSelect">
       </div>
 
-      <v-card v-if="file" variant="outlined" class="mt-4">
-        <v-card-text class="d-flex align-center">
-          <v-icon color="primary" class="mr-2">mdi-file-document</v-icon>
-          <div class="flex-grow-1">
-            <div class="text-body-2">{{ displayName || file.name }}</div>
-            <div class="text-caption text-grey">
-              {{ formatFileSize(displaySize ?? file.size) }}
-            </div>
-            <div v-if="displayHint" class="text-caption text-primary">{{ displayHint }}</div>
+      <v-card v-if="files.length" variant="outlined" class="mt-4">
+        <v-card-text>
+          <div class="text-subtitle-2 mb-3">已选择 {{ files.length }} 份论文文件</div>
+          <v-list density="compact" lines="two">
+            <v-list-item v-for="(selectedFile, idx) in files" :key="`${selectedFile.name}_${idx}`">
+              <template #prepend>
+                <v-icon color="primary" class="mr-2">mdi-file-document</v-icon>
+              </template>
+              <v-list-item-title>{{ idx === 0 ? (displayName || selectedFile.name) : selectedFile.name }}</v-list-item-title>
+              <v-list-item-subtitle>
+                {{ formatFileSize(idx === 0 && displaySize ? displaySize : selectedFile.size) }}
+                <template v-if="idx === 0 && displayHint"> · {{ displayHint }}</template>
+              </v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+          <div class="d-flex justify-end mt-2">
+            <v-btn icon="mdi-close" variant="text" @click="emit('clear')" />
           </div>
-          <v-btn icon="mdi-close" variant="text" @click="emit('clear')" />
         </v-card-text>
       </v-card>
 
@@ -47,7 +54,7 @@
 import { ref } from 'vue'
 
 defineProps<{
-  file: File | null
+  files: File[]
   uploading: boolean
   uploadProgress: number
   displayName?: string
@@ -56,7 +63,7 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'select', file: File): void
+  (e: 'select', files: File[]): void
   (e: 'clear'): void
   (e: 'submit'): void
 }>()
@@ -67,14 +74,14 @@ const triggerInput = () => inputRef.value?.click()
 
 const handleSelect = (event: Event) => {
   const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
-  if (file) emit('select', file)
+  const files = Array.from(target.files || [])
+  if (files.length) emit('select', files)
   target.value = ''
 }
 
 const handleDrop = (event: DragEvent) => {
-  const file = event.dataTransfer?.files?.[0]
-  if (file) emit('select', file)
+  const files = Array.from(event.dataTransfer?.files || [])
+  if (files.length) emit('select', files)
 }
 
 const formatFileSize = (bytes: number) => {

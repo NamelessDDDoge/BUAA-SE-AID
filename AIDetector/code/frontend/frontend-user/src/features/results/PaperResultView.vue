@@ -114,86 +114,11 @@
       </v-card-text>
     </v-card>
 
-    <v-card v-if="paperItems.length > 1" elevation="2" rounded="lg">
-      <v-card-title class="d-flex align-center ga-2">
-        <v-icon color="teal">mdi-file-multiple-outline</v-icon>
-        <span class="text-h6">批量论文结果总览</span>
-      </v-card-title>
-      <v-card-text>
-        <v-list lines="three">
-          <v-list-item v-for="(item, idx) in paperItems" :key="`paper-item-${idx}`" class="mb-3">
-            <v-list-item-title>
-              {{ item.document?.file_name || `资源 ${idx + 1}` }}
-              <v-chip size="x-small" class="ml-2" color="primary" variant="tonal">
-                段落 {{ item.document?.paragraph_count ?? 0 }}
-              </v-chip>
-              <v-chip size="x-small" class="ml-2" color="warning" variant="tonal">
-                疑似 {{ countSuspicious(item.paragraph_results) }}
-              </v-chip>
-            </v-list-item-title>
-            <v-list-item-subtitle>
-              基本确认AI {{ (item.confirmed_ai_paragraphs || []).length }} 段
-              · 参考文献 {{ item.document?.reference_count ?? 0 }}
-            </v-list-item-subtitle>
-          </v-list-item>
-        </v-list>
-      </v-card-text>
-    </v-card>
-
-    <v-card v-if="paperItems.length > 1" elevation="2" rounded="lg">
-      <v-card-title class="d-flex align-center ga-2">
-        <v-icon color="primary">mdi-tab-search</v-icon>
-        <span class="text-h6">按资源查看论文结果</span>
-      </v-card-title>
-      <v-card-text>
-        <v-chip-group v-model="selectedPaperItemIndex" selected-class="text-primary" class="mb-4" mandatory>
-          <v-chip
-            v-for="(item, idx) in paperItems"
-            :key="`paper-switch-${idx}`"
-            filter
-            variant="outlined"
-            color="primary"
-          >
-            {{ item.document?.file_name || `资源 ${idx + 1}` }}
-          </v-chip>
-        </v-chip-group>
-
-        <v-window v-model="selectedPaperItemIndex">
-          <v-window-item v-for="(item, idx) in paperItems" :key="`paper-window-${idx}`" :value="idx">
-            <v-alert type="info" variant="tonal" class="mb-4">
-              <div><strong>文件：</strong>{{ item.document?.file_name || `资源 ${idx + 1}` }}</div>
-              <div><strong>段落数：</strong>{{ item.document?.paragraph_count ?? 0 }}</div>
-              <div><strong>参考文献数：</strong>{{ item.document?.reference_count ?? 0 }}</div>
-            </v-alert>
-
-            <v-list v-if="(item.paragraph_results || []).length" lines="three">
-              <v-list-item v-for="(para, paraIndex) in item.paragraph_results" :key="`paper-item-${idx}-para-${paraIndex}`" class="mb-4 pa-4 bg-grey-lighten-4 rounded-lg">
-                <template #prepend>
-                  <v-avatar :color="para.label === 'suspicious' ? 'error' : 'success'" size="40" class="mr-4 text-white">
-                    {{ (para.paragraph_index ?? paraIndex) + 1 }}
-                  </v-avatar>
-                </template>
-                <v-list-item-title class="text-subtitle-1 font-weight-bold mb-2">
-                  检测结果: {{ para.label === 'suspicious' ? '疑似 AI 生成' : '正常' }}
-                  <v-chip size="small" :color="para.label === 'suspicious' ? 'error' : 'success'" class="ml-2">
-                    概率: {{ ((para.probability || 0) * 100).toFixed(1) }}%
-                  </v-chip>
-                </v-list-item-title>
-                <v-list-item-subtitle class="text-body-1" style="white-space: pre-wrap;">
-                  {{ para.text }}
-                </v-list-item-subtitle>
-              </v-list-item>
-            </v-list>
-            <div v-else class="text-medium-emphasis py-4">当前资源暂无段落结果。</div>
-          </v-window-item>
-        </v-window>
-      </v-card-text>
-    </v-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import ResourceDetectionDetailStep from '@/components/steps/ResourceDetectionDetailStep.vue'
 
 const props = defineProps<{
@@ -209,8 +134,6 @@ const emit = defineEmits<{
 const overallEvaluation = computed(() => props.task?.results?.overall_evaluation || null)
 const confirmedParagraphs = computed(() => props.task?.results?.confirmed_ai_paragraphs || [])
 const referenceResults = computed(() => props.task?.results?.reference_results || [])
-const paperItems = computed(() => Array.isArray(props.task?.results?.items) ? props.task.results.items : [])
-const selectedPaperItemIndex = ref(0)
 
 const overallRiskType = computed(() => {
   const level = String(overallEvaluation.value?.risk_level || '').toLowerCase()
@@ -238,10 +161,5 @@ const getExplanation = (index: number) => {
   const suspicious = props.task?.results?.suspicious_paragraphs || []
   const match = suspicious.find((s: any) => s.paragraph_index === index)
   return match ? match.explanation : ''
-}
-
-const countSuspicious = (paragraphs?: any[]) => {
-  if (!Array.isArray(paragraphs)) return 0
-  return paragraphs.filter(item => item?.label === 'suspicious').length
 }
 </script>

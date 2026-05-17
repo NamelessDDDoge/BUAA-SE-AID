@@ -16,6 +16,7 @@ export interface UploadedResourceFile {
   file_id: number
   name: string
   resource_type: string
+  group_key?: string
 }
 
 export interface TaskOption {

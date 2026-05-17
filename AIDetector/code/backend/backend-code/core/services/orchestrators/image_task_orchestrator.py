@@ -170,6 +170,51 @@ def create_image_detection_task(
     return detection_task, image_uploads
 
 
+def create_image_detection_tasks(
+    *,
+    user,
+    image_ids,
+    task_name="",
+    mode=1,
+    cmd_block_size=64,
+    urn_k=0.3,
+    if_use_llm=False,
+    method_switches=None,
+    llm_model_name=None,
+    on_commit=None,
+    async_task_starter=None,
+):
+    image_uploads = _validate_image_uploads(user, image_ids)
+    total_images = len(image_uploads)
+
+    created_tasks = []
+    created_upload_groups = []
+    for index, image_upload in enumerate(image_uploads):
+        split_task_name = _build_split_image_task_name(
+            base_task_name=task_name,
+            image_upload=image_upload,
+            index=index,
+            total=total_images,
+        )
+        detection_task, created_uploads = create_image_detection_task(
+            user=user,
+            image_ids=[image_upload.id],
+            task_name=split_task_name,
+            mode=mode,
+            cmd_block_size=cmd_block_size,
+            urn_k=urn_k,
+            if_use_llm=if_use_llm,
+            method_switches=method_switches,
+            llm_model_name=llm_model_name,
+            on_commit=on_commit,
+            async_task_starter=async_task_starter,
+        )
+        created_tasks.append(detection_task)
+        created_upload_groups.append(created_uploads)
+
+    return created_tasks, created_upload_groups
+
+
 def run_image_detection_task_async(
     task_id,
     image_ids,
@@ -207,3 +252,13 @@ def start_image_detection_task_thread(task_id, image_ids, if_use_llm, num_images
         if_use_llm,
         num_images,
     )
+
+
+def _build_split_image_task_name(*, base_task_name, image_upload, index, total):
+    if not base_task_name:
+        timestamp = timezone.localtime().strftime("%Y-%m-%d %H:%M:%S")
+        base_task_name = f"图像检测 {timestamp}"
+    if total <= 1:
+        return base_task_name
+    file_name = getattr(image_upload.file_management, "file_name", "") or f"image_{image_upload.id}"
+    return f"{base_task_name} · {index + 1}/{total} · {file_name}"

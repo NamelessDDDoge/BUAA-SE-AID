@@ -6,6 +6,7 @@ from django.test import TestCase, override_settings
 
 from core.services.capabilities.image import local_inference_client
 from core.services.orchestrators import image_task_orchestrator
+from core.models import DetectionTask, FileManagement, ImageUpload, Organization, User
 
 
 @override_settings(ENABLE_FANYI=False)
@@ -67,3 +68,42 @@ class ImageTaskExecutorIsolationTests(TestCase):
         self.assertEqual(llm_future, mock_llm_submit.return_value)
         mock_normal_submit.assert_called_once_with(fake_runner, 1, [100], False, 1)
         mock_llm_submit.assert_called_once_with(fake_runner, 2, [200], True, 1)
+
+
+class ImageTaskSplitTests(TestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(name="Image Split Org", email="image-split@example.com")
+        self.user = User.objects.create_user(
+            username="image-split-user",
+            email="image-split-user@example.com",
+            password="pass123456",
+            role="publisher",
+            organization=self.organization,
+        )
+        self.file_record = FileManagement.objects.create(
+            user=self.user,
+            organization=self.organization,
+            file_name="source.pdf",
+            file_size=128,
+            file_type="pdf",
+            resource_type="image",
+            stored_path="uploads/source.pdf",
+            tag="Other",
+        )
+        self.image_upload_1 = ImageUpload.objects.create(file_management=self.file_record, image="extracted_images/a.png")
+        self.image_upload_2 = ImageUpload.objects.create(file_management=self.file_record, image="extracted_images/b.png")
+
+    def test_create_image_detection_tasks_splits_each_image_into_individual_task(self):
+        tasks, image_groups = image_task_orchestrator.create_image_detection_tasks(
+            user=self.user,
+            image_ids=[self.image_upload_1.id, self.image_upload_2.id],
+            on_commit=lambda fn: fn(),
+            async_task_starter=lambda *args, **kwargs: None,
+        )
+
+        self.assertEqual(len(tasks), 2)
+        self.assertEqual(len(image_groups), 2)
+        self.assertEqual(image_groups[0][0].id, self.image_upload_1.id)
+        self.assertEqual(image_groups[1][0].id, self.image_upload_2.id)
+        self.assertTrue(all(task.resource_files.count() == 1 for task in tasks))
+        self.assertTrue(all(task.detection_results.count() == 1 for task in tasks))

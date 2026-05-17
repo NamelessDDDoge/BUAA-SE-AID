@@ -4,6 +4,7 @@ from django.test import TestCase
 
 from core.models import DetectionTask, Organization, User
 from core.services.orchestrators import resource_task_orchestrator
+from core.models import FileManagement
 
 
 class ResourceTaskExecutorTests(TestCase):
@@ -62,3 +63,63 @@ class ResourceTaskExecutorTests(TestCase):
             "demo-key",
         )
         mock_normal_submit.assert_not_called()
+
+
+class ResourceTaskSplitTests(TestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(name="Resource Split Org", email="resource-split@example.com")
+        self.user = User.objects.create_user(
+            username="resource-split-user",
+            email="resource-split-user@example.com",
+            password="pass123456",
+            role="publisher",
+            organization=self.organization,
+        )
+
+    def create_file(self, file_name, resource_type, linked_file=None):
+        return FileManagement.objects.create(
+            user=self.user,
+            organization=self.organization,
+            file_name=file_name,
+            file_size=128,
+            file_type="text/plain",
+            resource_type=resource_type,
+            stored_path=f"uploads/{file_name}",
+            linked_file=linked_file,
+        )
+
+    def test_create_resource_detection_tasks_splits_multiple_papers_into_individual_tasks(self):
+        paper_a = self.create_file("paper-a.txt", "paper")
+        paper_b = self.create_file("paper-b.txt", "paper")
+
+        tasks, file_groups = resource_task_orchestrator.create_resource_detection_tasks(
+            user=self.user,
+            task_type="paper",
+            file_ids=[paper_a.id, paper_b.id],
+        )
+
+        self.assertEqual(len(tasks), 2)
+        self.assertEqual(len(file_groups), 2)
+        self.assertEqual([group[0].id for group in file_groups], [paper_a.id, paper_b.id])
+        self.assertEqual(tasks[0].resource_files.count(), 1)
+        self.assertEqual(tasks[1].resource_files.count(), 1)
+
+    def test_create_resource_detection_tasks_splits_one_paper_and_multiple_reviews(self):
+        paper = self.create_file("paper.txt", "review_paper")
+        review_a = self.create_file("review-a.txt", "review_file", linked_file=paper)
+        review_b = self.create_file("review-b.txt", "review_file", linked_file=paper)
+
+        tasks, file_groups = resource_task_orchestrator.create_resource_detection_tasks(
+            user=self.user,
+            task_type="review",
+            file_ids=[paper.id, review_a.id, review_b.id],
+        )
+
+        self.assertEqual(len(tasks), 2)
+        self.assertEqual(len(file_groups), 2)
+        self.assertEqual(file_groups[0][0].id, paper.id)
+        self.assertEqual(file_groups[1][0].id, paper.id)
+        self.assertEqual(file_groups[0][1].id, review_a.id)
+        self.assertEqual(file_groups[1][1].id, review_b.id)
+        self.assertEqual(tasks[0].resource_files.count(), 2)
+        self.assertEqual(tasks[1].resource_files.count(), 2)

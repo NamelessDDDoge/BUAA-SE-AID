@@ -30,7 +30,12 @@
                 <v-icon color="primary">mdi-file-document-outline</v-icon>
               </template>
               <v-list-item-title>{{ item.name }}</v-list-item-title>
-              <v-list-item-subtitle>资源类型：{{ item.resource_type }}</v-list-item-subtitle>
+              <v-list-item-subtitle>
+                资源类型：{{ item.resource_type }}
+                <template v-if="item.group_key && item.group_key !== 'shared-paper'">
+                  · Review 组 {{ item.group_key }}
+                </template>
+              </v-list-item-subtitle>
             </v-list-item>
           </v-list>
 

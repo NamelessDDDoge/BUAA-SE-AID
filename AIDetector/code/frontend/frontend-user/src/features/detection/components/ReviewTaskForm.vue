@@ -4,7 +4,7 @@
       <v-icon color="orange" class="mr-2">mdi-comment-text-multiple-outline</v-icon>
       Review 检测上传
     </v-card-title>
-    <v-card-subtitle>同时上传原论文与对应 Review，后续可分别确认两份文本。</v-card-subtitle>
+    <v-card-subtitle>上传一篇原论文，并可逐次添加多份对应 Review，后续会拆成多个单独检测任务。</v-card-subtitle>
     <v-card-text>
       <v-row>
         <v-col cols="12" md="6">
@@ -32,25 +32,32 @@
         </v-col>
 
         <v-col cols="12" md="6">
-          <div class="text-subtitle-1 mb-2">2. 上传对应 Review 文件</div>
+          <div class="text-subtitle-1 mb-2">2. 上传对应 Review 文件（可多次添加）</div>
           <div class="upload-area pa-6" @dragover.prevent @drop.prevent="handleReviewDrop" @click="triggerReviewInput">
             <v-icon size="50" color="orange">mdi-comment-text-outline</v-icon>
             <div class="text-body-1 mt-2">点击或拖拽 Review 文件</div>
-            <div class="text-caption text-medium-emphasis">支持 DOCX / PDF / TXT / ZIP，单文件不超过 100MB。</div>
-            <input ref="reviewInputRef" type="file" accept=".docx,.pdf,.txt,.zip" style="display: none" @change="handleReviewSelect">
+            <div class="text-caption text-medium-emphasis">支持 DOCX / PDF / TXT / ZIP，单文件不超过 100MB。每次选择一份，可重复添加。</div>
+            <input ref="reviewInputRef" type="file" accept=".docx,.pdf,.txt,.zip" multiple style="display: none" @change="handleReviewSelect">
           </div>
 
-          <v-card v-if="reviewFile" variant="outlined" class="mt-3">
-            <v-card-text class="d-flex align-center">
-              <v-icon color="primary" class="mr-2">mdi-file-document-edit-outline</v-icon>
-              <div class="flex-grow-1">
-                <div class="text-body-2">{{ reviewDisplayName || reviewFile.name }}</div>
-                <div class="text-caption text-grey">
-                  {{ formatFileSize(reviewDisplaySize ?? reviewFile.size) }}
-                </div>
-                <div v-if="reviewDisplayHint" class="text-caption text-primary">{{ reviewDisplayHint }}</div>
+          <v-card v-if="reviewFiles.length" variant="outlined" class="mt-3">
+            <v-card-text>
+              <div class="text-subtitle-2 mb-3">已选择 {{ reviewFiles.length }} 份 Review 文件</div>
+              <v-list density="compact" lines="two">
+                <v-list-item v-for="(selectedFile, idx) in reviewFiles" :key="`${selectedFile.name}_${idx}`">
+                  <template #prepend>
+                    <v-icon color="primary" class="mr-2">mdi-file-document-edit-outline</v-icon>
+                  </template>
+                  <v-list-item-title>{{ idx === 0 ? (reviewDisplayName || selectedFile.name) : selectedFile.name }}</v-list-item-title>
+                  <v-list-item-subtitle>
+                    {{ formatFileSize(idx === 0 && reviewDisplaySize ? reviewDisplaySize : selectedFile.size) }}
+                    <template v-if="idx === 0 && reviewDisplayHint"> · {{ reviewDisplayHint }}</template>
+                  </v-list-item-subtitle>
+                </v-list-item>
+              </v-list>
+              <div class="d-flex justify-end mt-2">
+                <v-btn icon="mdi-close" variant="text" @click="emit('clear-review')" />
               </div>
-              <v-btn icon="mdi-close" variant="text" @click="emit('clear-review')" />
             </v-card-text>
           </v-card>
         </v-col>
@@ -77,7 +84,7 @@ import { ref } from 'vue'
 
 defineProps<{
   paperFile: File | null
-  reviewFile: File | null
+  reviewFiles: File[]
   uploading: boolean
   uploadProgress: number
   paperDisplayName?: string
@@ -90,7 +97,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'select-paper', file: File): void
-  (e: 'select-review', file: File): void
+  (e: 'select-review', files: File[]): void
   (e: 'clear-paper'): void
   (e: 'clear-review'): void
   (e: 'submit'): void
@@ -111,8 +118,8 @@ const handlePaperSelect = (event: Event) => {
 
 const handleReviewSelect = (event: Event) => {
   const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
-  if (file) emit('select-review', file)
+  const files = Array.from(target.files || [])
+  if (files.length) emit('select-review', files)
   target.value = ''
 }
 
@@ -122,8 +129,8 @@ const handlePaperDrop = (event: DragEvent) => {
 }
 
 const handleReviewDrop = (event: DragEvent) => {
-  const file = event.dataTransfer?.files?.[0]
-  if (file) emit('select-review', file)
+  const files = Array.from(event.dataTransfer?.files || [])
+  if (files.length) emit('select-review', files)
 }
 
 const formatFileSize = (bytes: number) => {

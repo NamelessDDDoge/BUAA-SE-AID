@@ -27,7 +27,7 @@
 
         <PaperTaskForm
           v-else-if="detectionType === 'paper'"
-          :file="mainFiles[0] || null"
+          :files="mainFiles"
           :uploading="uploading"
           :upload-progress="uploadProgress"
           :display-name="paperDisplayName"
@@ -41,7 +41,7 @@
         <ReviewTaskForm
           v-else
           :paper-file="reviewPaperFile"
-          :review-file="reviewFile"
+          :review-files="reviewFiles"
           :uploading="uploading"
           :upload-progress="uploadProgress"
           :paper-display-name="reviewPaperDisplayName"
@@ -228,6 +228,12 @@ interface ZipSelectionState {
   entry: ZipDocumentEntry
 }
 
+interface ReviewUploadGroup {
+  key: string
+  reviewFile: File
+  reviewZipSelection?: ZipSelectionState | null
+}
+
 const router = useRouter()
 const route = useRoute()
 const snackbar = useSnackbarStore()
@@ -240,7 +246,8 @@ const resolveDetectionTypeFromQuery = (value: unknown): DetectionType => {
 const detectionType = ref<DetectionType>(resolveDetectionTypeFromQuery(route.query.type))
 const mainFiles = ref<File[]>([])
 const reviewPaperFile = ref<File | null>(null)
-const reviewFile = ref<File | null>(null)
+const reviewFiles = ref<File[]>([])
+const reviewUploadGroups = ref<ReviewUploadGroup[]>([])
 const paperZipSelection = ref<ZipSelectionState | null>(null)
 const reviewPaperZipSelection = ref<ZipSelectionState | null>(null)
 const reviewFileZipSelection = ref<ZipSelectionState | null>(null)
@@ -331,7 +338,8 @@ const reviewExt = new Set(['docx', 'pdf', 'txt', 'zip'])
 watch(detectionType, () => {
   mainFiles.value = []
   reviewPaperFile.value = null
-  reviewFile.value = null
+  reviewFiles.value = []
+  reviewUploadGroups.value = []
   paperZipSelection.value = null
   reviewPaperZipSelection.value = null
   reviewFileZipSelection.value = null
@@ -472,7 +480,7 @@ const confirmZipSelection = () => {
     reviewPaperFile.value = zipFile
     reviewPaperZipSelection.value = state
   } else {
-    reviewFile.value = zipFile
+    reviewFiles.value = [zipFile]
     reviewFileZipSelection.value = state
   }
 
@@ -480,18 +488,19 @@ const confirmZipSelection = () => {
   closeZipSelectionDialog()
 }
 
-const handlePaperFile = async (file: File) => {
-  const error = validateFile(file, 'paper')
-  if (error) {
-    snackbar.showMessage(error, 'error')
+const handlePaperFile = async (files: File[] | File) => {
+  const normalizedFiles = Array.isArray(files) ? files : [files]
+  const invalid = normalizedFiles.find(file => validateFile(file, 'paper'))
+  if (invalid) {
+    snackbar.showMessage(validateFile(invalid, 'paper') || '论文文件格式错误。', 'error')
     return
   }
-  if (getExt(file) === 'zip') {
-    await openZipSelection(file, 'paper')
+  if (normalizedFiles.length === 1 && getExt(normalizedFiles[0]) === 'zip') {
+    await openZipSelection(normalizedFiles[0], 'paper')
     return
   }
   paperZipSelection.value = null
-  mainFiles.value = [file]
+  mainFiles.value = normalizedFiles
 }
 
 const handleReviewPaper = async (file: File) => {
@@ -508,18 +517,19 @@ const handleReviewPaper = async (file: File) => {
   reviewPaperFile.value = file
 }
 
-const handleReviewFile = async (file: File) => {
-  const error = validateFile(file, 'review-file')
-  if (error) {
-    snackbar.showMessage(error, 'error')
+const handleReviewFile = async (files: File[] | File) => {
+  const normalizedFiles = Array.isArray(files) ? files : [files]
+  const invalid = normalizedFiles.find(file => validateFile(file, 'review-file'))
+  if (invalid) {
+    snackbar.showMessage(validateFile(invalid, 'review-file') || 'Review 文件格式错误。', 'error')
     return
   }
-  if (getExt(file) === 'zip') {
-    await openZipSelection(file, 'review-file')
+  if (normalizedFiles.length === 1 && getExt(normalizedFiles[0]) === 'zip') {
+    await openZipSelection(normalizedFiles[0], 'review-file')
     return
   }
   reviewFileZipSelection.value = null
-  reviewFile.value = file
+  reviewFiles.value = normalizedFiles
 }
 
 const removeMainFile = (idx: number) => {
@@ -537,7 +547,21 @@ const clearReviewPaper = () => {
 }
 
 const clearReviewFile = () => {
-  reviewFile.value = null
+  reviewFiles.value = []
+  reviewFileZipSelection.value = null
+}
+
+const addCurrentReviewGroups = () => {
+  if (!reviewFiles.value.length) return
+  const firstZipSelection = reviewFileZipSelection.value
+  reviewFiles.value.forEach((reviewFile, index) => {
+    reviewUploadGroups.value.push({
+      key: `${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`,
+      reviewFile,
+      reviewZipSelection: index === 0 ? firstZipSelection : null,
+    })
+  })
+  reviewFiles.value = []
   reviewFileZipSelection.value = null
 }
 
@@ -860,14 +884,25 @@ const submitUpload = async () => {
         return
       }
 
-      const data = await uploadPaperResourceFile(mainFiles.value[0])
       progressTaskType.value = 'paper'
-      uploadedResourceFiles.value = [{
-        file_id: data.file_id,
-        name: selectedEntryDisplayName(paperZipSelection.value) || data.file_name || mainFiles.value[0].name,
-        resource_type: 'paper',
-      }]
-      await loadPaperTextPreview(data.file_id)
+      const uploadedItems: UploadedResourceFile[] = []
+      for (let i = 0; i < mainFiles.value.length; i += 1) {
+        const file = mainFiles.value[i]
+        const data = await uploadPaperResourceFile(
+          file,
+          (i / mainFiles.value.length) * 100,
+          100 / mainFiles.value.length,
+        )
+        uploadedItems.push({
+          file_id: data.file_id,
+          name: data.file_name || file.name,
+          resource_type: 'paper',
+        })
+      }
+      uploadedResourceFiles.value = uploadedItems
+      if (uploadedItems[0]) {
+        await loadPaperTextPreview(uploadedItems[0].file_id)
+      }
       resourceTaskName.value = `论文检测 ${new Date().toISOString().slice(0, 19)}`
       uploadProgress.value = 100
       snackbar.showMessage('论文上传成功，请确认后创建任务。', 'success')
@@ -875,39 +910,50 @@ const submitUpload = async () => {
       return
     }
 
-    if (!reviewPaperFile.value || !reviewFile.value) {
-      snackbar.showMessage('Review 检测需要同时上传原论文和 Review 文件。', 'error')
+    if (reviewFiles.value.length) {
+      addCurrentReviewGroups()
+    }
+
+    if (!reviewPaperFile.value || !reviewUploadGroups.value.length) {
+      snackbar.showMessage('Review 检测需要一篇原论文和至少一份 Review 文件。', 'error')
       return
     }
 
+    progressTaskType.value = 'review'
+    const uploadedItems: UploadedResourceFile[] = []
     const paperData = await uploadReviewPaperResourceFile(
       reviewPaperFile.value,
       0,
-      50,
+      40,
     )
-
-    const reviewData = await uploadReviewResourceFile(
-      reviewFile.value,
-      paperData.file_id,
-      50,
-      50,
-    )
-
-    progressTaskType.value = 'review'
-    uploadedResourceFiles.value = [
-      {
-        file_id: paperData.file_id,
-        name: selectedEntryDisplayName(reviewPaperZipSelection.value) || paperData.file_name || reviewPaperFile.value.name,
-        resource_type: 'review_paper',
-      },
-      {
-        file_id: reviewData.file_id,
-        name: selectedEntryDisplayName(reviewFileZipSelection.value) || reviewData.file_name || reviewFile.value.name,
-        resource_type: 'review_file',
-      },
-    ]
-    await loadReviewPaperTextPreview(paperData.file_id)
-    await loadReviewTextPreview(reviewData.file_id)
+    uploadedItems.push({
+      file_id: paperData.file_id,
+      name: paperData.file_name || reviewPaperFile.value.name,
+      resource_type: 'review_paper',
+      group_key: 'shared-paper',
+    })
+    for (let i = 0; i < reviewUploadGroups.value.length; i += 1) {
+      const group = reviewUploadGroups.value[i]
+      const reviewData = await uploadReviewResourceFile(
+        group.reviewFile,
+        paperData.file_id,
+        40 + (i / reviewUploadGroups.value.length) * 60,
+        60 / reviewUploadGroups.value.length,
+      )
+      uploadedItems.push(
+        {
+          file_id: reviewData.file_id,
+          name: reviewData.file_name || group.reviewFile.name,
+          resource_type: 'review_file',
+          group_key: group.key,
+        },
+      )
+    }
+    uploadedResourceFiles.value = uploadedItems
+    const firstPaper = uploadedItems.find(file => file.resource_type === 'review_paper')
+    const firstReview = uploadedItems.find(file => file.resource_type === 'review_file')
+    if (firstPaper) await loadReviewPaperTextPreview(firstPaper.file_id)
+    if (firstReview) await loadReviewTextPreview(firstReview.file_id)
     resourceTaskName.value = `Review 检测 ${new Date().toISOString().slice(0, 19)}`
     uploadProgress.value = 100
     snackbar.showMessage('Review 文件上传成功，请确认后创建任务。', 'success')
@@ -968,9 +1014,10 @@ const handleResourceTaskNext = async () => {
     } = {
       task_type: taskType,
       task_name: resourceTaskName.value,
-      file_ids: uploadedResourceFiles.value.map(file => file.file_id),
+      file_ids: [],
     }
 
+    let taskCount = 0
     if (taskType === 'paper') {
       payload.extract_images = paperImageDetectionSupported.value ? paperEnableImageDetection.value : false
       payload.method_switches = paperEnableImageDetection.value && paperImageDetectionSupported.value
@@ -978,24 +1025,36 @@ const handleResourceTaskNext = async () => {
         : Object.fromEntries(Object.keys(createDefaultMethodSwitches()).map(key => [key, false]))
       payload.if_use_llm = Boolean(payload.method_switches.llm)
       if (selectedLlmModel.value) payload.llm_model_name = selectedLlmModel.value
-      if (paperEditableText.value.trim()) {
-        payload.text_override = paperEditableText.value.trim()
+      const paperFiles = uploadedResourceFiles.value.filter(file => file.resource_type === 'paper')
+      for (const file of paperFiles) {
+        const response = await resourceTasksApi.createResourceTask({
+          ...payload,
+          file_ids: [file.file_id],
+          text_override: paperFiles.length === 1 && paperEditableText.value.trim() ? paperEditableText.value.trim() : undefined,
+        })
+        taskCount += Number(response?.data?.task_count || 1)
       }
     } else {
-      if (reviewPaperEditableText.value.trim()) {
-        payload.paper_text_override = reviewPaperEditableText.value.trim()
-      if (selectedLlmModel.value) payload.llm_model_name = selectedLlmModel.value
-      }
-      if (reviewEditableText.value.trim()) {
-        payload.review_text_override = reviewEditableText.value.trim()
+      const paperFile = uploadedResourceFiles.value.find(file => file.resource_type === 'review_paper')
+      const reviewFilesForTask = uploadedResourceFiles.value.filter(file => file.resource_type === 'review_file')
+      if (!paperFile) {
+        throw new Error('未找到已上传的论文文件。')
       }
       if (selectedLlmModel.value) {
         payload.llm_model_name = selectedLlmModel.value
       }
+      for (const reviewFile of reviewFilesForTask) {
+        const response = await resourceTasksApi.createResourceTask({
+          ...payload,
+          file_ids: [paperFile.file_id, reviewFile.file_id],
+          paper_text_override: reviewFilesForTask.length === 1 && reviewPaperEditableText.value.trim() ? reviewPaperEditableText.value.trim() : undefined,
+          review_text_override: reviewFilesForTask.length === 1 && reviewEditableText.value.trim() ? reviewEditableText.value.trim() : undefined,
+        })
+        taskCount += Number(response?.data?.task_count || 1)
+      }
     }
 
-    await resourceTasksApi.createResourceTask(payload)
-    snackbar.showMessage('任务创建成功。', 'success')
+    snackbar.showMessage(taskCount > 1 ? `已创建 ${taskCount} 个检测任务。` : '任务创建成功。', 'success')
     await navigateToHistorySafely()
   } catch (error: any) {
     const message = error?.response?.data?.message || '任务创建失败。'
@@ -1057,6 +1116,7 @@ const returnToUpload = () => {
   resourceTaskName.value = ''
   resourceDomainTag.value = ''
   uploadedResourceFiles.value = []
+  reviewUploadGroups.value = []
   paperEditableText.value = ''
   paperTextPreviewLoading.value = false
   paperTextPreviewError.value = ''
@@ -1073,7 +1133,7 @@ const returnToUpload = () => {
   paperMethodSwitches.value = createDefaultMethodSwitches()
   mainFiles.value = []
   reviewPaperFile.value = null
-  reviewFile.value = null
+  reviewFiles.value = []
   paperZipSelection.value = null
   reviewPaperZipSelection.value = null
   reviewFileZipSelection.value = null

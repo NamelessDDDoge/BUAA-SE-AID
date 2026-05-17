@@ -55,7 +55,9 @@ def get_detection_result(request, image_id):
 from ..services.capabilities import run_image_detection_task
 from ..services.orchestrators import (
     create_image_detection_task,
+    create_image_detection_tasks,
     create_resource_detection_task,
+    create_resource_detection_tasks,
     run_image_detection_task_async,
     start_image_detection_task_thread,
     start_resource_detection_task_thread,
@@ -163,7 +165,7 @@ def submit_detection2(request):
     if not user.has_permission('submit'):
         return Response({"閿欒": "璇ョ敤鎴锋病鏈夋彁浜ゆ娴嬬殑鏉冮檺"}, status=403)
     try:
-        detection_task, _image_uploads = create_image_detection_task(
+        detection_tasks, image_upload_groups = create_image_detection_tasks(
             user=user,
             image_ids=request.data.get('image_ids', []),
             task_name=request.data.get('task_name', 'New Detection Task'),
@@ -181,12 +183,17 @@ def submit_detection2(request):
     except FileNotFoundError as exc:
         return Response({"message": str(exc)}, status=404)
 
+    primary_task = detection_tasks[0]
+    primary_image_uploads = image_upload_groups[0]
     return Response({
-        "message": "Detection request submitted successfully",
-        "task_id": detection_task.id,
-        "task_name": detection_task.task_name,
-        "status": detection_task.status,
+        "message": "Detection request submitted successfully" if len(detection_tasks) == 1 else "Detection requests submitted successfully",
+        "task_id": primary_task.id,
+        "task_ids": [task.id for task in detection_tasks],
+        "task_count": len(detection_tasks),
+        "task_name": primary_task.task_name,
+        "status": primary_task.status,
         "execution_mode": "local_async",
+        "image_ids": [image.id for image in primary_image_uploads],
     })
 
 
@@ -561,7 +568,7 @@ def create_resource_task(request):
     method_switches = request.data.get('method_switches')
 
     try:
-        detection_task, file_list = create_resource_detection_task(
+        detection_tasks, file_groups = create_resource_detection_tasks(
             user=user,
             task_type=task_type,
             file_ids=file_ids,
@@ -582,14 +589,18 @@ def create_resource_task(request):
     except FileNotFoundError as exc:
         return Response({'message': str(exc)}, status=404)
 
+    primary_task = detection_tasks[0]
+    primary_files = file_groups[0]
     return Response({
-        'message': 'Resource task created successfully',
-        'task_id': detection_task.id,
-        'task_name': detection_task.task_name,
+        'message': 'Resource task created successfully' if len(detection_tasks) == 1 else 'Resource tasks created successfully',
+        'task_id': primary_task.id,
+        'task_ids': [task.id for task in detection_tasks],
+        'task_count': len(detection_tasks),
+        'task_name': primary_task.task_name,
         'task_type': task_type,
-        'status': detection_task.status,
+        'status': primary_task.status,
         'execution_mode': 'local_async',
-        'file_ids': [f.id for f in file_list],
+        'file_ids': [f.id for f in primary_files],
     })
 
 @api_view(['GET'])

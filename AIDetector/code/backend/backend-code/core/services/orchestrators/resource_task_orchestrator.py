@@ -139,6 +139,59 @@ def create_resource_detection_task(
     return detection_task, file_list
 
 
+def create_resource_detection_tasks(
+    *,
+    user,
+    task_type,
+    file_ids,
+    task_name="",
+    api_key=None,
+    text_override=None,
+    paper_text_override=None,
+    review_text_override=None,
+    if_use_llm=False,
+    method_switches=None,
+    llm_model_name=None,
+    extract_images=None,
+    on_commit=None,
+    async_task_starter=None,
+):
+    files = _load_and_validate_resource_files(user=user, task_type=task_type, file_ids=file_ids)
+    file_groups = _split_resource_file_groups(task_type=task_type, file_list=files)
+    total_groups = len(file_groups)
+
+    created_tasks = []
+    created_file_lists = []
+    for index, file_group in enumerate(file_groups):
+        group_task_name = _build_split_task_name(
+            task_type=task_type,
+            base_task_name=task_name,
+            file_group=file_group,
+            index=index,
+            total=total_groups,
+        )
+        detection_task, created_files = create_resource_detection_task(
+            user=user,
+            task_type=task_type,
+            file_ids=[file_record.id for file_record in file_group],
+            task_name=group_task_name,
+            api_key=api_key,
+            text_override=text_override,
+            paper_text_override=paper_text_override,
+            review_text_override=review_text_override,
+            if_use_llm=if_use_llm,
+            method_switches=method_switches,
+            llm_model_name=llm_model_name,
+            extract_images=extract_images,
+            on_commit=on_commit,
+            async_task_starter=async_task_starter,
+        )
+        created_tasks.append(detection_task)
+        created_file_lists.append(created_files)
+
+    return created_tasks, created_file_lists
+
+
 def run_resource_detection_task_async(task_type, task_id, api_key=None):
     close_old_connections()
     try:
@@ -168,3 +221,72 @@ def _get_resource_task_runner(task_type):
     if task_type == "review":
         return run_review_detection_task
     raise ValueError(f"Unsupported resource task type: {task_type}")
+
+
+def _load_and_validate_resource_files(*, user, task_type, file_ids):
+    if task_type not in {"paper", "review"}:
+        raise ValueError("task_type must be paper or review")
+
+    if not isinstance(file_ids, list) or not file_ids:
+        raise ValueError("file_ids is required and must be a non-empty list")
+
+    files = FileManagement.objects.filter(id__in=file_ids, user=user)
+    if files.count() != len(set(file_ids)):
+        raise FileNotFoundError("Some files do not exist or do not belong to current user")
+
+    file_list = list(files)
+    resource_types = {f.resource_type for f in file_list}
+
+    if task_type == "paper":
+        if resource_types != {"paper"}:
+            raise ValueError("paper task only accepts paper resource files")
+        return sorted(file_list, key=lambda item: item.id)
+
+    if not ({"review_paper", "review_file"} <= resource_types):
+        raise ValueError("review task requires both review_paper and review_file")
+
+    review_papers = [f for f in file_list if f.resource_type == "review_paper"]
+    if len(review_papers) != 1:
+        raise ValueError("review task requires exactly one review_paper file")
+
+    review_paper_ids = {f.id for f in review_papers}
+    review_files = [f for f in file_list if f.resource_type == "review_file"]
+    if not any(rv.linked_file and rv.linked_file.id in review_paper_ids for rv in review_files):
+        raise ValueError("review_file is not correctly linked to review_paper")
+    return sorted(file_list, key=lambda item: item.id)
+
+
+def _split_resource_file_groups(*, task_type, file_list):
+    if task_type == "paper":
+        return [[file_record] for file_record in file_list]
+
+    paper_files = [file_record for file_record in file_list if file_record.resource_type == "review_paper"]
+    review_files = [file_record for file_record in file_list if file_record.resource_type == "review_file"]
+    if len(paper_files) != 1:
+        raise ValueError("review task requires exactly one review_paper file")
+
+    paper_file = paper_files[0]
+
+    groups = []
+    for review_file in review_files:
+        linked_paper = review_file.linked_file
+        if not linked_paper or linked_paper.id != paper_file.id:
+            raise ValueError("review_file is not correctly linked to review_paper")
+        groups.append([paper_file, review_file])
+
+    return groups
+
+
+def _build_split_task_name(*, task_type, base_task_name, file_group, index, total):
+    if not base_task_name:
+        timestamp = timezone.localtime().strftime("%Y-%m-%d %H:%M:%S")
+        base_task_name = f"论文检测 {timestamp}" if task_type == "paper" else f"Review检测 {timestamp}"
+
+    if total <= 1:
+        return base_task_name
+
+    if task_type == "paper":
+        suffix = file_group[0].file_name
+    else:
+        suffix = file_group[1].file_name if len(file_group) > 1 else file_group[0].file_name
+    return f"{base_task_name} · {index + 1}/{total} · {suffix}"

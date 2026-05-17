@@ -99,88 +99,11 @@
       </v-card-text>
     </v-card>
 
-    <v-card v-if="reviewItems.length > 1" elevation="2" rounded="lg">
-      <v-card-title class="d-flex align-center ga-2">
-        <v-icon color="teal">mdi-file-multiple-outline</v-icon>
-        <span class="text-h6">批量 Review 结果总览</span>
-      </v-card-title>
-      <v-card-text>
-        <v-list lines="three">
-          <v-list-item v-for="(item, idx) in reviewItems" :key="`review-item-${idx}`" class="mb-3">
-            <v-list-item-title>
-              {{ item.document?.review_file_name || `Review 资源 ${idx + 1}` }}
-              <v-chip size="x-small" class="ml-2" color="primary" variant="tonal">
-                论文 {{ item.document?.paper_file_name || '-' }}
-              </v-chip>
-            </v-list-item-title>
-            <v-list-item-subtitle>
-              段落 {{ (item.paragraph_results || []).length }}
-              · 可疑 {{ countSuspicious(item.paragraph_results) }}
-              · 相关项 {{ (item.relevance_results || []).length }}
-            </v-list-item-subtitle>
-          </v-list-item>
-        </v-list>
-      </v-card-text>
-    </v-card>
-
-    <v-card v-if="reviewItems.length > 1" elevation="2" rounded="lg">
-      <v-card-title class="d-flex align-center ga-2">
-        <v-icon color="primary">mdi-tab-search</v-icon>
-        <span class="text-h6">按资源查看 Review 结果</span>
-      </v-card-title>
-      <v-card-text>
-        <v-chip-group v-model="selectedReviewItemIndex" selected-class="text-primary" class="mb-4" mandatory>
-          <v-chip
-            v-for="(item, idx) in reviewItems"
-            :key="`review-switch-${idx}`"
-            filter
-            variant="outlined"
-            color="primary"
-          >
-            {{ item.document?.review_file_name || `Review ${idx + 1}` }}
-          </v-chip>
-        </v-chip-group>
-
-        <v-window v-model="selectedReviewItemIndex">
-          <v-window-item v-for="(item, idx) in reviewItems" :key="`review-window-${idx}`" :value="idx">
-            <v-alert type="info" variant="tonal" class="mb-4">
-              <div><strong>评审文件：</strong>{{ item.document?.review_file_name || `Review ${idx + 1}` }}</div>
-              <div><strong>论文文件：</strong>{{ item.document?.paper_file_name || '-' }}</div>
-              <div><strong>段落数：</strong>{{ item.document?.review_paragraph_count ?? (item.paragraph_results || []).length }}</div>
-            </v-alert>
-
-            <v-list v-if="(item.paragraph_results || []).length" lines="three">
-              <v-list-item
-                v-for="(para, paraIndex) in item.paragraph_results"
-                :key="`review-item-${idx}-para-${paraIndex}`"
-                class="mb-4 pa-4 bg-grey-lighten-4 rounded-lg"
-              >
-                <template #prepend>
-                  <v-avatar :color="para.label === 'suspicious' ? 'error' : 'success'" size="40" class="mr-4 text-white">
-                    {{ (para.paragraph_index ?? paraIndex) + 1 }}
-                  </v-avatar>
-                </template>
-                <v-list-item-title class="text-subtitle-1 font-weight-bold mb-2">
-                  检测结果: {{ para.label === 'suspicious' ? '疑似异常' : '正常' }}
-                  <v-chip size="small" :color="para.label === 'suspicious' ? 'error' : 'success'" class="ml-2">
-                    概率: {{ ((para.probability || 0) * 100).toFixed(1) }}%
-                  </v-chip>
-                </v-list-item-title>
-                <v-list-item-subtitle class="text-body-1 review-paragraph-text">
-                  {{ para.text }}
-                </v-list-item-subtitle>
-              </v-list-item>
-            </v-list>
-            <div v-else class="text-medium-emphasis py-4">当前资源暂无 Review 段落结果。</div>
-          </v-window-item>
-        </v-window>
-      </v-card-text>
-    </v-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import ResourceDetectionDetailStep from '@/components/steps/ResourceDetectionDetailStep.vue'
 
 const props = defineProps<{
@@ -194,8 +117,6 @@ const emit = defineEmits<{
 }>()
 
 const overallEvaluation = computed(() => props.task?.results?.review_analysis_results?.overall || props.task?.results?.overall_evaluation || null)
-const reviewItems = computed(() => Array.isArray(props.task?.results?.items) ? props.task.results.items : [])
-const selectedReviewItemIndex = ref(0)
 
 const paragraphAnalyses = computed(() => {
   const results = props.task?.results || {}
@@ -397,11 +318,6 @@ const paragraphAvatarColor = (item: any) => {
     return 'warning'
   }
   return 'success'
-}
-
-const countSuspicious = (paragraphs?: any[]) => {
-  if (!Array.isArray(paragraphs)) return 0
-  return paragraphs.filter(item => item?.label === 'suspicious').length
 }
 
 const relevanceAlertType = (level?: string) => {
