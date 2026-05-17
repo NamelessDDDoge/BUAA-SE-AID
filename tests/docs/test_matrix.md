@@ -59,7 +59,7 @@
 | 难点 | 测试承载 |
 |---|---|
 | 2.2.1 多方法图像检测算法 | `ai-service/tests/integration/test_method_combinations.py`；`core/tests/unit/services/capabilities/image/` |
-| 2.2.2 同步桥接执行 / 首次模型加载耗时 | `core/tests/integration/api/detection/test_local_infer_subprocess.py` |
+| 2.2.2 同步桥接执行 / 首次模型加载耗时 | `core/tests/integration/api/detection/test_image_detection_flow.py`（_run_local_detection_batch + fake_ai_service_entrypoint） |
 | 2.2.3 权限 / 组织 / 复核状态流转 | `core/tests/integration/permissions/`；`tests/e2e/manual_review_flow/` |
 | 2.2.4 检测结果结构化与报告生成 | `core/tests/integration/report_generation/` |
 

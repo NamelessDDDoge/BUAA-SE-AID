@@ -482,10 +482,10 @@ class LocalBridgeTests(TestCase):
     @patch.dict("os.environ", {}, clear=True)
     @patch(
         "core.services.capabilities.image.local_inference_client.DEFAULT_AI_SERVICE_DIR_CANDIDATES",
-        new_callable=lambda: [Path(__file__).resolve().parents[4] / "ai-service" / "ai-service-code"],
+        new_callable=lambda: [Path(__file__).resolve().parents[7] / "ai-service" / "ai-service-code"],
     )
     def test_discover_ai_service_dir_uses_existing_repo_candidate_when_env_missing(self, _mock_candidates):
-        expected = Path(__file__).resolve().parents[4] / "ai-service" / "ai-service-code"
+        expected = Path(__file__).resolve().parents[7] / "ai-service" / "ai-service-code"
 
         discovered = _discover_ai_service_dir()
 
@@ -546,7 +546,8 @@ class LocalBridgeTests(TestCase):
         batch_dir = _create_batch_inputs(task, 0, [detection_result_for_image2, detection_result_for_image1])
         self.addCleanup(lambda: shutil.rmtree(batch_dir, ignore_errors=True))
 
-        fake_service_root = Path(__file__).resolve().parents[1] / "tests" / "test_fixtures"
+        # core/tests/fixtures/ (parents[3] = core/tests/，迁移后路径)
+        fake_service_root = Path(__file__).resolve().parents[3] / "fixtures"
         fake_shared_root = fake_service_root / "shared"
         fake_entrypoint = fake_service_root / "fake_ai_service_entrypoint.py"
         shutil.rmtree(fake_shared_root, ignore_errors=True)

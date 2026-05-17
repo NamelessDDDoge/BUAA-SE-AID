@@ -65,6 +65,19 @@ temp/
 **/tmp-real-e2e/
 **/tmp-test-media/
 
+# Test runtime artifacts (fake_ai_service_entrypoint 等会临时生成的子目录)
+AIDetector/code/backend/backend-code/core/tests/fixtures/shared/
+AIDetector/code/backend/backend-code/core/tests/fixtures/tmp/
+AIDetector/code/backend/backend-code/core/tests/fixtures/torch/
+# 历史遗留：迁移前的旧位置，迁移后留空也要忽略
+AIDetector/code/backend/backend-code/core/test_fixtures/
+# 测试报告 / coverage 产物
+task_*_report.pdf
+coverage.xml
+test-results/
+playwright-report/
+.playwright/
+
 # AI / model artifacts
 *.pt
 *.pth

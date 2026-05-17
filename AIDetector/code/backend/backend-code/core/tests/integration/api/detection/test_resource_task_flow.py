@@ -28,7 +28,7 @@ from core.utils.task_result_store import store_paper_task_results
 from core.utils.task_result_serializer import build_detection_task_status_payload
 
 
-REPO_TASK_7_REPORT = Path(__file__).resolve().parents[6] / "task_7_report.pdf"
+REPO_TASK_7_REPORT = Path(__file__).resolve().parents[9] / "task_7_report.pdf"
 
 
 def fake_detection_payload():
