@@ -66,9 +66,7 @@ router.beforeEach(async (to, from, next) => {
     if (!userStore.isLoaded) {
       const loaded = await userStore.fetchUserInfo()
       if (!loaded) {
-        isLoggedIn.value = false
-        localStorage.setItem('2-isLoggedIn', 'false')
-        next('/login')
+        next()
         return
       }
     }

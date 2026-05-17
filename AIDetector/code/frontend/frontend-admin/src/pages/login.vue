@@ -205,18 +205,18 @@
       localStorage.setItem("1-token", res.data.access)
       localStorage.setItem("1-refresh", res.data.refresh)
       localStorage.setItem("1-isLoggedIn", "true")
-      
-      // 获取用户信息并存储到 user store
-      const loaded = await userStore.fetchUserInfo();
-      if (!loaded) {
-        throw new Error('USER_INFO_FAILED')
-      }
-      
+
       snackbar.showMessage('登录成功', 'success')
-      router.push('/analytics')
+      await router.push('/analytics')
+
+      void userStore.fetchUserInfo().then((loaded) => {
+        if (!loaded) {
+          snackbar.showMessage('管理员信息加载失败，部分菜单可能暂时不可用', 'warning')
+        }
+      })
     } catch (error: any) {
       console.log(error)
-      let errorMessage = error.message === 'USER_INFO_FAILED' ? '登录成功，但管理员信息加载失败，请稍后重试' : '网络错误，请稍后重试'
+      let errorMessage = '网络错误，请稍后重试'
       if (error.response) {
         switch (error.response.status) {
           case 401:

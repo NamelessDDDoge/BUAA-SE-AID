@@ -490,14 +490,14 @@ const handleSubmit = async () => {
       localStorage.setItem("2-refresh", res.data.refresh)
       localStorage.setItem("2-isLoggedIn", "true")
 
-      // 获取用户信息并存储到 user store
-      const loaded = await userStore.fetchUserInfo();
-      if (!loaded) {
-        throw new Error('USER_INFO_FAILED')
-      }
-
       snackbar.showMessage('登录成功', 'success')
-      router.push('/')
+      await router.push(selectedRole.value === 'reviewer' ? '/review' : '/history')
+
+      void userStore.fetchUserInfo().then((loaded) => {
+        if (!loaded) {
+          snackbar.showMessage('用户信息加载失败，部分菜单可能暂时不可用', 'warning')
+        }
+      })
     } else {
       await user.register({
         username: registerFormData.value.username,
@@ -512,7 +512,7 @@ const handleSubmit = async () => {
   } catch (error: any) {
     if (loginType.value === 'login') {
       console.log(error)
-      let errorMessage = error.message === 'USER_INFO_FAILED' ? '登录成功，但用户信息加载失败，请稍后重试' : '网络错误，请稍后重试'
+      let errorMessage = '网络错误，请稍后重试'
       if (error.response) {
         switch (error.response.status) {
           case 401:
