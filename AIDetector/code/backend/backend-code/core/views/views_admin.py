@@ -1808,8 +1808,11 @@ def handle_review_request(request, reviewRequest_id):
 
     if choice == 0:
         review_request.status2 = 'refused'
+        review_request.status1 = 'pending'
     elif choice == 1:
         review_request.status2 = 'accepted'
+        review_request.status1 = 'in_progress'
+        review_request.review_start_time = timezone.now()
 
         # 获取所有图片
         images = review_request.imgs.all()
@@ -1818,6 +1821,7 @@ def handle_review_request(request, reviewRequest_id):
         for reviewer in review_request.reviewers.all():
             # 创建 ManualReview 实例
             manual_review = ManualReview.objects.create(
+                organization=review_request.organization,
                 review_request=review_request,
                 reviewer=reviewer,
                 status='undo'  # 默认状态
@@ -1832,9 +1836,11 @@ def handle_review_request(request, reviewRequest_id):
                 image_review = ImageReview.objects.create(
                     manual_review=manual_review,
                     img=img,
-                    result=False  # 可根据需要初始化其他字段
+                    result=None
                 )
                 image_reviews.append(image_review)
+                img.isReview = True
+                img.save(update_fields=['isReview'])
 
             # 将所有 ImageReview 添加到 img_reviews 多对多字段
             manual_review.img_reviews.add(*image_reviews)
@@ -1853,7 +1859,7 @@ def handle_review_request(request, reviewRequest_id):
 
     # 更新审核请求的状态和理由
     review_request.check_reason = reason
-    review_request.save()
+    review_request.save(update_fields=['status1', 'status2', 'check_reason', 'review_start_time'])
 
     return Response({'message': 'ReviewRequest handled successfully'})
 
