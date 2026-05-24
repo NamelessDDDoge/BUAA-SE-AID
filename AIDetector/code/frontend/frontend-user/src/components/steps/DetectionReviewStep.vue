@@ -80,7 +80,8 @@
                         <v-img :src="getImageUrl(img.image_url)" cover height="100%">
                           <div class="image-overlay" v-if="isHovering || img.selected">
                             <div class="d-flex flex-column align-center gap-4">
-                              <v-checkbox v-model="img.selected" color="primary" class="image-checkbox"></v-checkbox>
+                              <v-checkbox :model-value="img.selected" color="primary" class="image-checkbox"
+                                @click.stop="toggleImageSelection(img, 'fake')"></v-checkbox>
                               <v-btn icon="mdi-magnify" variant="text" color="white" size="large"
                                 @click.stop="viewImageDetail(img)"></v-btn>
                             </div>
@@ -116,7 +117,8 @@
                         <v-img :src="getImageUrl(img.image_url)" cover height="100%">
                           <div class="image-overlay" v-if="isHovering || img.selected">
                             <div class="d-flex flex-column align-center gap-4">
-                              <v-checkbox v-model="img.selected" color="primary" class="image-checkbox"></v-checkbox>
+                              <v-checkbox :model-value="img.selected" color="primary" class="image-checkbox"
+                                @click.stop="toggleImageSelection(img, 'real')"></v-checkbox>
                               <v-btn icon="mdi-magnify" variant="text" color="white" size="large"
                                 @click.stop="viewImageDetail(img)"></v-btn>
                             </div>
@@ -350,6 +352,8 @@ interface Person {
   avatar: string
 }
 
+type SelectId = number | string
+
 const router = useRouter()
 const snackbar = useSnackbarStore()
 const theme = useTheme()
@@ -368,7 +372,7 @@ const isOverlayVisible = ref(false)
 const searchQuery = ref('')
 const isSearching = ref(false)
 const allPeople = ref<Person[]>([])
-const selectedPeopleList = ref<Person[]>([])
+const selectedPeopleList = ref<SelectId[]>([])
 const reviewReason = ref('')
 
 // 计算是否可以提交
@@ -380,13 +384,27 @@ const canSubmit = computed(() => {
 // 提交人工审核
 const submitReview = async () => {
   try {
+    const getImageId = (img: Image) => Number((img as Image & { img_id?: SelectId; id?: SelectId }).image_id ?? (img as Image & { img_id?: SelectId; id?: SelectId }).img_id ?? (img as Image & { img_id?: SelectId; id?: SelectId }).id)
     const reviewImages = [
-      ...detectionResult.value.fakeImages.filter((img: Image) => img.selected).map((img: Image) => img.image_id),
-      ...detectionResult.value.realImages.filter((img: Image) => img.selected).map((img: Image) => img.image_id)
-    ]
+      ...detectionResult.value.fakeImages.filter((img: Image) => img.selected).map(getImageId),
+      ...detectionResult.value.realImages.filter((img: Image) => img.selected).map(getImageId)
+    ].filter((id: number) => Number.isFinite(id) && id > 0)
+    const reviewerIds = selectedPeopleList.value
+      .map(id => Number(id))
+      .filter((id: number) => Number.isFinite(id) && id > 0)
+
+    if (reviewImages.length === 0) {
+      snackbar.showMessage('请选择需要人工审核的图片', 'warning')
+      return
+    }
+    if (reviewerIds.length === 0) {
+      snackbar.showMessage('请选择审核人员', 'warning')
+      return
+    }
+
     const response = await publisher.dispatchAnnual({
       image_ids: reviewImages,
-      reviewers: selectedPeopleList.value,
+      reviewers: reviewerIds,
       reason: reviewReason.value.trim(),
     })
     snackbar.showMessage('已提交人工复查任务，请等待管理员审核', 'success')
@@ -399,9 +417,15 @@ const submitReview = async () => {
   } catch (error: any) {
     let message = '提交人工复查任务失败'
     if (axios.isAxiosError(error)) {
-      const status = error?.code
-      if (status === 'ERR_NETWORK') {
-        message = '用户无权限'
+      const data = error.response?.data
+      if (typeof data?.error === 'string') {
+        message = data.error
+      } else if (typeof data?.message === 'string') {
+        message = data.message
+      } else if (typeof data?.detail === 'string') {
+        message = data.detail
+      } else if (error.code === 'ERR_NETWORK') {
+        message = '网络连接失败，请检查后端服务是否可访问'
       }
     }
     snackbar.showMessage(message, 'error')
@@ -470,7 +494,7 @@ const props = withDefaults(defineProps<{
 onMounted(async () => {
   try {
     const userStore = useUserStore()
-    const response = await (await publisher.getReviewers({ publisher_id: userStore.id }))
+    const response = await publisher.getReviewers({ publisher_id: userStore.id })
     allPeople.value = Array.isArray(response.data.reviewers) ? response.data.reviewers : []
 
     detectionResult.value.fakeImages = (await publisher.getFakeImage({ task_id: props.task_id, include_image: 1 })).data.results
@@ -561,41 +585,35 @@ const getImageUrl = (url: string) => {
 }
 
 const getAvatar = (url: string) => {
+  if (!url) return ''
   return import.meta.env.VITE_API_URL + url
 }
 
-const selectedFakeCount = ref(0)
-const selectedRealCount = ref(0)
+const selectedFakeCount = computed(() => detectionResult.value.fakeImages.filter(img => img.selected).length)
+const selectedRealCount = computed(() => detectionResult.value.realImages.filter(img => img.selected).length)
 const isAllFakeSelected = ref(false)
 const isAllRealSelected = ref(false)
 
 const selectAllFake = () => {
-  isAllFakeSelected.value = !isAllFakeSelected.value
-  detectionResult.value.fakeImages.forEach(img => img.selected = isAllFakeSelected.value)
-  selectedFakeCount.value = isAllFakeSelected.value ? detectionResult.value.fakeImages.length : 0
+  const shouldSelect = !isAllFakeSelected.value
+  detectionResult.value.fakeImages.forEach(img => img.selected = shouldSelect)
+  isAllFakeSelected.value = shouldSelect
 }
 
 const selectAllReal = () => {
-  isAllRealSelected.value = !isAllRealSelected.value
-  detectionResult.value.realImages.forEach(img => img.selected = isAllRealSelected.value)
-  selectedRealCount.value = isAllRealSelected.value ? detectionResult.value.realImages.length : 0
+  const shouldSelect = !isAllRealSelected.value
+  detectionResult.value.realImages.forEach(img => img.selected = shouldSelect)
+  isAllRealSelected.value = shouldSelect
 }
 
 const toggleImageSelection = (image: Image, type: string) => {
+  image.selected = !image.selected
   if (type === 'fake') {
-    image.selected = !image.selected
-    if (image.selected) {
-      selectedFakeCount.value++
-    } else {
-      selectedFakeCount.value--
-    }
+    isAllFakeSelected.value = detectionResult.value.fakeImages.length > 0
+      && detectionResult.value.fakeImages.every(img => img.selected)
   } else {
-    image.selected = !image.selected
-    if (image.selected) {
-      selectedRealCount.value++
-    } else {
-      selectedRealCount.value--
-    }
+    isAllRealSelected.value = detectionResult.value.realImages.length > 0
+      && detectionResult.value.realImages.every(img => img.selected)
   }
 }
 
@@ -616,7 +634,7 @@ const searchPeople = async () => {
   try {
     const userStore = useUserStore()
     const response = await publisher.getReviewers({ publisher_id: userStore.id })
-    allPeople.value = Array.isArray(response.data) ? response.data : []
+    allPeople.value = Array.isArray(response.data?.reviewers) ? response.data.reviewers : []
   } catch (error) {
     console.error('获取审核人员失败:', error)
     snackbar.showMessage('获取审核人员失败', 'error')
