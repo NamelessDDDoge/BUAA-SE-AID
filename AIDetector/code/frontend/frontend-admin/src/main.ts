@@ -13,6 +13,9 @@ import App from './App.vue'
 
 // Composables
 import { createApp } from 'vue'
+import { APP_NAME } from '@/constants/app'
+
+document.title = APP_NAME
 
 const app = createApp(App)
 

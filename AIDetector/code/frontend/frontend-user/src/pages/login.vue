@@ -6,12 +6,12 @@
           <div class="brand-mark">
             <v-icon size="24">mdi-shield-search</v-icon>
           </div>
-          <span>AIDetect</span>
+          <span>{{ APP_NAME }}</span>
         </div>
 
         <div class="feature-content">
           <div class="feature-kicker">Academic Integrity</div>
-          <h1 class="feature-title">学术诚信检测平台</h1>
+          <h1 class="feature-title">{{ APP_NAME }}</h1>
           <p class="feature-copy">面向论文、Review 与学术图像的综合检测、复核和报告工作台。</p>
         </div>
 
@@ -299,6 +299,7 @@ import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import DynamicCaptcha from '@/components/DynamicCaptcha.vue'
 import ForgotPassword from '@/components/ForgotPassword.vue'
+import { APP_NAME } from '@/constants/app'
 import { useSnackbarStore } from '@/stores/snackbar';
 const snackbar = useSnackbarStore();
 import user from '@/api/user'

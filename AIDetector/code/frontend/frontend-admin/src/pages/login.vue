@@ -6,12 +6,12 @@
             <div class="brand-mark">
               <v-icon size="24">mdi-view-dashboard-outline</v-icon>
             </div>
-            <span>AID Admin</span>
+            <span>{{ APP_NAME }}</span>
           </div>
 
           <div class="feature-content">
             <div class="feature-kicker">Admin Console</div>
-            <h1 class="feature-title">检测管理端</h1>
+            <h1 class="feature-title">{{ APP_NAME }}</h1>
             <p class="feature-copy">集中处理组织、用户、资源和人工审核流程。</p>
           </div>
 
@@ -116,6 +116,7 @@
   import { ref, computed } from 'vue'
   import { useRouter } from 'vue-router'
   import DynamicCaptcha from '@/components/DynamicCaptcha.vue'
+  import { APP_NAME } from '@/constants/app'
   import { useSnackbarStore } from '@/stores/snackbar';
   const snackbar = useSnackbarStore();
   import user from '@/api/user'

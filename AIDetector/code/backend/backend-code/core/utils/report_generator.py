@@ -15,6 +15,7 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFont
 
 from ..models import DetectionTask, DetectionResult, SubDetectionResult
+from ..constants import APP_NAME
 from .task_result_store import get_paper_task_results_payload, get_review_task_results_payload
 
 # ─── 字体注册（宋体） ──────────────────────────────────────
@@ -1136,7 +1137,7 @@ def generate_manual_review_report(review: ManualReview) -> str:
 
     y = H - MARGIN - 20
     c.setFont(REPORT_FONT_BOLD_NAME, 30)
-    c.drawCentredString(W / 2, y, '“听泉鉴图”人工审核报告')
+    c.drawCentredString(W / 2, y, f'“{APP_NAME}”人工审核报告')
     y -= 60
 
     c.setFont(REPORT_FONT_NAME, 18)

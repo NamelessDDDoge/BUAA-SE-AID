@@ -8,7 +8,7 @@
           <v-icon size="26">mdi-shield-crown-outline</v-icon>
         </div>
         <div class="brand-copy">
-          <div class="brand-title">AID Admin</div>
+          <div class="brand-title">{{ APP_NAME }}</div>
           <div class="brand-subtitle">检测管理台</div>
         </div>
       </div>
@@ -51,7 +51,7 @@
 
     <v-app-bar v-if="!isLoginPage" class="app-bar" elevation="0">
       <v-toolbar-title class="toolbar-title">
-        <span>学术诚信检测管理端</span>
+        <span>{{ APP_NAME }}</span>
       </v-toolbar-title>
       <v-spacer></v-spacer>
       <v-btn :icon="theme === 'light' ? 'mdi-weather-sunny' : 'mdi-weather-night'" @click="toggleTheme"></v-btn>
@@ -213,6 +213,7 @@ import { isLoggedIn } from './api/user'
 
 import user from '@/api/user'
 import Snackbar from '@/components/Snackbar.vue'
+import { APP_NAME } from '@/constants/app'
 import { useUserStore } from '@/stores/user';
 const userStore = useUserStore();
 
@@ -224,7 +225,7 @@ const snackbar = useSnackbarStore();
 const notifications = ref([
   {
     title: '系统通知',
-    content: '欢迎使用学术图像检测系统',
+    content: `欢迎使用${APP_NAME}`,
     icon: 'mdi-bell',
     unread: true,
     time: new Date()

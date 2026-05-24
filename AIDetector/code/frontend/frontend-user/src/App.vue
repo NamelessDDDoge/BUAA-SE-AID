@@ -9,8 +9,8 @@
           <v-icon size="26">mdi-text-box-search-outline</v-icon>
         </div>
         <div class="brand-copy">
-          <div class="brand-title">AIDetect</div>
-          <div class="brand-subtitle">学术诚信工作台</div>
+          <div class="brand-title">{{ APP_NAME }}</div>
+          <div class="brand-subtitle">用户工作台</div>
         </div>
       </div>
 
@@ -42,7 +42,7 @@
 
     <v-app-bar v-if="!isLoginPage" class="app-bar" elevation="0">
       <v-toolbar-title class="toolbar-title">
-        <span>学术诚信检测系统</span>
+        <span>{{ APP_NAME }}</span>
       </v-toolbar-title>
       <v-spacer></v-spacer>
       <v-btn :icon="theme === 'light' ? 'mdi-weather-sunny' : 'mdi-weather-night'" @click="toggleTheme"></v-btn>
@@ -175,6 +175,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { isLoggedIn } from './api/user'
 import { marked } from 'marked'
+import { APP_NAME } from '@/constants/app'
 
 
 const { mobile } = useDisplay()
