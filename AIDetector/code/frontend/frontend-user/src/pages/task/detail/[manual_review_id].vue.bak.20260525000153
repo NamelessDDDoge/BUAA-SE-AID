@@ -519,10 +519,8 @@ const currentImage = computed(() => {
   return null;
 });
 
-const getImageUrl = (url?: string | null) => {
-  if (!url) return ''
-  if (/^https?:\/\//.test(url)) return url
-  return `${import.meta.env.VITE_API_URL || ''}${url}`
+const getImageUrl = (url: string) => {
+  return import.meta.env.VITE_API_URL + url
 }
 
 const getFileUrl = (file: { file_url?: string | null }) => {

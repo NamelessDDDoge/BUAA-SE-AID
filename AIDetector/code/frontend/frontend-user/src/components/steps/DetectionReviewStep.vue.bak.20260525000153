@@ -573,15 +573,21 @@ const getProbabilityColor = (probability: number): string => {
   return "green"
 }
 
-const getImageUrl = (url?: string | null) => {
-  if (!url) return ''
-  if (/^https?:\/\//.test(url)) return url
-  return `${import.meta.env.VITE_API_URL || ''}${url}`
+const getSelectedImageUrl = (selectedImage: Image | null) => {
+  if (selectedImage) {
+    return import.meta.env.VITE_API_URL + selectedImage.image_url
+  }
+  return ''
 }
 
-const getSelectedImageUrl = (selectedImage: Image | null) => getImageUrl(selectedImage?.image_url)
+const getImageUrl = (url: string) => {
+  return import.meta.env.VITE_API_URL + url
+}
 
-const getAvatar = (url?: string | null) => getImageUrl(url)
+const getAvatar = (url: string) => {
+  if (!url) return ''
+  return import.meta.env.VITE_API_URL + url
+}
 
 const selectedFakeCount = computed(() => detectionResult.value.fakeImages.filter(img => img.selected).length)
 const selectedRealCount = computed(() => detectionResult.value.realImages.filter(img => img.selected).length)

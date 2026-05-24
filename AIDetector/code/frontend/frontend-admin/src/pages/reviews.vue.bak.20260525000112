@@ -282,11 +282,7 @@ const previewTitle = ref('')
 const previewUrl = ref('')
 const previewError = ref('')
 
-const getImageUrl = (url?: string | null) => {
-  if (!url) return ''
-  if (/^https?:\/\//.test(url)) return url
-  return `${import.meta.env.VITE_API_URL || ''}${url}`
-}
+const getImageUrl = (url: string) => import.meta.env.VITE_API_URL + url
 
 const getTaskTypeName = (taskType: string) => ({
   image: '图像',
@@ -410,7 +406,7 @@ const fetchRequests = async () => {
       task_id: request.task_id,
       task_name: request.task_name,
       username: request.username,
-      avatar: request.avatar ? getImageUrl(request.avatar) : '',
+      avatar: request.avatar ? import.meta.env.VITE_API_URL + request.avatar : '',
       state: request.state,
       time: request.time,
     }))
