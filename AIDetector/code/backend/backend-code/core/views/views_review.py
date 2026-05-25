@@ -182,7 +182,7 @@ def create_review_task_with_admin_check(request):
 
     try:
         # 获取图片对象
-        images = ImageUpload.objects.filter(id__in=image_ids)
+        images = ImageUpload.objects.filter(id__in=image_ids, file_management__user=user)
         if len(images) != len(image_ids):
             return Response({'error': 'Some image IDs do not exist'}, status=404)
 
@@ -191,7 +191,38 @@ def create_review_task_with_admin_check(request):
         if len(reviewer_users) != len(reviewers):
             return Response({'error': 'Some reviewer IDs do not exist or are not reviewers'}, status=404)
 
-        detection_result = images[0].detection_results.first()
+        latest_results = (
+            DetectionResult.objects.filter(
+                image_upload__in=images,
+                image_upload__file_management__user=user,
+                detection_task__user=user,
+                detection_task__task_type="image",
+            ).select_related("detection_task", "image_upload")
+            .order_by("image_upload_id", "-detection_task_id", "-id")
+        )
+
+        latest_result_by_image_id = {}
+        for result in latest_results:
+            latest_result_by_image_id.setdefault(result.image_upload_id, result)
+
+        missing_completed_results = [
+            image.id for image in images
+            if (
+                image.id not in latest_result_by_image_id
+                or latest_result_by_image_id[image.id].status != "completed"
+                or latest_result_by_image_id[image.id].detection_task.status != "completed"
+            )
+        ]
+        if missing_completed_results:
+            return Response(
+                {
+                    'error': 'All images must have completed detection results before manual review',
+                    'image_ids': missing_completed_results,
+                },
+                status=400,
+            )
+
+        detection_result = latest_result_by_image_id[images[0].id]
         if not detection_result:
             return Response({'error': 'No detection result found for the provided images'}, status=404)
 

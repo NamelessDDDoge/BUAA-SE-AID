@@ -133,33 +133,35 @@ def _run_local_detection_batch(detection_result_ids, batch_dir, image_num, task_
         raise RuntimeError("Local image detection did not return a result payload.")
 
     for index, detection_result in enumerate(detection_results):
-        parsed_result = _extract_single_result(raw_results, index)
+        image_name = Path(detection_result.image_upload.image.name).name
+        parsed_result = _extract_single_result(raw_results, index, image_name=image_name)
         _persist_detection_result(detection_result, parsed_result)
 
     _finalize_detection_task(task_pk, image_num)
 
 
-def _extract_single_result(raw_results, index):
+def _extract_single_result(raw_results, index, image_name=None):
     result_map = _payload_by_name(raw_results)
+    payload_index = _find_payload_index(result_map, image_name, index)
 
     llm_entries = result_map.get("llm", [])
     llm_text = ""
     llm_image = None
-    if llm_entries and index < len(llm_entries):
-        llm_text, llm_image = _parse_llm_entry(llm_entries[index])
+    if llm_entries and payload_index < len(llm_entries):
+        llm_text, llm_image = _parse_llm_entry(llm_entries[payload_index])
 
     ela_entries = result_map.get("ela", [])
-    ela_result = _extract_second_item(ela_entries, index)
+    ela_result = _extract_second_item(ela_entries, payload_index)
     ela_image = np.asarray(ela_result if ela_result is not None else np.zeros((8, 8), dtype=np.uint8))
 
     exif_entries = result_map.get("exif", [])
-    exif_result = _extract_exif_entry(exif_entries, index)
+    exif_result = _extract_exif_entry(exif_entries, payload_index)
 
     sub_method_results = []
     probabilities = []
     for raw_method_name, result_method_name in SUB_METHODS:
         method_entries = result_map.get(raw_method_name, [])
-        mask_value, probability = _extract_method_entry(method_entries, index)
+        mask_value, probability = _extract_method_entry(method_entries, payload_index)
         if not method_entries:
             continue
         probabilities.append(float(probability))
@@ -201,6 +203,30 @@ def _payload_by_name(raw_results):
             continue
         result[item[0]] = item[1]
     return result
+
+
+def _find_payload_index(result_map, image_name, fallback_index):
+    if not image_name:
+        return fallback_index
+
+    target_name = Path(str(image_name)).name
+    for entries in result_map.values():
+        if not isinstance(entries, (list, tuple)):
+            continue
+        for index, entry in enumerate(entries):
+            entry_name = _entry_image_name(entry)
+            if entry_name == target_name:
+                return index
+    return fallback_index
+
+
+def _entry_image_name(entry):
+    if not isinstance(entry, (list, tuple)) or not entry:
+        return None
+    first_item = entry[0]
+    if not isinstance(first_item, str):
+        return None
+    return Path(first_item).name
 
 
 def _extract_second_item(entries, index):
