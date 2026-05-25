@@ -7,8 +7,8 @@ export default mergeConfig(
     test: {
       environment: 'jsdom',
       globals: true,
-      include: ['tests/unit/**/*.spec.ts', 'tests/integration/**/*.spec.ts'],
-      exclude: ['tests/e2e/**', 'node_modules/**'],
+      include: ['tests/unit/**/*.spec.ts', 'tests/integration/**/*.spec.ts', 'tests/e2e/**/*.spec.ts'],
+      exclude: ['node_modules/**'],
       coverage: {
         provider: 'v8',
         reporter: ['text', 'html', 'lcov'],

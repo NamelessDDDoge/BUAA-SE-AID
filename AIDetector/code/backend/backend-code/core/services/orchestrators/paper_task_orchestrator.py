@@ -52,7 +52,7 @@ def run_paper_detection_task(task_id, api_key=None):
     for file_management in paper_files:
         file_path = os.path.join(settings.MEDIA_ROOT, file_management.stored_path)
         if not os.path.exists(file_path):
-            return _mark_task_failed(detection_task, f"Paper file path does not exist: {file_management.file_name}")
+            return _mark_task_failed(detection_task, "Paper file path does not exist")
 
         paper_items.append(
             _run_single_paper_detection_item(

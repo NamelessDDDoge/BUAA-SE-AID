@@ -289,7 +289,7 @@ const headers = [
   { title: '密钥状态', key: 'has_api_key' },
   { title: '启用', key: 'is_active' },
   { title: '操作', key: 'actions', sortable: false, align: 'end' },
-]
+] as const
 
 const filteredModels = computed(() => {
   const keyword = search.value.trim().toLowerCase()

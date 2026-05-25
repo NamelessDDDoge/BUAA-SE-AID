@@ -258,18 +258,18 @@ def _mark_review_task_failed(detection_task, message):
 
 
 def _build_review_file_pairs(detection_task):
-    paper_files = {
-        file_record.id: file_record
-        for file_record in detection_task.resource_files.filter(resource_type="review_paper").order_by("id")
-    }
+    paper_files = list(detection_task.resource_files.filter(resource_type="review_paper").order_by("id"))
+    paper_file_by_id = {file_record.id: file_record for file_record in paper_files}
     review_files = list(
         detection_task.resource_files.filter(resource_type="review_file").select_related("linked_file").order_by("id")
     )
     pairs = []
     for review_file in review_files:
         linked_paper = review_file.linked_file
-        if linked_paper and linked_paper.id in paper_files:
-            pairs.append((paper_files[linked_paper.id], review_file))
+        if linked_paper and linked_paper.id in paper_file_by_id:
+            pairs.append((paper_file_by_id[linked_paper.id], review_file))
+        elif len(paper_files) == 1:
+            pairs.append((paper_files[0], review_file))
     return pairs
 
 

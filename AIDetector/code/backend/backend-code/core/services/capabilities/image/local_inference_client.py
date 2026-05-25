@@ -236,7 +236,7 @@ def _run_local_inference(request_dir=None):
 
     env = os.environ.copy()
     env["AI_SERVICE_TEST_DIR"] = str(io_dir)
-    env["AI_SERVICE_CACHE_ROOT"] = str(io_dir / "cache")
+    env["AI_SERVICE_CACHE_ROOT"] = (io_dir / "cache").as_posix()
     env["TMP"] = str(AI_SERVICE_TMP_DIR)
     env["TEMP"] = str(AI_SERVICE_TMP_DIR)
     env["TMPDIR"] = str(AI_SERVICE_TMP_DIR)

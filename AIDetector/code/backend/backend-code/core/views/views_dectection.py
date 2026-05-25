@@ -546,7 +546,7 @@ class CustomPagination(PageNumberPagination):
 @permission_classes([IsAuthenticated])
 def get_paper_detection_results(request, task_id):
     try:
-        task = DetectionTask.objects.get(id=task_id, user=request.user, task_type="paper")
+        task = DetectionTask.objects.get(id=task_id, user=request.user, task_type__in=["paper", "review"])
         return Response({
             "task_id": task.id,
             "task_name": task.task_name,
