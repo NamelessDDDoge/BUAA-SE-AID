@@ -93,6 +93,11 @@ def test_reserve_detection_usage_llm_deducts_quota():
     assert org.remaining_llm_uses == 3
 
 
+def test_reserve_detection_usage_rejects_missing_organization():
+    with pytest.raises(ValueError, match="organization"):
+        orch._reserve_detection_usage(None, if_use_llm=False, num_images=1)
+
+
 def test_reserve_detection_usage_raises_when_non_llm_quota_insufficient():
     org = make_organization(remaining_non_llm_uses=5)
     with pytest.raises(ValueError, match="non-LLM"):
@@ -103,6 +108,18 @@ def test_reserve_detection_usage_raises_when_llm_quota_insufficient():
     org = make_organization(remaining_llm_uses=1)
     with pytest.raises(ValueError, match="LLM"):
         orch._reserve_detection_usage(org, if_use_llm=True, num_images=2)
+
+
+def test_reserve_detection_usage_uses_database_balance_for_stale_instances():
+    org = make_organization(remaining_non_llm_uses=1)
+    stale_org = type(org).objects.get(pk=org.pk)
+
+    orch._reserve_detection_usage(org, if_use_llm=False, num_images=1)
+    with pytest.raises(ValueError, match="non-LLM"):
+        orch._reserve_detection_usage(stale_org, if_use_llm=False, num_images=1)
+
+    org.refresh_from_db()
+    assert org.remaining_non_llm_uses == 0
 
 
 # ---------- _refund_detection_usage ----------
@@ -245,12 +262,35 @@ def test_create_image_detection_task_attaches_unique_file_managements_to_resourc
     assert new_task.resource_files.count() == 1
 
 
+@override_settings(MEDIA_ROOT="/tmp/test-media-orch-create")
+def test_create_image_detection_task_refunds_quota_when_creation_fails_after_reserve():
+    user = make_user()
+    org = user.organization
+    initial_quota = org.remaining_non_llm_uses
+    task = make_detection_task(user=user)
+    img = make_image_upload(detection_task=task)
+
+    def starter(*_args, **_kwargs):
+        raise RuntimeError("submit failed")
+
+    with pytest.raises(RuntimeError, match="submit failed"):
+        orch.create_image_detection_task(
+            user=user,
+            image_ids=[img.id],
+            on_commit=lambda fn: fn(),
+            async_task_starter=starter,
+        )
+
+    org.refresh_from_db()
+    assert org.remaining_non_llm_uses == initial_quota
+
+
 # ---------- run_image_detection_task_async ----------
 
 @override_settings(MEDIA_ROOT="/tmp/test-media-orch-async")
 def test_run_image_detection_task_async_calls_executor():
     user = make_user()
-    task = make_detection_task(user=user, status="in_progress")
+    task = make_detection_task(user=user, status="pending")
     img = make_image_upload(detection_task=task)
     executor = MagicMock()
     orch.run_image_detection_task_async(
@@ -267,7 +307,7 @@ def test_run_image_detection_task_async_marks_failed_on_exception():
     org = user.organization
     org.remaining_non_llm_uses = 10
     org.save()
-    task = make_detection_task(user=user, status="in_progress")
+    task = make_detection_task(user=user, status="pending")
     img = make_image_upload(detection_task=task)
 
     executor = MagicMock(side_effect=RuntimeError("model crash"))
@@ -286,11 +326,27 @@ def test_run_image_detection_task_async_marks_failed_on_exception():
 @override_settings(MEDIA_ROOT="/tmp/test-media-orch-async")
 def test_run_image_detection_task_async_no_images_marks_failed():
     user = make_user()
-    task = make_detection_task(user=user, status="in_progress")
+    task = make_detection_task(user=user, status="pending")
     executor = MagicMock()
     orch.run_image_detection_task_async(
         task.id, [999999], False, 1, detection_executor=executor,
     )
     task.refresh_from_db()
     assert task.status == "failed"
+    executor.assert_not_called()
+
+
+@override_settings(MEDIA_ROOT="/tmp/test-media-orch-async")
+def test_run_image_detection_task_async_skips_non_pending_task():
+    user = make_user()
+    task = make_detection_task(user=user, status="completed")
+    img = make_image_upload(detection_task=task)
+    executor = MagicMock()
+
+    orch.run_image_detection_task_async(
+        task.id, [img.id], False, 1, detection_executor=executor,
+    )
+
+    task.refresh_from_db()
+    assert task.status == "completed"
     executor.assert_not_called()

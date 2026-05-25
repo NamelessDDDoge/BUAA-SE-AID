@@ -207,7 +207,8 @@ def _has_text_overrides(*, text_override=None, paper_text_override=None, review_
 def run_resource_detection_task_async(task_type, task_id, api_key=None):
     close_old_connections()
     try:
-        _mark_resource_task_started(task_id)
+        if not _mark_resource_task_started(task_id):
+            return
         task_runner = _get_resource_task_runner(task_type)
         task_runner(task_id, api_key=api_key)
     except Exception as exc:
@@ -222,10 +223,10 @@ def run_resource_detection_task_async(task_type, task_id, api_key=None):
 
 
 def _mark_resource_task_started(task_id):
-    DetectionTask.objects.filter(pk=task_id, status="pending").update(
+    return DetectionTask.objects.filter(pk=task_id, status="pending").update(
         status="in_progress",
         error_message="",
-    )
+    ) == 1
 
 
 def start_resource_detection_task_thread(task_type, task_id, api_key=None):

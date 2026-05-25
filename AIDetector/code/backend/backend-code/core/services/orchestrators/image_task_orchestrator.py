@@ -2,6 +2,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 from django.db import close_old_connections, transaction
+from django.db.models import F
 from django.utils import timezone
 
 from ...models import DetectionResult, DetectionTask, ImageUpload
@@ -32,10 +33,23 @@ LLM_IMAGE_TASK_EXECUTOR = ThreadPoolExecutor(
 def _refund_detection_usage(organization, if_use_llm, num_images):
     if organization is None or num_images <= 0:
         return
+    field_name = "remaining_llm_uses" if if_use_llm else "remaining_non_llm_uses"
+    updated = type(organization).objects.filter(pk=organization.pk).update(
+        **{field_name: F(field_name) + num_images}
+    )
+    if updated:
+        organization.refresh_from_db(fields=[field_name])
+
+
+def _refresh_usage_field(organization, if_use_llm):
+    field_name = "remaining_llm_uses" if if_use_llm else "remaining_non_llm_uses"
+    organization.refresh_from_db(fields=[field_name])
+
+
+def _get_remaining_usage(organization, if_use_llm):
     if if_use_llm:
-        organization.add_llm_uses(num_images)
-    else:
-        organization.add_non_llm_uses(num_images)
+        return organization.remaining_llm_uses
+    return organization.remaining_non_llm_uses
 
 
 def _mark_detection_task_failed(detection_task, error_message):
@@ -78,32 +92,46 @@ def _validate_image_uploads(user, image_ids):
 
 
 def _mark_image_task_started(detection_task):
+    updated = DetectionTask.objects.filter(pk=detection_task.pk, status="pending").update(
+        status="in_progress",
+        error_message="",
+    )
+    if updated != 1:
+        return False
     detection_task.status = "in_progress"
     detection_task.error_message = ""
-    detection_task.save(update_fields=["status", "error_message"])
     DetectionResult.objects.filter(
         detection_task=detection_task,
         status="pending",
     ).update(status="in_progress")
+    return True
 
 
 def _reserve_detection_usage(organization, if_use_llm, num_images):
+    if organization is None:
+        raise ValueError("User organization is required")
+    if num_images <= 0:
+        return
     organization.reset_usage()
-    if if_use_llm:
-        if not organization.can_use_llm(num_images):
-            raise ValueError(
-                "You have exceeded your LLM method usage limit for this week. "
-                f"Your organization can only submit {organization.remaining_llm_uses} more images."
-            )
-        organization.decrement_llm_uses(num_images)
+    field_name = "remaining_llm_uses" if if_use_llm else "remaining_non_llm_uses"
+    updated = type(organization).objects.filter(
+        pk=organization.pk,
+        **{f"{field_name}__gte": num_images},
+    ).update(**{field_name: F(field_name) - num_images})
+    _refresh_usage_field(organization, if_use_llm)
+    if updated == 1:
         return
 
-    if not organization.can_use_non_llm(num_images):
+    if if_use_llm:
         raise ValueError(
-            "You have exceeded your non-LLM method usage limit for this week. "
-            f"Your organization can only submit {organization.remaining_non_llm_uses} more images."
+            "You have exceeded your LLM method usage limit for this week. "
+            f"Your organization can only submit {_get_remaining_usage(organization, if_use_llm)} more images."
         )
-    organization.decrement_non_llm_uses(num_images)
+
+    raise ValueError(
+        "You have exceeded your non-LLM method usage limit for this week. "
+        f"Your organization can only submit {_get_remaining_usage(organization, if_use_llm)} more images."
+    )
 
 
 def create_image_detection_task(
@@ -135,47 +163,51 @@ def create_image_detection_task(
     commit_hook = on_commit or transaction.on_commit
     task_starter = async_task_starter or start_image_detection_task_thread
 
-    with transaction.atomic():
-        detection_task = DetectionTask.objects.create(
-            organization=user.organization,
-            user=user,
-            task_type="image",
-            task_name=task_name,
-            status="pending",
-            cmd_block_size=cmd_block_size,
-            urn_k=urn_k,
-            if_use_llm=effective_if_use_llm,
-            llm_model_name=llm_model_name,
-            method_switches=normalized_switches,
-        )
-        detection_task.resource_files.add(*list({img.file_management for img in image_uploads}))
-
-        DetectionResult.objects.bulk_create(
-            [
-                DetectionResult(
-                    image_upload=image_upload,
-                    detection_task=detection_task,
-                    status="pending",
-                )
-                for image_upload in image_uploads
-            ]
-        )
-
-        log_user_event(
-            user=user,
-            operation_type="detection",
-            related_model="DetectionTask",
-            related_id=detection_task.id,
-        )
-
-        commit_hook(
-            lambda: task_starter(
-                detection_task.id,
-                image_id_list,
-                effective_if_use_llm,
-                num_images,
+    try:
+        with transaction.atomic():
+            detection_task = DetectionTask.objects.create(
+                organization=user.organization,
+                user=user,
+                task_type="image",
+                task_name=task_name,
+                status="pending",
+                cmd_block_size=cmd_block_size,
+                urn_k=urn_k,
+                if_use_llm=effective_if_use_llm,
+                llm_model_name=llm_model_name,
+                method_switches=normalized_switches,
             )
-        )
+            detection_task.resource_files.add(*list({img.file_management for img in image_uploads}))
+
+            DetectionResult.objects.bulk_create(
+                [
+                    DetectionResult(
+                        image_upload=image_upload,
+                        detection_task=detection_task,
+                        status="pending",
+                    )
+                    for image_upload in image_uploads
+                ]
+            )
+
+            log_user_event(
+                user=user,
+                operation_type="detection",
+                related_model="DetectionTask",
+                related_id=detection_task.id,
+            )
+
+            commit_hook(
+                lambda: task_starter(
+                    detection_task.id,
+                    image_id_list,
+                    effective_if_use_llm,
+                    num_images,
+                )
+            )
+    except Exception:
+        _refund_detection_usage(user.organization, effective_if_use_llm, num_images)
+        raise
 
     return detection_task, image_uploads
 
@@ -272,7 +304,8 @@ def run_image_detection_task_async(
     executor = detection_executor or run_image_detection_task
     try:
         detection_task = DetectionTask.objects.select_related("organization").get(pk=task_id)
-        _mark_image_task_started(detection_task)
+        if not _mark_image_task_started(detection_task):
+            return
         image_uploads = list(
             ImageUpload.objects.filter(id__in=image_ids, file_management__user=detection_task.user).order_by("id")
         )

@@ -189,7 +189,7 @@ def test_create_task_method_switches_with_llm_forces_if_use_llm():
 
 def test_run_resource_detection_task_async_marks_failed_on_exception(monkeypatch):
     from core.tests.factories import make_detection_task
-    task = make_detection_task(task_type="paper", status="in_progress")
+    task = make_detection_task(task_type="paper", status="pending")
 
     def boom(_task_id, **_kw):
         raise RuntimeError("paper crashed")
@@ -203,9 +203,22 @@ def test_run_resource_detection_task_async_marks_failed_on_exception(monkeypatch
 
 def test_run_resource_detection_task_async_dispatches_to_correct_runner(monkeypatch):
     from core.tests.factories import make_detection_task
-    task = make_detection_task(task_type="review", status="in_progress")
+    task = make_detection_task(task_type="review", status="pending")
     review_runner = MagicMock()
     monkeypatch.setattr(orch, "run_review_detection_task", review_runner)
 
     orch.run_resource_detection_task_async("review", task.id, api_key="k1")
     review_runner.assert_called_once_with(task.id, api_key="k1")
+
+
+def test_run_resource_detection_task_async_skips_non_pending_task(monkeypatch):
+    from core.tests.factories import make_detection_task
+    task = make_detection_task(task_type="paper", status="completed")
+    paper_runner = MagicMock()
+    monkeypatch.setattr(orch, "run_paper_detection_task", paper_runner)
+
+    orch.run_resource_detection_task_async("paper", task.id)
+
+    task.refresh_from_db()
+    assert task.status == "completed"
+    paper_runner.assert_not_called()
