@@ -1,9 +1,11 @@
 import base64
+import contextlib
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import zipfile
 from pathlib import Path
 
@@ -65,6 +67,17 @@ AI_SERVICE_TORCH_HOME = Path(
 AI_REMOTE_INFER_URL = os.environ.get("AI_REMOTE_INFER_URL", "").strip()
 AI_REMOTE_INFER_TIMEOUT = int(os.environ.get("AI_REMOTE_INFER_TIMEOUT", "1800"))
 AI_REMOTE_INFER_TOKEN = os.environ.get("AI_REMOTE_INFER_TOKEN", "").strip()
+AI_SERVICE_INFER_TIMEOUT = int(os.environ.get("AI_SERVICE_INFER_TIMEOUT", "1800"))
+AI_SERVICE_SERIALIZE_LOCAL_INFER = os.environ.get("AI_SERVICE_SERIALIZE_LOCAL_INFER", "1").lower() not in {
+    "0",
+    "false",
+    "no",
+}
+AI_SERVICE_LOCK_FILE = Path(
+    os.environ.get("AI_SERVICE_LOCK_FILE", str(DEFAULT_SHARED_ROOT / ".ai_service_infer.lock"))
+)
+
+_LOCAL_INFER_THREAD_LOCK = threading.Lock()
 
 
 def _create_request_dir():
@@ -72,7 +85,10 @@ def _create_request_dir():
     return Path(tempfile.mkdtemp(prefix="request_", dir=str(AI_SERVICE_TEST_DIR)))
 
 
-def _prepare_inputs(local_path, json_path, request_dir):
+def _prepare_inputs(local_path, json_path, request_dir=None):
+    if request_dir is None:
+        request_dir = AI_SERVICE_TEST_DIR
+    request_dir = Path(request_dir)
     request_dir.mkdir(parents=True, exist_ok=True)
     source_zip = Path(local_path)
     source_json = Path(json_path)
@@ -103,6 +119,34 @@ def _decode_output(output):
         except UnicodeDecodeError:
             continue
     return output.decode("utf-8", errors="ignore")
+
+
+@contextlib.contextmanager
+def _serialized_local_inference():
+    if not AI_SERVICE_SERIALIZE_LOCAL_INFER:
+        yield
+        return
+
+    with _LOCAL_INFER_THREAD_LOCK:
+        try:
+            AI_SERVICE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+            lock_handle = AI_SERVICE_LOCK_FILE.open("a+")
+        except OSError:
+            yield
+            return
+
+        with lock_handle:
+            try:
+                import fcntl
+
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            except (ImportError, OSError):
+                fcntl = None
+            try:
+                yield
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
 
 def _load_remote_infer_config():
@@ -198,12 +242,19 @@ def _run_local_inference(request_dir=None):
     env["TMPDIR"] = str(AI_SERVICE_TMP_DIR)
     env["TORCH_HOME"] = str(AI_SERVICE_TORCH_HOME)
 
-    process = subprocess.run(
-        [AI_SERVICE_PYTHON, str(ai_service_entrypoint)],
-        cwd=str(ai_service_dir),
-        capture_output=True,
-        env=env,
-    )
+    try:
+        with _serialized_local_inference():
+            process = subprocess.run(
+                [AI_SERVICE_PYTHON, str(ai_service_entrypoint)],
+                cwd=str(ai_service_dir),
+                capture_output=True,
+                env=env,
+                timeout=AI_SERVICE_INFER_TIMEOUT,
+            )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Local AI service subprocess timed out after {AI_SERVICE_INFER_TIMEOUT} seconds."
+        ) from exc
     stdout_text = _decode_output(process.stdout)
     stderr_text = _decode_output(process.stderr)
     if process.returncode != 0:

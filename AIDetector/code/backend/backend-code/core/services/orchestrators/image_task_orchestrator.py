@@ -10,7 +10,7 @@ from ..event_logger import log_user_event
 
 
 def _get_image_task_max_workers():
-    raw = os.environ.get("IMAGE_TASK_MAX_WORKERS", "2")
+    raw = os.environ.get("IMAGE_TASK_MAX_WORKERS", "1")
     try:
         value = int(raw)
     except (TypeError, ValueError):
@@ -184,33 +184,68 @@ def create_image_detection_tasks(
     on_commit=None,
     async_task_starter=None,
 ):
+    if not task_name:
+        task_name = "New Detection Task"
+
+    normalized_switches = _normalize_method_switches(method_switches)
+    _validate_image_method_switches(normalized_switches)
+    effective_if_use_llm = bool(if_use_llm) or int(mode) == 3
     image_uploads = _validate_image_uploads(user, image_ids)
     total_images = len(image_uploads)
+    _reserve_detection_usage(user.organization, effective_if_use_llm, total_images)
+
+    commit_hook = on_commit or transaction.on_commit
+    task_starter = async_task_starter or start_image_detection_task_thread
 
     created_tasks = []
     created_upload_groups = []
-    for index, image_upload in enumerate(image_uploads):
-        split_task_name = _build_split_image_task_name(
-            base_task_name=task_name,
-            image_upload=image_upload,
-            index=index,
-            total=total_images,
-        )
-        detection_task, created_uploads = create_image_detection_task(
-            user=user,
-            image_ids=[image_upload.id],
-            task_name=split_task_name,
-            mode=mode,
-            cmd_block_size=cmd_block_size,
-            urn_k=urn_k,
-            if_use_llm=if_use_llm,
-            method_switches=method_switches,
-            llm_model_name=llm_model_name,
-            on_commit=on_commit,
-            async_task_starter=async_task_starter,
-        )
-        created_tasks.append(detection_task)
-        created_upload_groups.append(created_uploads)
+    try:
+        with transaction.atomic():
+            for index, image_upload in enumerate(image_uploads):
+                split_task_name = _build_split_image_task_name(
+                    base_task_name=task_name,
+                    image_upload=image_upload,
+                    index=index,
+                    total=total_images,
+                )
+                detection_task = DetectionTask.objects.create(
+                    organization=user.organization,
+                    user=user,
+                    task_type="image",
+                    task_name=split_task_name,
+                    status="in_progress",
+                    cmd_block_size=cmd_block_size,
+                    urn_k=urn_k,
+                    if_use_llm=effective_if_use_llm,
+                    llm_model_name=llm_model_name,
+                    method_switches=normalized_switches,
+                )
+                detection_task.resource_files.add(image_upload.file_management)
+                DetectionResult.objects.create(
+                    image_upload=image_upload,
+                    detection_task=detection_task,
+                    status="in_progress",
+                )
+                log_user_event(
+                    user=user,
+                    operation_type="detection",
+                    related_model="DetectionTask",
+                    related_id=detection_task.id,
+                )
+                image_id_list = [image_upload.id]
+                commit_hook(
+                    lambda task_id=detection_task.id, ids=image_id_list: task_starter(
+                        task_id,
+                        ids,
+                        effective_if_use_llm,
+                        1,
+                    )
+                )
+                created_tasks.append(detection_task)
+                created_upload_groups.append([image_upload])
+    except Exception:
+        _refund_detection_usage(user.organization, effective_if_use_llm, total_images)
+        raise
 
     return created_tasks, created_upload_groups
 

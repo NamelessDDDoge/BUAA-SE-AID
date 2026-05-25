@@ -171,6 +171,26 @@ def test_normalize_task_parameters_block_size_below_2_falls_back_to_64():
     assert out["cmd_block_size"] == 64
 
 
+# ---------- _get_image_detection_batch_size ----------
+
+def test_get_image_detection_batch_size_defaults_to_single_image(monkeypatch):
+    monkeypatch.delenv("IMAGE_DETECTION_BATCH_SIZE", raising=False)
+
+    assert ld._get_image_detection_batch_size() == 1
+
+
+def test_get_image_detection_batch_size_uses_positive_env_value(monkeypatch):
+    monkeypatch.setenv("IMAGE_DETECTION_BATCH_SIZE", "2")
+
+    assert ld._get_image_detection_batch_size() == 2
+
+
+def test_get_image_detection_batch_size_rejects_invalid_env_value(monkeypatch):
+    monkeypatch.setenv("IMAGE_DETECTION_BATCH_SIZE", "0")
+
+    assert ld._get_image_detection_batch_size() == 1
+
+
 # ---------- _extract_single_result ----------
 
 def test_extract_single_result_assembles_full_structure():

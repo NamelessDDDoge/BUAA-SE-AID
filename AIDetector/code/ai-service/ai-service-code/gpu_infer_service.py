@@ -24,6 +24,7 @@ AI_REMOTE_INFER_MAX_CONCURRENCY = max(
     1,
     int(os.environ.get("AI_REMOTE_INFER_MAX_CONCURRENCY", "1") or "1"),
 )
+AI_SERVICE_INFER_TIMEOUT = int(os.environ.get("AI_SERVICE_INFER_TIMEOUT", "1800"))
 AI_REMOTE_INFER_TMP_DIR = Path(
     os.environ.get("AI_SERVICE_TMP_DIR", str(Path.home() / ".codex" / "memories" / ".tmp_ai_service"))
 )
@@ -81,12 +82,18 @@ def _run_local_infer_with_payload(img_zip_bytes, data_json_bytes):
         env["TMPDIR"] = str(AI_REMOTE_INFER_TMP_DIR)
         env["TORCH_HOME"] = str(AI_REMOTE_INFER_TORCH_HOME)
 
-        process = subprocess.run(
-            [AI_SERVICE_PYTHON, str(LOCAL_INFER_ENTRYPOINT)],
-            cwd=str(SERVICE_DIR),
-            capture_output=True,
-            env=env,
-        )
+        try:
+            process = subprocess.run(
+                [AI_SERVICE_PYTHON, str(LOCAL_INFER_ENTRYPOINT)],
+                cwd=str(SERVICE_DIR),
+                capture_output=True,
+                env=env,
+                timeout=AI_SERVICE_INFER_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"Local infer subprocess timed out after {AI_SERVICE_INFER_TIMEOUT} seconds."
+            ) from exc
         stdout_text = _decode_output(process.stdout)
         stderr_text = _decode_output(process.stderr)
         if process.returncode != 0:

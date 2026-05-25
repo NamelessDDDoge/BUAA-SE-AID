@@ -159,37 +159,51 @@ def create_resource_detection_tasks(
     files = _load_and_validate_resource_files(user=user, task_type=task_type, file_ids=file_ids)
     file_groups = _split_resource_file_groups(task_type=task_type, file_list=files)
     total_groups = len(file_groups)
+    if total_groups > 1 and _has_text_overrides(
+        text_override=text_override,
+        paper_text_override=paper_text_override,
+        review_text_override=review_text_override,
+    ):
+        raise ValueError("Text overrides are only supported for a single resource task")
 
     created_tasks = []
     created_file_lists = []
-    for index, file_group in enumerate(file_groups):
-        group_task_name = _build_split_task_name(
-            task_type=task_type,
-            base_task_name=task_name,
-            file_group=file_group,
-            index=index,
-            total=total_groups,
-        )
-        detection_task, created_files = create_resource_detection_task(
-            user=user,
-            task_type=task_type,
-            file_ids=[file_record.id for file_record in file_group],
-            task_name=group_task_name,
-            api_key=api_key,
-            text_override=text_override,
-            paper_text_override=paper_text_override,
-            review_text_override=review_text_override,
-            if_use_llm=if_use_llm,
-            method_switches=method_switches,
-            llm_model_name=llm_model_name,
-            extract_images=extract_images,
-            on_commit=on_commit,
-            async_task_starter=async_task_starter,
-        )
-        created_tasks.append(detection_task)
-        created_file_lists.append(created_files)
+    with transaction.atomic():
+        for index, file_group in enumerate(file_groups):
+            group_task_name = _build_split_task_name(
+                task_type=task_type,
+                base_task_name=task_name,
+                file_group=file_group,
+                index=index,
+                total=total_groups,
+            )
+            detection_task, created_files = create_resource_detection_task(
+                user=user,
+                task_type=task_type,
+                file_ids=[file_record.id for file_record in file_group],
+                task_name=group_task_name,
+                api_key=api_key,
+                text_override=text_override,
+                paper_text_override=paper_text_override,
+                review_text_override=review_text_override,
+                if_use_llm=if_use_llm,
+                method_switches=method_switches,
+                llm_model_name=llm_model_name,
+                extract_images=extract_images,
+                on_commit=on_commit,
+                async_task_starter=async_task_starter,
+            )
+            created_tasks.append(detection_task)
+            created_file_lists.append(created_files)
 
     return created_tasks, created_file_lists
+
+
+def _has_text_overrides(*, text_override=None, paper_text_override=None, review_text_override=None):
+    return any(
+        isinstance(value, str) and bool(value.strip())
+        for value in (text_override, paper_text_override, review_text_override)
+    )
 
 
 def run_resource_detection_task_async(task_type, task_id, api_key=None):

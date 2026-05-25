@@ -2,6 +2,7 @@
 import base64
 import os
 import pickle
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -13,6 +14,13 @@ import pytest
 from core.services.capabilities.image import local_inference_client as client
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def disable_remote_inference(monkeypatch):
+    monkeypatch.delenv("AI_REMOTE_INFER_URL", raising=False)
+    monkeypatch.setattr(client, "AI_REMOTE_INFER_URL", "")
+    monkeypatch.setattr(client, "AI_SERVICE_LOCK_FILE", Path("/tmp") / "ai-service-test.lock")
 
 
 # ---------- _decode_output ----------
@@ -133,4 +141,38 @@ def test_run_local_inference_raises_when_marker_missing(mock_run, tmp_path, monk
 
     mock_run.return_value = SimpleNamespace(returncode=0, stdout=b"no marker here", stderr=b"")
     with pytest.raises(RuntimeError, match="start results"):
+        client._run_local_inference()
+
+
+@patch.object(client, "AI_SERVICE_DIR", Path(__file__).resolve())
+@patch("core.services.capabilities.image.local_inference_client.subprocess.run")
+def test_run_local_inference_passes_timeout_to_subprocess(mock_run, tmp_path, monkeypatch):
+    monkeypatch.setattr(client, "AI_SERVICE_TEST_DIR", tmp_path / "test")
+    monkeypatch.setattr(client, "AI_SERVICE_TMP_DIR", tmp_path / "tmp")
+    monkeypatch.setattr(client, "AI_SERVICE_TORCH_HOME", tmp_path / "torch")
+    monkeypatch.setattr(client, "AI_SERVICE_INFER_TIMEOUT", 7)
+
+    payload = [("llm", [])]
+    encoded = base64.b64encode(pickle.dumps(payload)).decode("utf-8")
+    mock_run.return_value = SimpleNamespace(
+        returncode=0,
+        stdout=f"start results\n{encoded}\n".encode("utf-8"),
+        stderr=b"",
+    )
+
+    client._run_local_inference()
+
+    assert mock_run.call_args.kwargs["timeout"] == 7
+
+
+@patch.object(client, "AI_SERVICE_DIR", Path(__file__).resolve())
+@patch("core.services.capabilities.image.local_inference_client.subprocess.run")
+def test_run_local_inference_raises_on_timeout(mock_run, tmp_path, monkeypatch):
+    monkeypatch.setattr(client, "AI_SERVICE_TEST_DIR", tmp_path / "test")
+    monkeypatch.setattr(client, "AI_SERVICE_TMP_DIR", tmp_path / "tmp")
+    monkeypatch.setattr(client, "AI_SERVICE_TORCH_HOME", tmp_path / "torch")
+    monkeypatch.setattr(client, "AI_SERVICE_INFER_TIMEOUT", 7)
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd=["python"], timeout=7)
+
+    with pytest.raises(RuntimeError, match="timed out"):
         client._run_local_inference()

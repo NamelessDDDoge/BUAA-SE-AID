@@ -394,8 +394,9 @@ const resourceDomainOptions: TaskOption[] = [
 
 const paperImageDetectionSupported = computed(() => {
   if (progressTaskType.value !== 'paper') return false
-  const fileName = uploadedResourceFiles.value[0]?.name?.toLowerCase() || ''
-  return fileName.endsWith('.pdf')
+  return uploadedResourceFiles.value
+    .filter(file => file.resource_type === 'paper')
+    .some(file => isPdfResource(file))
 })
 
 const paperImageDetectionHint = computed(() => {
@@ -411,6 +412,16 @@ const getExt = (file: File) => {
   const idx = file.name.lastIndexOf('.')
   return idx === -1 ? '' : file.name.slice(idx + 1).toLowerCase()
 }
+
+const getNameExt = (name?: string) => {
+  const normalized = String(name || '')
+  const idx = normalized.lastIndexOf('.')
+  return idx === -1 ? '' : normalized.slice(idx + 1).toLowerCase()
+}
+
+const isPdfResource = (file: UploadedResourceFile) => (
+  (file.file_ext || getNameExt(file.name)) === 'pdf'
+)
 
 const formatFileSize = (bytes: number) => {
   if (!bytes) return '0 Bytes'
@@ -625,16 +636,16 @@ const clearReviewFile = () => {
 
 const addCurrentReviewGroups = () => {
   if (!reviewFiles.value.length) return
-  const firstZipSelection = reviewFileZipSelection.value
   reviewFiles.value.forEach((reviewFile, index) => {
     reviewUploadGroups.value.push({
       key: `${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`,
       reviewFile,
-      reviewZipSelection: index === 0 ? firstZipSelection : null,
+      reviewZipSelection: reviewZipSelections.value[reviewFile.name] || null,
     })
   })
   reviewFiles.value = []
   reviewFileZipSelection.value = null
+  reviewZipSelections.value = {}
 }
 
 const updateResourceDomainTag = (value: string) => {
@@ -801,9 +812,10 @@ const uploadPaperResourceFile = (
   progressBase = 0,
   progressSpan = 100,
 ) => {
-  if (paperZipSelection.value) {
+  const zipSelection = paperZipSelections.value[file.name]
+  if (zipSelection) {
     return uploadZipSelectedFile(
-      paperZipSelection.value,
+      zipSelection,
       { detection_type: 'paper' },
       'paper',
       progressBase,
@@ -835,15 +847,16 @@ const uploadReviewResourceFile = (
   linkedPaperFileId: number,
   progressBase = 0,
   progressSpan = 100,
+  zipSelection?: ZipSelectionState | null,
 ) => {
   const payload = {
     detection_type: 'review' as DetectionType,
     review_role: 'review' as const,
     linked_paper_file_id: linkedPaperFileId,
   }
-  if (reviewFileZipSelection.value) {
+  if (zipSelection) {
     return uploadZipSelectedFile(
-      reviewFileZipSelection.value,
+      zipSelection,
       payload,
       'review-file',
       progressBase,
@@ -969,6 +982,7 @@ const submitUpload = async () => {
           file_id: data.file_id,
           name: data.file_name || file.name,
           resource_type: 'paper',
+          file_ext: getNameExt(data.file_name || file.name),
         })
       }
       uploadedResourceFiles.value = uploadedItems
@@ -1003,6 +1017,7 @@ const submitUpload = async () => {
       name: paperData.file_name || reviewPaperFile.value.name,
       resource_type: 'review_paper',
       group_key: 'shared-paper',
+      file_ext: getNameExt(paperData.file_name || reviewPaperFile.value.name),
     })
     for (let i = 0; i < reviewUploadGroups.value.length; i += 1) {
       const group = reviewUploadGroups.value[i]
@@ -1011,6 +1026,7 @@ const submitUpload = async () => {
         paperData.file_id,
         40 + (i / reviewUploadGroups.value.length) * 60,
         60 / reviewUploadGroups.value.length,
+        group.reviewZipSelection,
       )
       uploadedItems.push(
         {
@@ -1018,6 +1034,7 @@ const submitUpload = async () => {
           name: reviewData.file_name || group.reviewFile.name,
           resource_type: 'review_file',
           group_key: group.key,
+          file_ext: getNameExt(reviewData.file_name || group.reviewFile.name),
         },
       )
     }
@@ -1098,14 +1115,17 @@ const handleResourceTaskNext = async () => {
       payload.if_use_llm = Boolean(payload.method_switches.llm)
       if (selectedLlmModel.value) payload.llm_model_name = selectedLlmModel.value
       const paperFiles = uploadedResourceFiles.value.filter(file => file.resource_type === 'paper')
-      for (const file of paperFiles) {
-        const response = await resourceTasksApi.createResourceTask({
-          ...payload,
-          file_ids: [file.file_id],
-          text_override: paperFiles.length === 1 && paperEditableText.value.trim() ? paperEditableText.value.trim() : undefined,
-        })
-        taskCount += Number(response?.data?.task_count || 1)
-      }
+      const paperMethodSwitchesForSubmit = paperImageDetectionSupported.value && paperEnableImageDetection.value
+        ? { ...paperMethodSwitches.value }
+        : Object.fromEntries(Object.keys(createDefaultMethodSwitches()).map(key => [key, false]))
+      const response = await resourceTasksApi.createResourceTask({
+        ...payload,
+        method_switches: paperMethodSwitchesForSubmit,
+        if_use_llm: Boolean(paperMethodSwitchesForSubmit.llm),
+        file_ids: paperFiles.map(file => file.file_id),
+        text_override: paperFiles.length === 1 && paperEditableText.value.trim() ? paperEditableText.value.trim() : undefined,
+      })
+      taskCount += Number(response?.data?.task_count || paperFiles.length || 1)
     } else {
       const paperFile = uploadedResourceFiles.value.find(file => file.resource_type === 'review_paper')
       const reviewFilesForTask = uploadedResourceFiles.value.filter(file => file.resource_type === 'review_file')
@@ -1115,15 +1135,13 @@ const handleResourceTaskNext = async () => {
       if (selectedLlmModel.value) {
         payload.llm_model_name = selectedLlmModel.value
       }
-      for (const reviewFile of reviewFilesForTask) {
-        const response = await resourceTasksApi.createResourceTask({
-          ...payload,
-          file_ids: [paperFile.file_id, reviewFile.file_id],
-          paper_text_override: reviewFilesForTask.length === 1 && reviewPaperEditableText.value.trim() ? reviewPaperEditableText.value.trim() : undefined,
-          review_text_override: reviewFilesForTask.length === 1 && reviewEditableText.value.trim() ? reviewEditableText.value.trim() : undefined,
-        })
-        taskCount += Number(response?.data?.task_count || 1)
-      }
+      const response = await resourceTasksApi.createResourceTask({
+        ...payload,
+        file_ids: [paperFile.file_id, ...reviewFilesForTask.map(file => file.file_id)],
+        paper_text_override: reviewFilesForTask.length === 1 && reviewPaperEditableText.value.trim() ? reviewPaperEditableText.value.trim() : undefined,
+        review_text_override: reviewFilesForTask.length === 1 && reviewEditableText.value.trim() ? reviewEditableText.value.trim() : undefined,
+      })
+      taskCount += Number(response?.data?.task_count || reviewFilesForTask.length || 1)
     }
 
     snackbar.showMessage(taskCount > 1 ? `已创建 ${taskCount} 个检测任务。` : '任务创建成功。', 'success')

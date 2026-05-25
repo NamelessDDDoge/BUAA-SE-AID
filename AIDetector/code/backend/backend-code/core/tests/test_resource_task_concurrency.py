@@ -104,6 +104,20 @@ class ResourceTaskSplitTests(TestCase):
         self.assertEqual(tasks[0].resource_files.count(), 1)
         self.assertEqual(tasks[1].resource_files.count(), 1)
 
+    def test_create_resource_detection_tasks_rejects_text_override_for_multiple_papers(self):
+        paper_a = self.create_file("paper-a.txt", "paper")
+        paper_b = self.create_file("paper-b.txt", "paper")
+
+        with self.assertRaises(ValueError):
+            resource_task_orchestrator.create_resource_detection_tasks(
+                user=self.user,
+                task_type="paper",
+                file_ids=[paper_a.id, paper_b.id],
+                text_override="edited text for one paper",
+            )
+
+        self.assertEqual(DetectionTask.objects.filter(user=self.user, task_type="paper").count(), 0)
+
     def test_create_resource_detection_tasks_splits_one_paper_and_multiple_reviews(self):
         paper = self.create_file("paper.txt", "review_paper")
         review_a = self.create_file("review-a.txt", "review_file", linked_file=paper)
@@ -123,3 +137,19 @@ class ResourceTaskSplitTests(TestCase):
         self.assertEqual(file_groups[1][1].id, review_b.id)
         self.assertEqual(tasks[0].resource_files.count(), 2)
         self.assertEqual(tasks[1].resource_files.count(), 2)
+
+    def test_create_resource_detection_tasks_rejects_text_override_for_multiple_reviews(self):
+        paper = self.create_file("paper.txt", "review_paper")
+        review_a = self.create_file("review-a.txt", "review_file", linked_file=paper)
+        review_b = self.create_file("review-b.txt", "review_file", linked_file=paper)
+
+        with self.assertRaises(ValueError):
+            resource_task_orchestrator.create_resource_detection_tasks(
+                user=self.user,
+                task_type="review",
+                file_ids=[paper.id, review_a.id, review_b.id],
+                paper_text_override="edited paper",
+                review_text_override="edited review",
+            )
+
+        self.assertEqual(DetectionTask.objects.filter(user=self.user, task_type="review").count(), 0)

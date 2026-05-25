@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import zipfile
 from pathlib import Path
@@ -22,6 +23,15 @@ SUB_METHODS = (
     ("urn_contrast", "contrast"),
     ("urn_inpainting", "inpainting"),
 )
+
+
+def _get_image_detection_batch_size():
+    raw = os.environ.get("IMAGE_DETECTION_BATCH_SIZE", "1")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = 1
+    return max(1, value)
 
 
 def _normalize_task_parameters(detection_task):
@@ -58,7 +68,7 @@ def execute_detection_task(detection_task, image_uploads):
         return []
 
     total_images = len(detection_results)
-    batch_size = 20
+    batch_size = _get_image_detection_batch_size()
     for batch_start in range(0, total_images, batch_size):
         batch_drs = detection_results[batch_start : batch_start + batch_size]
         batch_dir = _create_batch_inputs(

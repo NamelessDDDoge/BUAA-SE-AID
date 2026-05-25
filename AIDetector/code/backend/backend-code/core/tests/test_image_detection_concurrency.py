@@ -12,7 +12,7 @@ from core.models import DetectionTask, FileManagement, ImageUpload, Organization
 @override_settings(ENABLE_FANYI=False)
 class LocalInferenceIsolationTests(TestCase):
     def setUp(self):
-        temp_root = Path.home() / ".codex" / "memories" / "buaa-se-aid-concurrency-tests"
+        temp_root = Path("/tmp") / "buaa-se-aid-concurrency-tests"
         shutil.rmtree(temp_root, ignore_errors=True)
         temp_root.mkdir(parents=True, exist_ok=True)
         self.temp_root = temp_root
@@ -107,3 +107,19 @@ class ImageTaskSplitTests(TestCase):
         self.assertEqual(image_groups[1][0].id, self.image_upload_2.id)
         self.assertTrue(all(task.resource_files.count() == 1 for task in tasks))
         self.assertTrue(all(task.detection_results.count() == 1 for task in tasks))
+
+    def test_create_image_detection_tasks_reserves_quota_once_before_creating_tasks(self):
+        self.organization.remaining_non_llm_uses = 1
+        self.organization.save(update_fields=["remaining_non_llm_uses"])
+
+        with self.assertRaises(ValueError):
+            image_task_orchestrator.create_image_detection_tasks(
+                user=self.user,
+                image_ids=[self.image_upload_1.id, self.image_upload_2.id],
+                on_commit=lambda fn: fn(),
+                async_task_starter=lambda *args, **kwargs: None,
+            )
+
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.remaining_non_llm_uses, 1)
+        self.assertEqual(DetectionTask.objects.filter(user=self.user, task_type="image").count(), 0)

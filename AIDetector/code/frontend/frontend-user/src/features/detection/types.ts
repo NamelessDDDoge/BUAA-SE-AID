@@ -18,6 +18,7 @@ export interface UploadedResourceFile {
   resource_type: string
   group_key?: string
   source_name?: string
+  file_ext?: string
 }
 
 export interface TaskOption {
