@@ -2,7 +2,7 @@ from rest_framework import serializers, views
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend
 from rest_framework import views, status
-from ..models import ReviewRequest, ManualReview, DetectionTask, User, InvitationCode
+from ..models import ReviewRequest, ManualReview, DetectionTask, User, InvitationCode, ResourceManualReview
 from ..utils.report_generator import generate_manual_review_report
 
 
@@ -545,9 +545,14 @@ class ReviewerTasksView(views.APIView):
 
         completed_tasks = DetectionTask.objects.filter(id__in=completed_tasks_ids)
 
-        # 统计总数
-        total_received_tasks = received_tasks.count()
-        total_completed_tasks = completed_tasks.count()
+        resource_reviews = ResourceManualReview.objects.filter(
+            review_request__organization=my_user.organization,
+            reviewer=user,
+        )
+
+        # 统计该专家收到和完成的全部人工审阅，包括图片、论文和 Review。
+        total_received_tasks = received_tasks.count() + resource_reviews.count()
+        total_completed_tasks = completed_tasks.count() + resource_reviews.filter(status='completed').count()
 
         return Response({
             'total_received_tasks': total_received_tasks,
@@ -562,30 +567,48 @@ class ReviewerActivityLogView(views.APIView):
         if user.role != 'reviewer':
             return Response({'error': 'Only reviewers can view review details'}, status=403)
 
-        # 获取最近7天的数据
-        days_ago = timezone.now() - timezone.timedelta(days=7)
-
-        # 查询 ManualReview 中 reviewer 为当前用户且 review_time 在最近7天内的记录
-        manual_reviews = ManualReview.objects.filter(
+        manual_reviews = ManualReview.objects.select_related(
+            'review_request__detection_result__detection_task'
+        ).filter(
             organization=user.organization,
             reviewer=user,
-            review_time__gte=days_ago
-        ).order_by('-review_time')
+        )
 
         result = []
         for review in manual_reviews:
-            # 获取关联 DetectionTask 的 task_name
-            detection_task = review.imgs.first().detection_task if review.imgs.exists() else None
-
-            task_name = detection_task.task_name if detection_task else "Unknown Task"
-            completion_time = review.review_time
-            task_status = review.status
+            detection_task = None
+            detection_result = review.review_request.detection_result if review.review_request else None
+            if detection_result:
+                detection_task = detection_result.detection_task
 
             result.append({
-                'task_name': task_name,
-                'completion_time': completion_time,
-                'status': task_status
+                'task_name': detection_task.task_name if detection_task else '图片人工审阅任务',
+                'completion_time': timezone.localtime(review.review_time) if review.review_time else None,
+                'status': review.status,
+                'task_type': 'image',
+                'request_type': 'image',
+                'manual_review_id': review.id,
             })
+
+        resource_reviews = ResourceManualReview.objects.select_related(
+            'review_request__detection_task'
+        ).filter(
+            review_request__organization=user.organization,
+            reviewer=user,
+        )
+        for review in resource_reviews:
+            detection_task = review.review_request.detection_task if review.review_request else None
+            result.append({
+                'task_name': detection_task.task_name if detection_task else '资源人工审阅任务',
+                'completion_time': timezone.localtime(review.review_time) if review.review_time else None,
+                'status': review.status,
+                'task_type': review.review_request.task_type if review.review_request else 'resource',
+                'request_type': 'resource',
+                'manual_review_id': review.id,
+            })
+
+        result.sort(key=lambda item: item['completion_time'], reverse=True)
+        result = result[:20]
 
         return Response(result, status=status.HTTP_200_OK)
 

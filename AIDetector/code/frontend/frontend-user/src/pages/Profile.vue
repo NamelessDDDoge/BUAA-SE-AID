@@ -60,14 +60,14 @@
                 <template v-slot:prepend>
                   <v-icon>mdi-image</v-icon>
                 </template>
-                <v-list-item-title>已上传任务</v-list-item-title>
+                <v-list-item-title>{{ userStore.role === 'reviewer' ? '收到审阅' : '已上传任务' }}</v-list-item-title>
                 <v-list-item-subtitle>{{ stats.uploadedTasks }}</v-list-item-subtitle>
               </v-list-item>
               <v-list-item>
                 <template v-slot:prepend>
                   <v-icon>mdi-check-circle</v-icon>
                 </template>
-                <v-list-item-title>已完成任务</v-list-item-title>
+                <v-list-item-title>{{ userStore.role === 'reviewer' ? '已完成审阅' : '已完成任务' }}</v-list-item-title>
                 <v-list-item-subtitle>{{ stats.completedTasks }}</v-list-item-subtitle>
               </v-list-item>
             </v-list>
@@ -79,14 +79,14 @@
         <!-- 最近活动 -->
         <v-card>
           <v-card-title class="d-flex align-center">
-            <span>最近活动</span>
+            <span>{{ userStore.role === 'reviewer' ? '最近审阅记录' : '最近活动' }}</span>
             <v-spacer></v-spacer>
             <span class="text-caption text-grey">最近5条记录</span>
           </v-card-title>
           <v-card-text>
             <v-timeline density="compact" align="start" class="activity-timeline">
               <template v-if="recentActivities && recentActivities.length > 0">
-                <v-timeline-item v-for="(activity, index) in recentActivities.slice(-5).reverse()" :key="index"
+                <v-timeline-item v-for="(activity, index) in displayActivities" :key="index"
                   :dot-color="getStatusColor(activity.status)" size="small">
                   <div class="d-flex justify-space-between align-center w-100">
                     <div class="activity-info">
@@ -114,7 +114,7 @@
               </template>
               <div v-else class="text-center py-4">
                 <v-icon size="48" color="grey-lighten-1">mdi-information-outline</v-icon>
-                <div class="text-subtitle-1 mt-2 text-grey">暂无活动记录</div>
+                <div class="text-subtitle-1 mt-2 text-grey">{{ userStore.role === 'reviewer' ? '暂无审阅记录' : '暂无活动记录' }}</div>
               </div>
             </v-timeline>
           </v-card-text>
@@ -336,11 +336,20 @@ interface RecentActivity {
   task_name: string
   completion_time: string
   status: string
-  color: string
+  color?: string
+  task_type?: string
+  request_type?: string
+  manual_review_id?: number
 }
 
 // 修改 recentActivities 的初始化
 const recentActivities = ref<RecentActivity[]>([])
+const displayActivities = computed(() => {
+  const activities = recentActivities.value || []
+  return userStore.role === 'reviewer'
+    ? activities.slice(0, 5)
+    : activities.slice(-5).reverse()
+})
 
 // 获取用户信息
 onMounted(async () => {
