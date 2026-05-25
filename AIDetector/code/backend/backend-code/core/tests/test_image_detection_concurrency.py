@@ -107,6 +107,28 @@ class ImageTaskSplitTests(TestCase):
         self.assertEqual(image_groups[1][0].id, self.image_upload_2.id)
         self.assertTrue(all(task.resource_files.count() == 1 for task in tasks))
         self.assertTrue(all(task.detection_results.count() == 1 for task in tasks))
+        self.assertTrue(all(task.status == "pending" for task in tasks))
+        self.assertTrue(all(task.detection_results.first().status == "pending" for task in tasks))
+
+    def test_run_image_detection_task_marks_task_in_progress_when_worker_starts(self):
+        task, _image_group = image_task_orchestrator.create_image_detection_task(
+            user=self.user,
+            image_ids=[self.image_upload_1.id],
+            on_commit=lambda fn: None,
+            async_task_starter=lambda *args, **kwargs: None,
+        )
+
+        image_task_orchestrator.run_image_detection_task_async(
+            task.id,
+            [self.image_upload_1.id],
+            False,
+            1,
+            detection_executor=lambda **kwargs: None,
+        )
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "in_progress")
+        self.assertEqual(task.detection_results.first().status, "in_progress")
 
     def test_create_image_detection_tasks_reserves_quota_once_before_creating_tasks(self):
         self.organization.remaining_non_llm_uses = 1

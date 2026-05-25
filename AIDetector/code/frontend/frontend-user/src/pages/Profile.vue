@@ -448,9 +448,9 @@ const getStatusType = (status: string) => {
     case 'completed':
       return '成功'
     case 'pending':
-      return '等待'
+      return '排队中'
     case 'in_progress':
-      return '进行中'
+      return '检测进行中'
     default:
       return '待完成'
   }
@@ -461,6 +461,8 @@ const getStatusColor = (status: string) => {
     case 'completed':
       return 'success'
     case 'pending':
+      return 'warning'
+    case 'in_progress':
       return 'info'
     default:
       return 'grey'

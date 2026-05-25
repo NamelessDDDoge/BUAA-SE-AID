@@ -162,7 +162,7 @@ def test_create_review_task_with_dual_overrides_persisted():
     assert task.text_detection_results["review_text_override"] == "R"
 
 
-def test_create_task_with_async_starter_marks_in_progress():
+def test_create_task_with_async_starter_marks_pending_until_worker_starts():
     user = make_user()
     f = make_file_management(user=user, resource_type="paper")
     starter = MagicMock()
@@ -171,7 +171,7 @@ def test_create_task_with_async_starter_marks_in_progress():
         user=user, task_type="paper", file_ids=[f.id],
         async_task_starter=starter, on_commit=commit_hook,
     )
-    assert task.status == "in_progress"
+    assert task.status == "pending"
     starter.assert_called_once_with("paper", task.id, None)
 
 

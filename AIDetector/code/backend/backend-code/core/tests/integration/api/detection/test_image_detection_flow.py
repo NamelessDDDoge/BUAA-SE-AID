@@ -1,4 +1,5 @@
 import base64
+import os
 import pickle
 import shutil
 import sys
@@ -151,7 +152,7 @@ class LocalDetectionFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["execution_mode"], "local_async")
-        self.assertEqual(response.data["status"], "in_progress")
+        self.assertEqual(response.data["status"], "pending")
 
         detection_result = DetectionResult.objects.get(image_upload=self.image_upload)
         self.assertEqual(detection_result.status, "completed")
@@ -194,16 +195,16 @@ class LocalDetectionFlowTests(TestCase):
 
     @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda fn: fn())
     @patch("core.views.views_dectection._start_detection_task_thread")
-    def test_submit_detection_returns_quickly_with_in_progress_task_state(self, _mock_thread, _mock_on_commit):
+    def test_submit_detection_returns_quickly_with_pending_task_state(self, _mock_thread, _mock_on_commit):
         response = self.submit_detection("Queued Detection")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["execution_mode"], "local_async")
-        self.assertEqual(response.data["status"], "in_progress")
+        self.assertEqual(response.data["status"], "pending")
 
         task = DetectionTask.objects.get(task_name="Queued Detection")
-        self.assertEqual(task.status, "in_progress")
-        self.assertEqual(DetectionResult.objects.filter(detection_task=task, status="in_progress").count(), 1)
+        self.assertEqual(task.status, "pending")
+        self.assertEqual(DetectionResult.objects.filter(detection_task=task, status="pending").count(), 1)
         _mock_thread.assert_called_once()
 
     def test_submit_detection_rejects_empty_method_selection(self):
@@ -403,6 +404,12 @@ class LocalBridgeTests(TestCase):
         self.override.enable()
         self.addCleanup(self.override.disable)
         self.addCleanup(lambda: shutil.rmtree(self.temp_media, ignore_errors=True))
+        self.remote_url_patch = patch.object(local_inference_client, "AI_REMOTE_INFER_URL", "")
+        self.remote_env_patch = patch.dict(os.environ, {"AI_REMOTE_INFER_URL": ""})
+        self.remote_url_patch.start()
+        self.remote_env_patch.start()
+        self.addCleanup(self.remote_url_patch.stop)
+        self.addCleanup(self.remote_env_patch.stop)
 
     @patch("core.services.capabilities.image.local_inference_client.AI_SERVICE_DIR", Path(__file__).resolve().parents[1])
     @patch("core.services.capabilities.image.local_inference_client.subprocess.run")

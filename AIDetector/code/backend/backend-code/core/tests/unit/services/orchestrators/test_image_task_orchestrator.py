@@ -182,7 +182,7 @@ def test_create_image_detection_task_creates_task_and_results_and_reserves_quota
         async_task_starter=starter,
     )
 
-    assert new_task.status == "in_progress"
+    assert new_task.status == "pending"
     assert new_task.if_use_llm is False
     assert DetectionResult.objects.filter(detection_task=new_task).count() == 2
     starter.assert_called_once()

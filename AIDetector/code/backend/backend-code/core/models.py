@@ -458,6 +458,7 @@ class ImageUpload(models.Model):
 
 class DetectionResult(models.Model):
     STATUS_CHOICES = [
+        ('pending', '排队中'),
         ('in_progress', '正在检测中'),
         ('completed', '检测已完成'),
         ('failed', '检测失败'),

@@ -70,7 +70,7 @@
             <v-btn size="small" color="secondary" variant="text" :disabled="item.status !== 'completed'" @click="downloadTaskReport(item)">
               下载报告
             </v-btn>
-            <v-btn size="small" color="error" variant="text" :disabled="item.status === 'in_progress'" @click="openDeleteDialog(item)">
+            <v-btn size="small" color="error" variant="text" :disabled="['pending', 'in_progress'].includes(item.status)" @click="openDeleteDialog(item)">
               删除
             </v-btn>
           </div>
@@ -263,7 +263,7 @@ const filters = ref<{
 
 const statusOptions = [
   { title: '排队中', value: 'pending' },
-  { title: '进行中', value: 'in_progress' },
+  { title: '检测进行中', value: 'in_progress' },
   { title: '已完成', value: 'completed' },
   { title: '失败', value: 'failed' },
 ]
@@ -425,7 +425,7 @@ const handlePageSizeChange = (size: number) => {
 
 const statusLabel = (status: string) => ({
   pending: '排队中',
-  in_progress: '进行中',
+  in_progress: '检测进行中',
   completed: '已完成',
   failed: '失败',
 }[status] || '未知')

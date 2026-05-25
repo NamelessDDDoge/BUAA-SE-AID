@@ -88,6 +88,41 @@ class ResourceTaskSplitTests(TestCase):
             linked_file=linked_file,
         )
 
+    @patch("core.services.orchestrators.resource_task_orchestrator.run_paper_detection_task")
+    def test_run_paper_resource_task_marks_task_in_progress_when_worker_starts(self, mock_runner):
+        paper = self.create_file("paper.txt", "paper")
+        task, _files = resource_task_orchestrator.create_resource_detection_task(
+            user=self.user,
+            task_type="paper",
+            file_ids=[paper.id],
+            async_task_starter=lambda *args, **kwargs: None,
+            on_commit=lambda fn: None,
+        )
+
+        resource_task_orchestrator.run_resource_detection_task_async("paper", task.id, api_key=None)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "in_progress")
+        mock_runner.assert_called_once_with(task.id, api_key=None)
+
+    @patch("core.services.orchestrators.resource_task_orchestrator.run_review_detection_task")
+    def test_run_review_resource_task_marks_task_in_progress_when_worker_starts(self, mock_runner):
+        paper = self.create_file("paper.txt", "review_paper")
+        review = self.create_file("review.txt", "review_file", linked_file=paper)
+        task, _files = resource_task_orchestrator.create_resource_detection_task(
+            user=self.user,
+            task_type="review",
+            file_ids=[paper.id, review.id],
+            async_task_starter=lambda *args, **kwargs: None,
+            on_commit=lambda fn: None,
+        )
+
+        resource_task_orchestrator.run_resource_detection_task_async("review", task.id, api_key="demo")
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "in_progress")
+        mock_runner.assert_called_once_with(task.id, api_key="demo")
+
     def test_create_resource_detection_tasks_splits_multiple_papers_into_individual_tasks(self):
         paper_a = self.create_file("paper-a.txt", "paper")
         paper_b = self.create_file("paper-b.txt", "paper")
@@ -103,6 +138,7 @@ class ResourceTaskSplitTests(TestCase):
         self.assertEqual([group[0].id for group in file_groups], [paper_a.id, paper_b.id])
         self.assertEqual(tasks[0].resource_files.count(), 1)
         self.assertEqual(tasks[1].resource_files.count(), 1)
+        self.assertTrue(all(task.status == "pending" for task in tasks))
 
     def test_create_resource_detection_tasks_rejects_text_override_for_multiple_papers(self):
         paper_a = self.create_file("paper-a.txt", "paper")
@@ -137,6 +173,7 @@ class ResourceTaskSplitTests(TestCase):
         self.assertEqual(file_groups[1][1].id, review_b.id)
         self.assertEqual(tasks[0].resource_files.count(), 2)
         self.assertEqual(tasks[1].resource_files.count(), 2)
+        self.assertTrue(all(task.status == "pending" for task in tasks))
 
     def test_create_resource_detection_tasks_rejects_text_override_for_multiple_reviews(self):
         paper = self.create_file("paper.txt", "review_paper")

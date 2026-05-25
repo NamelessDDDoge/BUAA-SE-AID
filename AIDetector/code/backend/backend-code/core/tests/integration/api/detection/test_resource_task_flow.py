@@ -112,7 +112,7 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(success_response.status_code, 200)
         task = DetectionTask.objects.get(pk=success_response.data["task_id"])
         self.assertEqual(task.task_type, "paper")
-        self.assertEqual(task.status, "in_progress")
+        self.assertEqual(task.status, "pending")
         self.assertEqual(success_response.data["execution_mode"], "local_async")
         self.assertEqual(list(task.resource_files.values_list("id", flat=True)), [paper_file.id])
         mock_starter.assert_called_once_with("paper", task.id, None)
@@ -149,7 +149,7 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(success_response.status_code, 200)
         review_task = DetectionTask.objects.get(pk=success_response.data["task_id"])
         self.assertEqual(review_task.task_type, "review")
-        self.assertEqual(review_task.status, "in_progress")
+        self.assertEqual(review_task.status, "pending")
         self.assertEqual(success_response.data["execution_mode"], "local_async")
         self.assertCountEqual(
             list(review_task.resource_files.values_list("id", flat=True)),
@@ -668,7 +668,7 @@ class ResourceTaskFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["execution_mode"], "local_async")
-        self.assertEqual(response.data["status"], "in_progress")
+        self.assertEqual(response.data["status"], "pending")
         task = DetectionTask.objects.get(pk=response.data["task_id"])
         self.assertFalse(task.if_use_llm)
         self.assertEqual(task.method_switches["__paper_extract_images__"], False)
@@ -693,7 +693,7 @@ class ResourceTaskFlowTests(TestCase):
             async_task_starter=capture_starter,
         )
 
-        self.assertEqual(detection_task.status, "in_progress")
+        self.assertEqual(detection_task.status, "pending")
         self.assertEqual(len(callbacks), 1)
         self.assertEqual(starter_calls, [])
 

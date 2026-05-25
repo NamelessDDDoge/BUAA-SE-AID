@@ -93,8 +93,6 @@ def create_resource_detection_task(
     if normalized_switches:
         effective_if_use_llm = effective_if_use_llm or bool(normalized_switches.get("llm"))
 
-    task_status = "in_progress" if async_task_starter is not None else "pending"
-
     initial_text_results = None
     if task_type == "paper" and isinstance(text_override, str):
         normalized_text = text_override.strip()
@@ -116,7 +114,7 @@ def create_resource_detection_task(
         user=user,
         task_type=task_type,
         task_name=task_name,
-        status=task_status,
+        status="pending",
         if_use_llm=effective_if_use_llm,
         llm_model_name=llm_model_name,
         method_switches=normalized_switches,
@@ -209,6 +207,7 @@ def _has_text_overrides(*, text_override=None, paper_text_override=None, review_
 def run_resource_detection_task_async(task_type, task_id, api_key=None):
     close_old_connections()
     try:
+        _mark_resource_task_started(task_id)
         task_runner = _get_resource_task_runner(task_type)
         task_runner(task_id, api_key=api_key)
     except Exception as exc:
@@ -220,6 +219,13 @@ def run_resource_detection_task_async(task_type, task_id, api_key=None):
             detection_task.save(update_fields=["status", "error_message", "completion_time"])
     finally:
         close_old_connections()
+
+
+def _mark_resource_task_started(task_id):
+    DetectionTask.objects.filter(pk=task_id, status="pending").update(
+        status="in_progress",
+        error_message="",
+    )
 
 
 def start_resource_detection_task_thread(task_type, task_id, api_key=None):

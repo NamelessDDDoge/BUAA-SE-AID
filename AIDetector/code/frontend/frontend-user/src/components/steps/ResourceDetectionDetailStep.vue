@@ -499,7 +499,7 @@ const statusLabel = computed(() => {
     case 'pending':
       return '排队中'
     case 'in_progress':
-      return '进行中'
+      return '检测进行中'
     case 'completed':
       return '已完成'
     case 'failed':

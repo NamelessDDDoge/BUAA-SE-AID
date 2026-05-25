@@ -125,3 +125,18 @@ def test_delete_detection_task_requires_authentication(client):
     if resp.status_code == 404:
         pytest.skip("URL route not configured")
     assert resp.status_code in (401, 403, 405)
+
+
+@override_settings(MEDIA_ROOT="/tmp/test-media-detection-delete")
+@pytest.mark.parametrize("task_status", ["pending", "in_progress"])
+def test_delete_detection_task_rejects_queued_or_running_tasks(client, task_status):
+    user = make_user()
+    task = make_detection_task(user=user, status=task_status)
+    client.force_authenticate(user)
+
+    resp = client.delete(f"/api/detection-task-delete/{task.id}/")
+
+    if resp.status_code == 404:
+        pytest.skip("URL route not configured")
+    assert resp.status_code == 400
+    assert "cannot be deleted" in resp.data["detail"]

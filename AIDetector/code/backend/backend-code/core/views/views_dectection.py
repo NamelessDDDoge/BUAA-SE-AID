@@ -32,10 +32,17 @@ def get_detection_result(request, image_id):
                 "message": detection_result.detection_task.error_message or "AI detection failed.",
             }, status=500)
 
+        if detection_result.status == 'pending':
+            return Response({
+                "image_id": detection_result.image_upload.id,
+                "status": "排队中",
+                "message": "AI detection is queued. Please check back later.",
+            })
+
         if detection_result.status == 'in_progress':
             return Response({
                 "image_id": detection_result.image_upload.id,
-                "status": "姝ｅ湪妫€娴嬩腑",
+                "status": "检测进行中",
                 "message": "AI detection is still running. Please check back later.",
             })
 
@@ -799,9 +806,9 @@ class DetectionTaskDeleteView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-        if task.status == "in_progress":
+        if task.status in {"pending", "in_progress"}:
             return Response(
-                {"detail": "Task is still running and cannot be deleted."},
+                {"detail": "Task is queued or still running and cannot be deleted."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

@@ -12,8 +12,12 @@ from .task_result_store import get_task_results_payload
 def build_task_result_summary(task):
     if task.status == "failed":
         return task.error_message or "检测失败"
-    if task.status != "completed":
+    if task.status == "pending":
+        return "排队中"
+    if task.status == "in_progress":
         return "检测进行中"
+    if task.status != "completed":
+        return "任务未完成"
 
     if task.task_type == "image":
         counts = task.detection_results.aggregate(
@@ -125,7 +129,9 @@ def build_task_progress(task):
     return {
         "total_results": detection_results.count(),
         "completed_results": detection_results.filter(status="completed").count(),
-        "pending_results": detection_results.filter(status="in_progress").count(),
+        "queued_results": detection_results.filter(status="pending").count(),
+        "pending_results": detection_results.filter(status__in=["pending", "in_progress"]).count(),
+        "in_progress_results": detection_results.filter(status="in_progress").count(),
         "failed_results": detection_results.filter(status="failed").count(),
     }
 

@@ -41,7 +41,7 @@ def _refund_detection_usage(organization, if_use_llm, num_images):
 def _mark_detection_task_failed(detection_task, error_message):
     DetectionResult.objects.filter(
         detection_task=detection_task,
-        status="in_progress",
+        status__in=["pending", "in_progress"],
     ).update(status="failed")
     detection_task.status = "failed"
     detection_task.error_message = (error_message or "")[:2000]
@@ -75,6 +75,16 @@ def _validate_image_uploads(user, image_ids):
     if not image_uploads:
         raise FileNotFoundError("No valid images found")
     return image_uploads
+
+
+def _mark_image_task_started(detection_task):
+    detection_task.status = "in_progress"
+    detection_task.error_message = ""
+    detection_task.save(update_fields=["status", "error_message"])
+    DetectionResult.objects.filter(
+        detection_task=detection_task,
+        status="pending",
+    ).update(status="in_progress")
 
 
 def _reserve_detection_usage(organization, if_use_llm, num_images):
@@ -131,7 +141,7 @@ def create_image_detection_task(
             user=user,
             task_type="image",
             task_name=task_name,
-            status="in_progress",
+            status="pending",
             cmd_block_size=cmd_block_size,
             urn_k=urn_k,
             if_use_llm=effective_if_use_llm,
@@ -145,7 +155,7 @@ def create_image_detection_task(
                 DetectionResult(
                     image_upload=image_upload,
                     detection_task=detection_task,
-                    status="in_progress",
+                    status="pending",
                 )
                 for image_upload in image_uploads
             ]
@@ -213,7 +223,7 @@ def create_image_detection_tasks(
                     user=user,
                     task_type="image",
                     task_name=split_task_name,
-                    status="in_progress",
+                    status="pending",
                     cmd_block_size=cmd_block_size,
                     urn_k=urn_k,
                     if_use_llm=effective_if_use_llm,
@@ -224,7 +234,7 @@ def create_image_detection_tasks(
                 DetectionResult.objects.create(
                     image_upload=image_upload,
                     detection_task=detection_task,
-                    status="in_progress",
+                    status="pending",
                 )
                 log_user_event(
                     user=user,
@@ -262,6 +272,7 @@ def run_image_detection_task_async(
     executor = detection_executor or run_image_detection_task
     try:
         detection_task = DetectionTask.objects.select_related("organization").get(pk=task_id)
+        _mark_image_task_started(detection_task)
         image_uploads = list(
             ImageUpload.objects.filter(id__in=image_ids, file_management__user=detection_task.user).order_by("id")
         )
