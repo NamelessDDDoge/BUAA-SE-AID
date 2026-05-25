@@ -47,7 +47,7 @@
             >
               <template #prepend>
                 <v-avatar size="60" class="me-2">
-                  <v-img :src="image.image_url" cover class="bg-grey-lighten-2" />
+                  <v-img :src="resolveAssetUrl(image.image_url)" cover class="bg-grey-lighten-2" />
                 </v-avatar>
               </template>
               <v-list-item-title>
@@ -85,7 +85,7 @@
             />
 
             <div class="image-container">
-              <v-img :src="selectedImage.image_url" class="preview-image" contain />
+              <v-img :src="resolveAssetUrl(selectedImage.image_url)" class="preview-image" contain />
             </div>
 
             <v-btn
@@ -152,6 +152,17 @@ const emit = defineEmits<{
   (e: 'addName', taskName: string): void
 }>()
 
+const resolveAssetUrl = (url?: string | null) => {
+  if (!url) return ''
+  if (/^(https?:|data:|blob:)/i.test(url)) return url
+
+  const normalizedUrl = url.startsWith('/') ? url : `/${url}`
+  const apiBase = import.meta.env.VITE_API_URL || ''
+  if (!apiBase) return normalizedUrl
+
+  return `${apiBase.replace(/\/$/, '')}${normalizedUrl}`
+}
+
 const displayImages = computed(() => {
   return localImages.value.length > 0 ? localImages.value : props.images
 })
@@ -217,7 +228,7 @@ const loadMoreImages = async () => {
 
     const newImages = (response.images || []).map((img: any) => ({
       image_id: img.image_id,
-      image_url: `${import.meta.env.VITE_API_URL}${img.image_url}`,
+      image_url: resolveAssetUrl(img.image_url),
       page_number: img.page_number,
       extracted_from_pdf: img.extracted_from_pdf,
       selected: false,
