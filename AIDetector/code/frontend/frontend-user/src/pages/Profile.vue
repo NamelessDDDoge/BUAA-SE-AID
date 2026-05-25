@@ -452,7 +452,7 @@ const getStatusType = (status: string) => {
     case 'in_progress':
       return '进行中'
     default:
-      return '未知'
+      return '待完成'
   }
 }
 
