@@ -264,10 +264,10 @@ watch(selectedTag, (newVal) => {
 onMounted(() => {
   const el = thumbnailListRef.value?.$el ?? thumbnailListRef.value
   el?.addEventListener?.('scroll', handleScroll)
-  if (props.fileId) {
-    loadMoreImages()
-  } else if (displayImages.value.length > 0) {
+  if (props.images.length > 0) {
     selectImage(displayImages.value[0])
+  } else if (props.fileId) {
+    loadMoreImages()
   }
 })
 

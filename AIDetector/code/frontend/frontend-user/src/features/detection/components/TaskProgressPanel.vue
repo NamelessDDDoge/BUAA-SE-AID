@@ -9,7 +9,14 @@
 
     <v-card>
       <v-card-text v-if="taskType === 'image'">
-        <ImageSelectionStep v-if="fileId" :file-id="fileId" @update="emit('update-selected-images', $event)" @tag-changed="emit('update-tag', $event)" @add-name="emit('update-name', $event)" />
+        <ImageSelectionStep
+          v-if="fileId || imageSelectionImages.length"
+          :file-id="fileId || 0"
+          :images="imageSelectionImages"
+          @update="emit('update-selected-images', $event)"
+          @tag-changed="emit('update-tag', $event)"
+          @add-name="emit('update-name', $event)"
+        />
       </v-card-text>
       <v-card-actions v-if="taskType === 'image'">
         <v-spacer />
@@ -211,9 +218,19 @@ import ImageSelectionStep from '@/components/steps/ImageSelectionStep.vue'
 import { computed, ref } from 'vue'
 import type { DetectionType, TaskOption, UploadedResourceFile } from '../types'
 import type { LLMModel } from '@/api/llm'
+
+interface ImageSelectionItem {
+  image_id: number
+  image_url: string
+  page_number?: number
+  extracted_from_pdf: boolean
+  selected: boolean
+}
+
 const props = defineProps<{
   taskType: DetectionType
   fileId: number | null
+  imageSelectionImages: ImageSelectionItem[]
   uploadedResourceFiles: UploadedResourceFile[]
   resourceDomainTag: string
   resourceDomainOptions: TaskOption[]

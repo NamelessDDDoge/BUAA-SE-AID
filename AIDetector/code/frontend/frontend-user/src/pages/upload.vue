@@ -61,6 +61,7 @@
     v-show="showProgress"
     :task-type="progressTaskType"
     :file-id="fileId"
+    :image-selection-images="imageSelectionImages"
     :uploaded-resource-files="uploadedResourceFiles"
     :resource-domain-tag="resourceDomainTag"
     :resource-domain-options="resourceDomainOptions"
@@ -259,7 +260,9 @@ const uploadProgress = ref(0)
 const showProgress = ref(false)
 const progressTaskType = ref<DetectionType>('image')
 const fileId = ref<number | null>(null)
+const imageFileIds = ref<number[]>([])
 const selectedImages = ref<Image[]>([])
+const imageSelectionImages = ref<Image[]>([])
 const currentTag = ref('')
 const currentTaskName = ref('')
 const activeModels = ref<LLMModel[]>([])
@@ -924,13 +927,17 @@ const submitUpload = async () => {
         const data = await uploadSingleFile(mainFiles.value[0], { detection_type: 'image' })
         progressTaskType.value = 'image'
         fileId.value = data.file_id
+        imageFileIds.value = [data.file_id]
+        imageSelectionImages.value = []
+        selectedImages.value = []
         uploadProgress.value = 100
         snackbar.showMessage('图像上传成功，请选择待检测图片。', 'success')
         showProgress.value = true
         return
       }
 
-      const allImageIds: number[] = []
+      const allImages: Image[] = []
+      const uploadedFileIds: number[] = []
       for (let i = 0; i < mainFiles.value.length; i += 1) {
         const file = mainFiles.value[i]
         const data = await uploadSingleFile(
@@ -939,27 +946,36 @@ const submitUpload = async () => {
           (i / mainFiles.value.length) * 80,
           80 / mainFiles.value.length,
         )
+        uploadedFileIds.push(data.file_id)
 
         const extracted = await uploadApi.getExtractedImages({
           file_id: data.file_id,
           page_number: 1,
           page_size: 1000,
         })
-        const ids = (extracted.data?.images || []).map((img: any) => img.image_id)
-        allImageIds.push(...ids)
+        const images = (extracted.data?.images || []).map((img: any) => ({
+          image_id: img.image_id,
+          image_url: img.image_url,
+          page_number: img.page_number,
+          extracted_from_pdf: img.extracted_from_pdf,
+          selected: false,
+        }))
+        allImages.push(...images)
       }
 
-      if (!allImageIds.length) {
+      if (!allImages.length) {
         snackbar.showMessage('未提取到可检测图片，请检查上传内容。', 'error')
         return
       }
 
+      progressTaskType.value = 'image'
+      fileId.value = uploadedFileIds[0] || null
+      imageFileIds.value = uploadedFileIds
+      imageSelectionImages.value = allImages
+      selectedImages.value = []
       uploadProgress.value = 100
-      openTaskSelection({
-        image_ids: allImageIds,
-        task_name: `图像检测 ${new Date().toISOString().slice(0, 19)}`,
-        mode: 1,
-      })
+      snackbar.showMessage('图像上传成功，请选择待检测图片。', 'success')
+      showProgress.value = true
       return
     }
 
@@ -1178,9 +1194,14 @@ const navigateToHistorySafely = async () => {
 }
 
 const handleTag = async () => {
-  if (!fileId.value || !currentTag.value) return
+  if (!currentTag.value) return
   try {
-    await uploadApi.addTag({ fileId: fileId.value, tag: currentTag.value })
+    const targetFileIds = imageFileIds.value.length
+      ? imageFileIds.value
+      : (fileId.value ? [fileId.value] : [])
+    await Promise.all(
+      targetFileIds.map(targetFileId => uploadApi.addTag({ fileId: targetFileId, tag: currentTag.value })),
+    )
   } catch {
     snackbar.showMessage('标签保存失败。', 'error')
   }
@@ -1200,6 +1221,8 @@ const returnToUpload = () => {
   showProgress.value = false
   progressTaskType.value = 'image'
   fileId.value = null
+  imageFileIds.value = []
+  imageSelectionImages.value = []
   selectedImages.value = []
   currentTag.value = ''
   currentTaskName.value = ''
