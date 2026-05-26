@@ -45,7 +45,6 @@
         <span>{{ APP_NAME }}</span>
       </v-toolbar-title>
       <v-spacer></v-spacer>
-      <v-btn :icon="theme === 'light' ? 'mdi-weather-sunny' : 'mdi-weather-night'" @click="toggleTheme"></v-btn>
       <v-btn v-if="isLoggedIn" :color="hasUnreadNotifications ? 'red' : ''"
         :icon="hasUnreadNotifications ? 'mdi-bell-badge' : 'mdi-bell-outline'" @click="toggleNotification()"></v-btn>
     </v-app-bar>
@@ -345,11 +344,6 @@ const handleLogout = async () => {
   }
 }
 
-const toggleTheme = () => {
-  theme.value = theme.value === 'light' ? 'dark' : 'light'
-  localStorage.setItem('app_theme', theme.value)
-}
-
 const goToProfile = () => {
   router.push('/profile')
 }
@@ -393,10 +387,8 @@ const markAllAsRead = async () => {
 
 onMounted(async () => {
   // 从本地存储加载主题设置
-  const savedTheme = localStorage.getItem('app_theme')
-  if (savedTheme) {
-    theme.value = savedTheme
-  }
+  theme.value = 'light'
+  localStorage.setItem('app_theme', 'light')
 
   // 如果已登录，获取用户信息
   if (isLoggedIn.value) {

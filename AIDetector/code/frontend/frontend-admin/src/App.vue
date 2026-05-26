@@ -54,7 +54,6 @@
         <span>{{ APP_NAME }}</span>
       </v-toolbar-title>
       <v-spacer></v-spacer>
-      <v-btn :icon="theme === 'light' ? 'mdi-weather-sunny' : 'mdi-weather-night'" @click="toggleTheme"></v-btn>
       <!-- <v-btn v-if="isAdmin" :color="hasUnreadNotifications ? 'red' : ''"
         :icon="hasUnreadNotifications ? 'mdi-bell-badge' : 'mdi-bell-outline'"
         @click="showNotifications = true"></v-btn> -->
@@ -310,10 +309,6 @@ const handleLogout = async () => {
   }
 }
 
-const toggleTheme = () => {
-  themeStore.toggleTheme()
-}
-
 const goToAnalytics = () => {
   router.push('/analytics')
 }
@@ -348,10 +343,7 @@ const goToOrganizationProfile = () => {
 
 onMounted(async () => {
   // 从本地存储加载主题设置
-  const savedTheme = localStorage.getItem('app_theme')
-  if (savedTheme) {
-    themeStore.setTheme(savedTheme)
-  }
+  themeStore.setTheme('light')
 
   // 如果已登录，获取用户信息
   if (isLoggedIn.value) {
