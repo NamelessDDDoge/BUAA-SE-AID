@@ -9,7 +9,6 @@
         </div>
         <div class="hero-actions">
           <v-btn variant="tonal" prepend-icon="mdi-arrow-left" @click="goBack">返回</v-btn>
-          <v-btn color="primary" prepend-icon="mdi-download" @click="handleDownloadReport">下载人工审核报告</v-btn>
         </div>
       </div>
 
@@ -611,27 +610,6 @@ const handleNextImage = () => {
 const handleViewDetail = async (review: ReviewerItem) => {
   await fetchReviewDetail(review)
   showDetailDialog.value = true
-}
-
-const handleDownloadReport = async () => {
-  try {
-    const response = await publisher.downloadReviewReport({ review_request_id: reviewRequestId.value })
-    if (!(response.data instanceof Blob)) {
-      snackbar.showMessage('下载失败：未收到文件数据', 'error')
-      return
-    }
-    const url = window.URL.createObjectURL(response.data)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `人工审核报告_${reviewRequestId.value}.pdf`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-    snackbar.showMessage('报告下载成功', 'success')
-  } catch {
-    snackbar.showMessage('报告下载失败', 'error')
-  }
 }
 
 onMounted(async () => {
