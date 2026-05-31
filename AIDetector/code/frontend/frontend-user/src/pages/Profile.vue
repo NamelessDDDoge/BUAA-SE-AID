@@ -129,10 +129,10 @@
         <v-card-text>
           <v-form>
             <v-text-field v-model="editForm.username" label="用户名" variant="outlined" class="mb-4"
-              :rules="[v => !v || v.length <= 10 || '用户名不能超过10个字']" counter="10"></v-text-field>
+              :rules="[v => !v || v.length <= USERNAME_MAX_LENGTH || `用户名不能超过${USERNAME_MAX_LENGTH}个字`]" :counter="USERNAME_MAX_LENGTH"></v-text-field>
             <v-text-field v-model="editForm.email" label="邮箱" variant="outlined" class="mb-4" disabled></v-text-field>
             <v-textarea v-model="editForm.profile" label="个人简介" variant="outlined" rows="3"
-              :rules="[v => !v || v.length <= 10 || '个人简介不能超过10个字']" counter="10"></v-textarea>
+              :rules="[v => !v || v.length <= PROFILE_MAX_LENGTH || `个人简介不能超过${PROFILE_MAX_LENGTH}个字`]" :counter="PROFILE_MAX_LENGTH"></v-textarea>
           </v-form>
         </v-card-text>
         <v-card-actions>
@@ -204,6 +204,8 @@ import reviewer from '@/api/reviewer'
 const snackbar = useSnackbarStore()
 const userStore = useUserStore()
 const route = useRoute()
+const USERNAME_MAX_LENGTH = 30
+const PROFILE_MAX_LENGTH = 300
 
 // 编辑表单
 const showEditDialog = ref(false)
@@ -470,8 +472,8 @@ const getStatusColor = (status: string) => {
 }
 
 const isEditFormValid = computed(() => {
-  return (!editForm.value.username || editForm.value.username.length <= 10) &&
-    (!editForm.value.profile || editForm.value.profile.length <= 10)
+  return (!editForm.value.username || editForm.value.username.length <= USERNAME_MAX_LENGTH) &&
+    (!editForm.value.profile || editForm.value.profile.length <= PROFILE_MAX_LENGTH)
 })
 
 const formatDateTime = (dateString: string) => {

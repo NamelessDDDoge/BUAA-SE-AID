@@ -208,6 +208,7 @@
       localStorage.setItem("1-isLoggedIn", "true")
 
       snackbar.showMessage('登录成功', 'success')
+      await userStore.fetchUserInfo()
       await router.replace('/')
     } catch (error: any) {
       console.log(error)

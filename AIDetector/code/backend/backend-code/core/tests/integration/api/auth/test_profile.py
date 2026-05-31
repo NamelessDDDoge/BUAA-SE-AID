@@ -33,7 +33,7 @@ def test_user_details_requires_authentication(client):
 def test_user_update_persists_profile_text(client):
     user = make_user()
     client.force_authenticate(user)
-    resp = client.post("/api/user/update/", {"profile": "I'm a researcher"}, format="json")
+    resp = client.put("/api/user/update/", {"profile": "I'm a researcher"}, format="json")
     if resp.status_code == 404:
         pytest.skip("URL route not configured")
     if resp.status_code in (200, 201, 204):
@@ -43,6 +43,42 @@ def test_user_update_persists_profile_text(client):
             getattr(user, f, None) and "researcher" in str(getattr(user, f))
             for f in ("profile",)
         )
+
+
+def test_user_update_allows_expected_profile_lengths(client):
+    user = make_user()
+    client.force_authenticate(user)
+    resp = client.put(
+        "/api/user/update/",
+        {"username": "u" * 30, "profile": "p" * 300},
+        format="json",
+    )
+    if resp.status_code == 404:
+        pytest.skip("URL route not configured")
+    assert resp.status_code == 200
+    user.refresh_from_db()
+    assert user.username == "u" * 30
+    assert user.profile == "p" * 300
+
+
+def test_user_update_rejects_overlong_username(client):
+    user = make_user()
+    client.force_authenticate(user)
+    resp = client.put("/api/user/update/", {"username": "u" * 31}, format="json")
+    if resp.status_code == 404:
+        pytest.skip("URL route not configured")
+    assert resp.status_code == 400
+    assert "username" in resp.data
+
+
+def test_user_update_rejects_overlong_profile(client):
+    user = make_user()
+    client.force_authenticate(user)
+    resp = client.put("/api/user/update/", {"profile": "p" * 301}, format="json")
+    if resp.status_code == 404:
+        pytest.skip("URL route not configured")
+    assert resp.status_code == 400
+    assert "profile" in resp.data
 
 
 def test_organization_usage_info_requires_authentication(client):

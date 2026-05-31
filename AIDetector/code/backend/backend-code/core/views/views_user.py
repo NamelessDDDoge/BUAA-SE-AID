@@ -132,7 +132,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         model = get_user_model()
         fields = ['username', 'email', 'role', 'profile', 'avatar']  # 这里加入了 profile 字段
 
-    username = serializers.CharField(required=False)  # 使 `username` 可选
+    username = serializers.CharField(required=False, max_length=30)  # 使 `username` 可选
+    profile = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=300)
 
     def update(self, instance, validated_data):
         instance.username = validated_data.get('username', instance.username)
@@ -158,7 +159,7 @@ class UserUpdateView(views.APIView):
     def put(self, request):
         try:
             user = request.user  # 获取当前认证的用户
-            serializer = UserUpdateSerializer(user, data=request.data)
+            serializer = UserUpdateSerializer(user, data=request.data, partial=True)
             if serializer.is_valid():
                 user = serializer.save()
                 return Response({"message": "User information updated successfully"})
