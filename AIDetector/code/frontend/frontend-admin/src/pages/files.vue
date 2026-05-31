@@ -101,7 +101,7 @@
           <v-btn icon="mdi-close" @click="closeDetail"></v-btn>
           <v-toolbar-title>{{ detailDialogTitle }}</v-toolbar-title>
           <v-spacer />
-          <v-btn v-if="selectedTaskDetail?.report_file_url" color="primary" variant="text" @click="openLink(selectedTaskDetail.report_file_url)">
+          <v-btn v-if="selectedTaskDetail?.task_id" color="primary" variant="text" @click="downloadReport">
             下载报告
           </v-btn>
           <v-btn color="error" variant="text" :loading="deleteLoading" @click="openDeleteDialog(selectedTaskSummary)">
@@ -230,7 +230,7 @@
                   >
                     下载论文原文
                   </v-btn>
-                  <v-btn v-if="selectedTaskDetail.report_file_url" variant="text" @click="openLink(selectedTaskDetail.report_file_url)">下载检测报告</v-btn>
+                  <v-btn v-if="selectedTaskDetail.task_id" variant="text" @click="downloadReport">下载检测报告</v-btn>
                 </div>
 
                 <div v-if="primaryPaperFile?.download_message" class="text-body-2 text-warning mb-4">{{ primaryPaperFile.download_message }}</div>
@@ -665,12 +665,64 @@ const openLink = (url: string | null | undefined) => {
   openResolvedLink(resolveAssetUrl(url))
 }
 
-const openResourceFile = (file: any) => {
+const getDownloadFilename = (response: any, fallback: string) => {
+  const disposition = response?.headers?.['content-disposition'] || response?.headers?.['Content-Disposition'] || ''
+  const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (utf8Name) {
+    try {
+      return decodeURIComponent(utf8Name)
+    } catch {
+      return utf8Name
+    }
+  }
+  const asciiName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+  return asciiName || fallback
+}
+
+const saveBlob = (data: BlobPart, filename: string, type = 'application/octet-stream') => {
+  const blob = data instanceof Blob ? data : new Blob([data], { type })
+  const objectUrl = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(objectUrl)
+}
+
+const openResourceFile = async (file: any) => {
   if (!file?.file_available || !file?.download_url) {
     snackbar.showMessage(file?.download_message || '当前服务器无法访问该资源文件', 'warning')
     return
   }
-  openLink(file.download_url)
+  const fileId = file.file_id || file.id
+  if (!fileId) {
+    snackbar.showMessage('当前资源缺少文件 ID，无法下载', 'warning')
+    return
+  }
+  try {
+    const response = await tasksApi.downloadResourceFile(fileId)
+    saveBlob(response.data, getDownloadFilename(response, file.file_name || `resource_${fileId}`), file.file_type)
+  } catch (error: any) {
+    console.error('Failed to download resource file:', error)
+    snackbar.showMessage(error?.response?.data?.message || '下载资源文件失败', 'error')
+  }
+}
+
+const downloadReport = async () => {
+  const taskId = selectedTaskDetail.value?.task_id || selectedTaskSummary.value?.task_id
+  if (!taskId) {
+    snackbar.showMessage('当前任务缺少 ID，无法下载报告', 'warning')
+    return
+  }
+  try {
+    const response = await tasksApi.downloadTaskReport(taskId)
+    saveBlob(response.data, getDownloadFilename(response, `task_${taskId}_report.pdf`), 'application/pdf')
+  } catch (error: any) {
+    console.error('Failed to download task report:', error)
+    snackbar.showMessage(error?.response?.data?.message || '下载检测报告失败', 'error')
+  }
 }
 
 const getImagePreviewUrl = (result: any) => resolveAssetUrl(result?.image_url)

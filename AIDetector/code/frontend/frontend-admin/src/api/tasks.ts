@@ -24,6 +24,14 @@ export default {
     return http.get(`/get_detection_task_status/${taskId}/`, { params })
   },
 
+  downloadResourceFile(fileId: number | string) {
+    return http.get(`/upload/${fileId}/download/`, { responseType: 'blob' })
+  },
+
+  downloadTaskReport(taskId: number | string) {
+    return http.get(`/admin/tasks/${taskId}/report/`, { responseType: 'blob' })
+  },
+
   deleteTask(taskId: number) {
     return http.delete(`/detection-task-delete/${taskId}/`)
   },
