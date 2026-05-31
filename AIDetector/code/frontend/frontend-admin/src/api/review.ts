@@ -14,8 +14,10 @@ export default {
         return http.post(`/handle_reviewRequest/${id}/`, data)
     },
 
-    getResourceTextPreview(fileId: number) {
-        return http.get(`/upload/${fileId}/preview_text/`)
+    getResourceTextPreview(fileId: number, taskId?: number | string | null) {
+        return http.get(`/upload/${fileId}/preview_text/`, {
+            params: taskId ? { task_id: taskId } : undefined,
+        })
     },
 
     downloadTaskReportAdmin(taskId: number) {

@@ -31,7 +31,6 @@
               <v-list-item-subtitle>{{ file.resource_type }} · {{ file.file_type }}</v-list-item-subtitle>
               <template #append>
                 <div class="d-flex ga-2">
-                  <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
                   <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
                   <v-btn size="small" variant="text" prepend-icon="mdi-file-document-outline" @click="openExtractDialog(file)">查看提取文本</v-btn>
                 </div>
@@ -241,7 +240,6 @@
                   <v-list-item-subtitle>{{ file.resource_type }} · {{ file.file_type }}</v-list-item-subtitle>
                   <template #append>
                     <div class="d-flex ga-2">
-                      <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
                       <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
                       <v-btn size="small" variant="text" prepend-icon="mdi-file-document-outline" @click="openExtractDialog(file)">查看提取文本</v-btn>
                     </div>
@@ -272,27 +270,6 @@
     <DrawingDialog v-model="showDrawingDialog" :image-url="currentImage ? getImageUrl(currentImage.url) : ''"
       :initial-paths="currentDimensionPaths" @save="handleDrawingSave" />
 
-    <v-dialog v-model="previewDialog" max-width="900">
-      <v-card>
-        <v-card-title class="d-flex align-center">
-          <span class="text-h6">{{ previewTitle }}</span>
-          <v-spacer />
-          <v-btn icon="mdi-close" variant="text" @click="closePreviewDialog" />
-        </v-card-title>
-        <v-card-text>
-          <v-alert v-if="previewError" type="warning" variant="tonal" class="mb-4">{{ previewError }}</v-alert>
-          <v-progress-linear v-if="previewLoading" indeterminate color="primary" class="mb-4" />
-          <pre v-if="previewText" class="file-preview">{{ previewText }}</pre>
-          <iframe
-            v-else-if="previewUrl"
-            :src="previewUrl"
-            class="file-iframe"
-            title="源文件预览"
-          />
-          <div v-else-if="!previewLoading" class="text-medium-emphasis">当前文件无法预览，请下载查看源文件。</div>
-        </v-card-text>
-      </v-card>
-    </v-dialog>
     <!-- 提取文本弹窗 -->
     <v-dialog v-model="showExtractDialog" max-width="900px">
       <v-card>
@@ -362,13 +339,6 @@ const originalFiles = ref<Array<{ id?: number; file_id?: number; file_name: stri
 const resourceDecision = ref('')
 const resourceSteps = ref('')
 const resourceComment = ref('')
-const previewDialog = ref(false)
-const previewTitle = ref('')
-const previewUrl = ref('')
-const previewText = ref('')
-const previewLoading = ref(false)
-const previewError = ref('')
-const previewObjectUrl = ref('')
 const resourceDecisionOptions = computed(() => {
   if (resourceTaskType.value === 'review') {
     return [
@@ -532,24 +502,6 @@ const getFileUrl = (file: { file_url?: string | null }) => {
   return `${import.meta.env.VITE_API_URL || ''}${file.file_url}`
 }
 
-const revokePreviewObjectUrl = () => {
-  if (previewObjectUrl.value) {
-    URL.revokeObjectURL(previewObjectUrl.value)
-    previewObjectUrl.value = ''
-  }
-}
-
-const closePreviewDialog = () => {
-  previewDialog.value = false
-  revokePreviewObjectUrl()
-}
-
-const setPreviewUrl = (url: string, isObjectUrl = false) => {
-  revokePreviewObjectUrl()
-  previewUrl.value = url
-  previewObjectUrl.value = isObjectUrl ? url : ''
-}
-
 const downloadFile = (file: { file_name: string; file_url?: string | null }) => {
   const url = getFileUrl(file)
   if (!url) return
@@ -563,7 +515,6 @@ const downloadFile = (file: { file_name: string; file_url?: string | null }) => 
 
 const loadFileTextPreview = async (
   file: { id?: number; file_id?: number; file_name: string; file_url?: string | null },
-  target: 'preview' | 'extract',
 ) => {
   const fileId = file.file_id || file.id
   if (!fileId) {
@@ -571,85 +522,34 @@ const loadFileTextPreview = async (
     return
   }
 
-  const isPreview = target === 'preview'
-  if (isPreview) {
-    previewDialog.value = true
-    previewTitle.value = file.file_name || '文件预览'
-    setPreviewUrl('')
-    previewText.value = ''
-    previewError.value = ''
-    previewLoading.value = true
-  } else {
-    showExtractDialog.value = true
-    extractDialogTitle.value = `提取文本 - ${file.file_name || '未命名文件'}`
-    extractLoading.value = true
-    extractError.value = ''
-    extracted_text.value = ''
-  }
+  showExtractDialog.value = true
+  extractDialogTitle.value = `提取文本 - ${file.file_name || '未命名文件'}`
+  extractLoading.value = true
+  extractError.value = ''
+  extracted_text.value = ''
 
   try {
     const response = await uploadApi.getResourceTextPreview(fileId, resourceTaskId.value)
     const textContent = response.data?.text_content || ''
-    if (isPreview) {
-      previewText.value = textContent
-    } else {
-      extracted_text.value = textContent
-    }
+    extracted_text.value = textContent
     if (response.data?.text_truncated) {
       const message = '文件较长，当前仅展示前 6000000 字。'
-      if (isPreview) previewError.value = message
-      else extractError.value = message
+      extractError.value = message
     }
     if (!textContent) {
       const message = '当前文件暂无可展示文本。'
-      if (isPreview) previewError.value = previewError.value || message
-      else extractError.value = extractError.value || message
+      extractError.value = extractError.value || message
     }
   } catch (error: any) {
     const message = error?.response?.data?.message || '获取提取文本失败。'
-    if (isPreview) previewError.value = message
-    else extractError.value = message
+    extractError.value = message
   } finally {
-    if (isPreview) previewLoading.value = false
-    else extractLoading.value = false
-  }
-}
-
-const previewFile = async (file: { id?: number; file_id?: number; file_name: string; file_url?: string | null }) => {
-  previewDialog.value = true
-  previewTitle.value = file.file_name
-  setPreviewUrl('')
-  previewText.value = ''
-  previewError.value = ''
-  previewLoading.value = true
-
-  const fileId = file.file_id || file.id
-  if (!fileId) {
-    previewLoading.value = false
-    previewError.value = '当前文件缺少ID，无法预览源文件。'
-    return
-  }
-
-  try {
-    let response
-    try {
-      response = await uploadApi.getResourceFilePreview(fileId)
-    } catch {
-      response = await uploadApi.downloadResourceFile(fileId)
-    }
-    const blob = response.data instanceof Blob
-      ? response.data
-      : new Blob([response.data], { type: 'application/octet-stream' })
-    setPreviewUrl(URL.createObjectURL(blob), true)
-  } catch (error: any) {
-    previewError.value = error?.response?.data?.message || '当前文件无法预览，请下载查看源文件。'
-  } finally {
-    previewLoading.value = false
+    extractLoading.value = false
   }
 }
 
 const openExtractDialog = async (file: { id?: number; file_id?: number; file_name: string; file_url?: string | null }) => {
-  await loadFileTextPreview(file, 'extract')
+  await loadFileTextPreview(file)
 }
 
 const downloadCombinedReport = async () => {
@@ -793,7 +693,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', () => { })
-  revokePreviewObjectUrl()
 })
 
 const degreeOptions = [

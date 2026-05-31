@@ -94,7 +94,6 @@
                     <v-list-item-subtitle>{{ file.resource_type }} · {{ file.file_type }}</v-list-item-subtitle>
                     <template #append>
                       <div class="d-flex ga-2">
-                        <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
                         <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
                         <v-btn
                           v-if="reviewDetails.request_type === 'resource'"
@@ -119,7 +118,6 @@
                     <v-list-item-subtitle>{{ file.resource_type }} · {{ file.file_type }}</v-list-item-subtitle>
                     <template #append>
                       <div class="d-flex ga-2">
-                        <v-btn size="small" variant="text" prepend-icon="mdi-eye-outline" @click="previewFile(file)">预览</v-btn>
                         <v-btn size="small" variant="text" prepend-icon="mdi-download" :disabled="!file.file_url" @click="downloadFile(file)">下载</v-btn>
                         <v-btn
                           v-if="reviewDetails.request_type === 'resource'"
@@ -183,25 +181,6 @@
       </v-card>
     </v-dialog>
 
-    <v-dialog v-model="previewDialog" max-width="900">
-      <v-card>
-        <v-card-title class="d-flex align-center">
-          <span class="text-h6">{{ previewTitle }}</span>
-          <v-spacer />
-          <v-btn icon="mdi-close" variant="text" @click="previewDialog = false" />
-        </v-card-title>
-        <v-card-text>
-          <v-alert v-if="previewError" type="warning" variant="tonal" class="mb-4">{{ previewError }}</v-alert>
-          <iframe
-            v-if="previewUrl"
-            :src="previewUrl"
-            class="file-iframe"
-            title="源文件预览"
-          />
-          <div v-else class="text-medium-emphasis">当前文件无法内嵌预览，请使用下载按钮查看源文件。</div>
-        </v-card-text>
-      </v-card>
-    </v-dialog>
     <!-- 提取文本弹窗 -->
     <v-dialog v-model="showExtractDialog" max-width="900">
       <v-card>
@@ -277,10 +256,6 @@ const extractLoading = ref(false)
 const extractError = ref('')
 const showExtractDialog = ref(false)
 const rejectReason = ref('')
-const previewDialog = ref(false)
-const previewTitle = ref('')
-const previewUrl = ref('')
-const previewError = ref('')
 
 const getImageUrl = (url?: string | null) => {
   if (!url) return ''
@@ -322,19 +297,6 @@ const downloadImage = (image: any) => {
   document.body.removeChild(link)
 }
 
-const previewFile = async (file: any) => {
-  previewDialog.value = true
-  previewTitle.value = file.file_name
-  previewUrl.value = ''
-  previewError.value = ''
-  const url = getFileUrl(file)
-  if (!url) {
-    previewError.value = '当前文件无法预览，请下载查看。'
-    return
-  }
-  previewUrl.value = url
-}
-
 const downloadCombinedReport = async () => {
   if (!reviewDetails.value?.task_id) return
   try {
@@ -366,7 +328,7 @@ const openExtractDialog = async (file: any) => {
   extractError.value = ''
   extracted_text.value = ''
   try {
-    const response = await reviewApi.getResourceTextPreview(fileId)
+    const response = await reviewApi.getResourceTextPreview(fileId, reviewDetails.value?.task_id)
     extracted_text.value = response.data?.text_content || ''
     if (response.data?.text_truncated) {
       extractError.value = '文件较长，当前仅展示前 60000 字。'
