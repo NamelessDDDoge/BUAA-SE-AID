@@ -58,6 +58,7 @@ urlpatterns = [
     path('upload/zip_entry/', upload_zip_document_entry, name='upload_zip_document_entry'),
     path('upload/<int:file_id>/', get_file_details, name='get_file_details'),
     path('upload/<int:file_id>/download/', download_uploaded_resource, name='download_uploaded_resource'),
+    path('upload/<int:file_id>/preview/', preview_uploaded_resource, name='preview_uploaded_resource'),
     path('upload/<int:file_id>/preview_text/', get_resource_text_preview, name='get_resource_text_preview'),
     path('upload/<int:file_id>/extract_images/', get_extracted_images, name='get_extracted_images'),
     path('upload/<int:file_id>/addTag/', add_file_tag, name='add_file_tag'),

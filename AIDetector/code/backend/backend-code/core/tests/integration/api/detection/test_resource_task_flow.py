@@ -16,6 +16,7 @@ from core.models import (
     PaperDetectionResult,
     PaperParagraphResult,
     PaperReferenceResult,
+    ResourceReviewRequest,
     ReviewDetectionResult,
     ReviewParagraphResult,
     User,
@@ -360,6 +361,90 @@ class ResourceTaskFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("attachment", response["Content-Disposition"])
+
+    def test_preview_uploaded_resource_returns_inline_original_file(self):
+        file_record = self.create_file("preview-paper.pdf", "paper")
+        file_record.file_type = "application/pdf"
+        file_record.save(update_fields=["file_type"])
+        self.write_media_file("uploads/preview-paper.pdf", b"%PDF-1.4 source bytes")
+
+        response = self.client.get(f"/api/upload/{file_record.id}/preview/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("inline", response["Content-Disposition"])
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertEqual(b"".join(response.streaming_content), b"%PDF-1.4 source bytes")
+
+    def test_reviewer_can_preview_assigned_resource_file(self):
+        reviewer = User.objects.create_user(
+            username="assigned-resource-reviewer",
+            email="assigned-resource-reviewer@example.com",
+            password="pass123456",
+            role="reviewer",
+            organization=self.organization,
+        )
+        file_record = self.create_file("assigned-paper.txt", "paper")
+        self.write_media_file("uploads/assigned-paper.txt", b"assigned original text")
+        task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="paper",
+            task_name="Assigned Preview",
+            status="completed",
+            text_detection_results={},
+        )
+        task.resource_files.add(file_record)
+        review_request = ResourceReviewRequest.objects.create(
+            detection_task=task,
+            task_type="paper",
+            user=self.user,
+            organization=self.organization,
+        )
+        review_request.selected_files.add(file_record)
+        review_request.reviewers.add(reviewer)
+
+        self.client.force_authenticate(reviewer)
+        response = self.client.get(f"/api/upload/{file_record.id}/preview/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("inline", response["Content-Disposition"])
+        self.assertEqual(b"".join(response.streaming_content), b"assigned original text")
+
+    def test_reviewer_can_preview_unselected_original_file_from_assigned_resource_task(self):
+        reviewer = User.objects.create_user(
+            username="assigned-original-reviewer",
+            email="assigned-original-reviewer@example.com",
+            password="pass123456",
+            role="reviewer",
+            organization=self.organization,
+        )
+        selected_file = self.create_file("selected-review.txt", "review_file")
+        original_file = self.create_file("original-paper.txt", "review_paper")
+        self.write_media_file("uploads/original-paper.txt", b"original paper bytes")
+        task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="review",
+            task_name="Assigned Original Preview",
+            status="completed",
+            text_detection_results={},
+        )
+        task.resource_files.add(selected_file, original_file)
+        review_request = ResourceReviewRequest.objects.create(
+            detection_task=task,
+            task_type="review",
+            user=self.user,
+            organization=self.organization,
+        )
+        review_request.selected_files.add(selected_file)
+        review_request.reviewers.add(reviewer)
+
+        self.client.force_authenticate(reviewer)
+        response = self.client.get(f"/api/upload/{original_file.id}/preview/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("inline", response["Content-Disposition"])
+        self.assertEqual(b"".join(response.streaming_content), b"original paper bytes")
 
     def test_paper_results_endpoint_prefers_dedicated_tables_when_json_is_empty(self):
         task = DetectionTask.objects.create(

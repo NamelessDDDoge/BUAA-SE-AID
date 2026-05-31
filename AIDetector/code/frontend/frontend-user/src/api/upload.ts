@@ -39,6 +39,13 @@ export default {
     })
   },
 
+  getResourceFilePreview(fileId: number) {
+    return http.get(`/upload/${fileId}/preview/`, {
+      responseType: 'blob',
+      timeout: 60000,
+    })
+  },
+
   addTag(data: any) {
     console.log(data)
     return http.post(`/upload/${data.fileId}/addTag/`, {tag:data.tag})

@@ -210,7 +210,7 @@
         <v-toolbar flat>
           <v-toolbar-title>{{ previewTitle }}</v-toolbar-title>
           <v-spacer />
-          <v-btn icon @click="previewDialog = false"><v-icon>mdi-close</v-icon></v-btn>
+          <v-btn icon @click="closePreviewDialog"><v-icon>mdi-close</v-icon></v-btn>
         </v-toolbar>
         <v-card-text>
           <v-alert v-if="previewError" type="warning" variant="tonal" class="mb-4">{{ previewError }}</v-alert>
@@ -241,7 +241,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ResultComponent from '@/components/result.vue'
 import publisher from '@/api/publisher'
@@ -319,6 +319,7 @@ const previewUrl = ref('')
 const previewText = ref('')
 const previewLoading = ref(false)
 const previewError = ref('')
+const previewObjectUrl = ref('')
 const extractedText = ref('')
 const extractDialogTitle = ref('')
 const extractLoading = ref(false)
@@ -513,6 +514,24 @@ const getFileUrl = (file: OriginalFileItem) => {
   return /^https?:\/\//.test(file.file_url) ? file.file_url : `${import.meta.env.VITE_API_URL || ''}${file.file_url}`
 }
 
+const revokePreviewObjectUrl = () => {
+  if (previewObjectUrl.value) {
+    URL.revokeObjectURL(previewObjectUrl.value)
+    previewObjectUrl.value = ''
+  }
+}
+
+const closePreviewDialog = () => {
+  previewDialog.value = false
+  revokePreviewObjectUrl()
+}
+
+const setPreviewUrl = (url: string, isObjectUrl = false) => {
+  revokePreviewObjectUrl()
+  previewUrl.value = url
+  previewObjectUrl.value = isObjectUrl ? url : ''
+}
+
 const formatNumber = (value: number) => `${(value * 100).toFixed(2)}%`
 
 const convert = (index: number) => {
@@ -563,7 +582,7 @@ const loadFileTextPreview = async (file: OriginalFileItem, target: 'preview' | '
   if (isPreview) {
     previewDialog.value = true
     previewTitle.value = file.file_name
-    previewUrl.value = ''
+    setPreviewUrl('')
     previewText.value = ''
     previewError.value = ''
     previewLoading.value = true
@@ -604,23 +623,37 @@ const loadFileTextPreview = async (file: OriginalFileItem, target: 'preview' | '
 }
 
 const previewFile = async (file: OriginalFileItem) => {
-  if (requestType.value === 'resource') {
-    await loadFileTextPreview(file, 'preview')
+  previewDialog.value = true
+  previewTitle.value = file.file_name
+  setPreviewUrl('')
+  previewText.value = ''
+  previewError.value = ''
+  previewLoading.value = true
+
+  const fileId = file.file_id || file.id
+  if (!fileId) {
+    previewLoading.value = false
+    previewError.value = '当前文件缺少ID，无法预览源文件。'
     return
   }
 
-  previewDialog.value = true
-  previewTitle.value = file.file_name
-  previewUrl.value = ''
-  previewText.value = ''
-  previewError.value = ''
-  previewLoading.value = false
-  const url = getFileUrl(file)
-  if (!url) {
-    previewError.value = '当前文件无法预览，请下载查看源文件。'
-    return
+  try {
+    const response = await uploadApi.getResourceFilePreview(fileId)
+    const blob = response.data instanceof Blob
+      ? response.data
+      : new Blob([response.data], { type: file.file_type || 'application/octet-stream' })
+    setPreviewUrl(URL.createObjectURL(blob), true)
+  } catch (error: any) {
+    const fallbackUrl = getFileUrl(file)
+    if (fallbackUrl) {
+      setPreviewUrl(fallbackUrl)
+      previewError.value = '源文件预览接口暂不可用，已尝试打开原始文件地址。'
+    } else {
+      previewError.value = error?.response?.data?.message || '当前文件无法预览，请下载查看源文件。'
+    }
+  } finally {
+    previewLoading.value = false
   }
-  previewUrl.value = url
 }
 
 const openExtractDialog = async (file: OriginalFileItem) => {
@@ -721,6 +754,10 @@ onMounted(async () => {
   } catch {
     snackbar.showMessage('获取人工审核结果失败', 'error')
   }
+})
+
+onUnmounted(() => {
+  revokePreviewObjectUrl()
 })
 </script>
 
