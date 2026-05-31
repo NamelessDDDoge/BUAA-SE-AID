@@ -180,7 +180,7 @@
                         <div class="text-body-2 text-medium-emphasis">检测时间：{{ formatDate(result.detection_time) }}</div>
                         <div class="d-flex ga-2 mt-4">
                           <v-btn v-if="resolveAssetUrl(result.image_url)" size="small" color="primary" variant="tonal" @click="openResolvedLink(resolveAssetUrl(result.image_url))">查看图像</v-btn>
-                          <v-btn v-if="resolveAssetUrl(result.image_url)" size="small" variant="text" @click="openResolvedLink(resolveAssetUrl(result.image_url))">下载图像</v-btn>
+                          <v-btn v-if="resolveAssetUrl(result.image_url)" size="small" variant="text" @click="downloadImageAsset(result)">下载图像</v-btn>
                         </div>
                       </v-card-text>
                     </v-card>
@@ -689,6 +689,30 @@ const saveBlob = (data: BlobPart, filename: string, type = 'application/octet-st
   link.click()
   document.body.removeChild(link)
   window.URL.revokeObjectURL(objectUrl)
+}
+
+const getFilenameFromUrl = (url: string, fallback: string) => {
+  const pathname = url.split('?')[0].split('#')[0]
+  const filename = pathname.split('/').filter(Boolean).pop()
+  return filename ? decodeURIComponent(filename) : fallback
+}
+
+const downloadImageAsset = async (result: any) => {
+  const url = resolveAssetUrl(result?.image_url)
+  if (!url) return
+  const filename = getFilenameFromUrl(url, `image_${result?.image_id || 'download'}`)
+  try {
+    const token = localStorage.getItem('1-token')
+    const response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const blob = await response.blob()
+    saveBlob(blob, filename, blob.type || 'application/octet-stream')
+  } catch (error) {
+    console.error('Failed to download image asset:', error)
+    snackbar.showMessage('下载图像失败', 'error')
+  }
 }
 
 const openResourceFile = async (file: any) => {
