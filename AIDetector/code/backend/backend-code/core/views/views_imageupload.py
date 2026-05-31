@@ -24,6 +24,7 @@ from ..services.resources.zip_document_service import (
     build_uploaded_file_from_zip_entry,
     list_document_entries,
 )
+from ..utils.task_result_store import get_task_results_payload
 from .views_dectection import CustomPagination
 
 
@@ -132,6 +133,7 @@ def _build_preview_response(
 
 def _get_task_preview_text(task, file_management):
     raw_results = task.text_detection_results if isinstance(task.text_detection_results, dict) else {}
+    persisted_results = get_task_results_payload(task) or {}
     if file_management.resource_type == "review_file":
         override_text = raw_results.get("review_text_override") or raw_results.get("text_override")
         if isinstance(override_text, str) and override_text.strip():
@@ -146,10 +148,27 @@ def _get_task_preview_text(task, file_management):
         review_text = _join_result_text(review_analysis.get("paragraph_results"), "review_text")
         if review_text:
             return review_text, "task_results"
+        review_text = _join_result_text(persisted_results.get("paragraph_results"))
+        if review_text:
+            return review_text, "persisted_task_results"
+        review_text = _join_result_text(persisted_results.get("relevance_results"), "review_text")
+        if review_text:
+            return review_text, "persisted_task_results"
+        review_analysis = persisted_results.get("review_analysis_results") or {}
+        review_text = _join_result_text(review_analysis.get("paragraph_results"), "review_text")
+        if review_text:
+            return review_text, "persisted_task_results"
     if file_management.resource_type == "review_paper":
         override_text = raw_results.get("paper_text_override")
         if isinstance(override_text, str) and override_text.strip():
             return override_text, "task_override"
+        paper_text = _join_result_text(persisted_results.get("relevance_results"), "paper_text")
+        if paper_text:
+            return paper_text, "persisted_task_results"
+        review_analysis = persisted_results.get("review_analysis_results") or {}
+        paper_text = _join_result_text(review_analysis.get("paragraph_results"), "paper_text")
+        if paper_text:
+            return paper_text, "persisted_task_results"
         return "", ""
 
     override_text = raw_results.get("paper_text_override") or raw_results.get("text_override")
@@ -159,6 +178,9 @@ def _get_task_preview_text(task, file_management):
         paper_text = _join_result_text(raw_results.get("paragraph_results"))
         if paper_text:
             return paper_text, "task_results"
+        paper_text = _join_result_text(persisted_results.get("paragraph_results"))
+        if paper_text:
+            return paper_text, "persisted_task_results"
 
     return "", ""
 

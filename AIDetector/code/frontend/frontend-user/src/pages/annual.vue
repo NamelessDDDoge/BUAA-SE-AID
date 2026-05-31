@@ -174,6 +174,7 @@ const snackbar = useSnackbarStore()
 
 interface Task {
   review_request_id: number
+  request_type: 'image' | 'resource'
   task_name: string
   task_type: 'image' | 'paper' | 'review'
   request_time: string
@@ -280,7 +281,13 @@ const getProgressColor = (progress: string) => {
 }
 
 const goToTaskDetail = (task: Task) => {
-  router.push(`/task/${task.review_request_id}`)
+  router.push({
+    path: `/task/${task.review_request_id}`,
+    query: {
+      request_type: task.request_type,
+      task_type: task.task_type,
+    },
+  })
 }
 
 // 时间验证相关
@@ -402,6 +409,7 @@ const fetchTasks = async (page: number, pageSize: number, silent = false) => {
     
     tasks.value = taskList.map((task: any) => ({
       review_request_id: task.review_request_id,
+      request_type: task.request_type || (task.task_type === 'image' ? 'image' : 'resource'),
       task_name: task.task_name || '-',
       task_type: task.task_type || 'image',
       request_time: task.request_time,

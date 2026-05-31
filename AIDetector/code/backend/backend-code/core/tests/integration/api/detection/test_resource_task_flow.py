@@ -329,6 +329,81 @@ class ResourceTaskFlowTests(TestCase):
         self.assertEqual(review_response.data["text_content"], "Edited review content")
         self.assertEqual(review_response.data["text_source"], "task_override")
 
+    def test_text_preview_with_task_context_prefers_persisted_split_paper_results(self):
+        file_record = self.create_file("persisted-paper.txt", "paper")
+        self.write_media_file("uploads/persisted-paper.txt", b"Original extracted text")
+        task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="paper",
+            task_name="Persisted Paper",
+            status="completed",
+            text_detection_results={},
+        )
+        task.resource_files.add(file_record)
+        paper_result = PaperDetectionResult.objects.create(
+            detection_task=task,
+            source_file=file_record,
+            paragraph_count=2,
+            segment_count=2,
+            reference_count=0,
+        )
+        PaperParagraphResult.objects.create(
+            paper_detection_result=paper_result,
+            paragraph_index=0,
+            text="Persisted paragraph A",
+        )
+        PaperParagraphResult.objects.create(
+            paper_detection_result=paper_result,
+            paragraph_index=1,
+            text="Persisted paragraph B",
+        )
+
+        response = self.client.get(f"/api/upload/{file_record.id}/preview_text/?task_id={task.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["text_content"], "Persisted paragraph A\n\nPersisted paragraph B")
+        self.assertEqual(response.data["text_source"], "persisted_task_results")
+
+    def test_text_preview_with_task_context_prefers_persisted_split_review_results(self):
+        paper_file = self.create_file("persisted-review-paper.txt", "review_paper")
+        review_file = self.create_file("persisted-review.txt", "review_file", linked_file=paper_file)
+        self.write_media_file("uploads/persisted-review-paper.txt", b"Original paper text")
+        self.write_media_file("uploads/persisted-review.txt", b"Original review text")
+        task = DetectionTask.objects.create(
+            organization=self.organization,
+            user=self.user,
+            task_type="review",
+            task_name="Persisted Review",
+            status="completed",
+            text_detection_results={},
+        )
+        task.resource_files.add(paper_file, review_file)
+        review_result = ReviewDetectionResult.objects.create(
+            detection_task=task,
+            paper_file=paper_file,
+            review_file=review_file,
+            paper_segment_count=1,
+            review_segment_count=1,
+        )
+        ReviewParagraphResult.objects.create(
+            review_detection_result=review_result,
+            paragraph_index=0,
+            text="Persisted review paragraph",
+            paper_text="Persisted matched paper paragraph",
+            relevance_score=0.9,
+        )
+
+        paper_response = self.client.get(f"/api/upload/{paper_file.id}/preview_text/?task_id={task.id}")
+        review_response = self.client.get(f"/api/upload/{review_file.id}/preview_text/?task_id={task.id}")
+
+        self.assertEqual(paper_response.status_code, 200)
+        self.assertEqual(paper_response.data["text_content"], "Persisted matched paper paragraph")
+        self.assertEqual(paper_response.data["text_source"], "persisted_task_results")
+        self.assertEqual(review_response.status_code, 200)
+        self.assertEqual(review_response.data["text_content"], "Persisted review paragraph")
+        self.assertEqual(review_response.data["text_source"], "persisted_task_results")
+
     def test_org_admin_can_download_other_users_existing_resource(self):
         other_user = User.objects.create_user(
             username="other-resource-user",

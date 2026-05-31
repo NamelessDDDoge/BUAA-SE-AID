@@ -638,19 +638,18 @@ const previewFile = async (file: OriginalFileItem) => {
   }
 
   try {
-    const response = await uploadApi.getResourceFilePreview(fileId)
+    let response
+    try {
+      response = await uploadApi.getResourceFilePreview(fileId)
+    } catch {
+      response = await uploadApi.downloadResourceFile(fileId)
+    }
     const blob = response.data instanceof Blob
       ? response.data
       : new Blob([response.data], { type: file.file_type || 'application/octet-stream' })
     setPreviewUrl(URL.createObjectURL(blob), true)
   } catch (error: any) {
-    const fallbackUrl = getFileUrl(file)
-    if (fallbackUrl) {
-      setPreviewUrl(fallbackUrl)
-      previewError.value = '源文件预览接口暂不可用，已尝试打开原始文件地址。'
-    } else {
-      previewError.value = error?.response?.data?.message || '当前文件无法预览，请下载查看源文件。'
-    }
+    previewError.value = error?.response?.data?.message || '当前文件无法预览，请下载查看源文件。'
   } finally {
     previewLoading.value = false
   }

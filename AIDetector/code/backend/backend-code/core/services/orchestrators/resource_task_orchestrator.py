@@ -157,12 +157,11 @@ def create_resource_detection_tasks(
     files = _load_and_validate_resource_files(user=user, task_type=task_type, file_ids=file_ids)
     file_groups = _split_resource_file_groups(task_type=task_type, file_list=files)
     total_groups = len(file_groups)
-    if total_groups > 1 and _has_text_overrides(
-        text_override=text_override,
-        paper_text_override=paper_text_override,
-        review_text_override=review_text_override,
-    ):
-        raise ValueError("Text overrides are only supported for a single resource task")
+    if total_groups > 1:
+        if task_type == "paper" and _has_text_overrides(text_override=text_override, paper_text_override=paper_text_override):
+            raise ValueError("Text overrides are only supported for a single paper resource task")
+        if task_type == "review" and _has_text_overrides(text_override=text_override, review_text_override=review_text_override):
+            raise ValueError("Review text overrides are only supported for a single review resource task")
 
     created_tasks = []
     created_file_lists = []

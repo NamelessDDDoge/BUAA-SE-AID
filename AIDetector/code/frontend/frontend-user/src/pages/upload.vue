@@ -1154,7 +1154,7 @@ const handleResourceTaskNext = async () => {
       const response = await resourceTasksApi.createResourceTask({
         ...payload,
         file_ids: [paperFile.file_id, ...reviewFilesForTask.map(file => file.file_id)],
-        paper_text_override: reviewFilesForTask.length === 1 && reviewPaperEditableText.value.trim() ? reviewPaperEditableText.value.trim() : undefined,
+        paper_text_override: reviewPaperEditableText.value.trim() ? reviewPaperEditableText.value.trim() : undefined,
         review_text_override: reviewFilesForTask.length === 1 && reviewEditableText.value.trim() ? reviewEditableText.value.trim() : undefined,
       })
       taskCount += Number(response?.data?.task_count || reviewFilesForTask.length || 1)

@@ -175,7 +175,7 @@ class ResourceTaskSplitTests(TestCase):
         self.assertEqual(tasks[1].resource_files.count(), 2)
         self.assertTrue(all(task.status == "pending" for task in tasks))
 
-    def test_create_resource_detection_tasks_rejects_text_override_for_multiple_reviews(self):
+    def test_create_resource_detection_tasks_rejects_review_text_override_for_multiple_reviews(self):
         paper = self.create_file("paper.txt", "review_paper")
         review_a = self.create_file("review-a.txt", "review_file", linked_file=paper)
         review_b = self.create_file("review-b.txt", "review_file", linked_file=paper)
@@ -185,8 +185,25 @@ class ResourceTaskSplitTests(TestCase):
                 user=self.user,
                 task_type="review",
                 file_ids=[paper.id, review_a.id, review_b.id],
-                paper_text_override="edited paper",
                 review_text_override="edited review",
             )
 
         self.assertEqual(DetectionTask.objects.filter(user=self.user, task_type="review").count(), 0)
+
+    def test_create_resource_detection_tasks_shares_paper_override_for_multiple_reviews(self):
+        paper = self.create_file("paper.txt", "review_paper")
+        review_a = self.create_file("review-a.txt", "review_file", linked_file=paper)
+        review_b = self.create_file("review-b.txt", "review_file", linked_file=paper)
+
+        tasks, _file_groups = resource_task_orchestrator.create_resource_detection_tasks(
+            user=self.user,
+            task_type="review",
+            file_ids=[paper.id, review_a.id, review_b.id],
+            paper_text_override="edited shared paper",
+        )
+
+        self.assertEqual(len(tasks), 2)
+        self.assertTrue(all(
+            task.text_detection_results["paper_text_override"] == "edited shared paper"
+            for task in tasks
+        ))

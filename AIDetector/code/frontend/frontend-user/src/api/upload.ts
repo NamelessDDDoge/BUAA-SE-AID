@@ -46,6 +46,13 @@ export default {
     })
   },
 
+  downloadResourceFile(fileId: number) {
+    return http.get(`/upload/${fileId}/download/`, {
+      responseType: 'blob',
+      timeout: 60000,
+    })
+  },
+
   addTag(data: any) {
     console.log(data)
     return http.post(`/upload/${data.fileId}/addTag/`, {tag:data.tag})
