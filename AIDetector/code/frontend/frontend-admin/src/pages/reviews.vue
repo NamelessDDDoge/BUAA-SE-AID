@@ -175,8 +175,33 @@
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn color="error" variant="text" :disabled="!selectedRequest || selectedRequest.state !== 'pending'" @click="handleReviewRequest(0)">拒绝</v-btn>
+          <v-btn color="error" variant="text" :disabled="!selectedRequest || selectedRequest.state !== 'pending'" @click="openRejectDialog">拒绝</v-btn>
           <v-btn color="success" :disabled="!selectedRequest || selectedRequest.state !== 'pending'" @click="handleReviewRequest(1)">通过</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="rejectDialog" max-width="520">
+      <v-card rounded="lg">
+        <v-card-title class="text-h6">填写拒绝原因</v-card-title>
+        <v-card-text>
+          <v-alert type="warning" variant="tonal" class="mb-4">
+            拒绝后发布者会看到该原因，请简要说明无法通过的理由。
+          </v-alert>
+          <v-textarea
+            v-model="rejectReason"
+            label="拒绝原因"
+            placeholder="例如：申请理由不充分、审核资源不完整、审核员选择不合理等"
+            rows="4"
+            variant="outlined"
+            counter="300"
+            autofocus
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="rejectDialog = false">取消</v-btn>
+          <v-btn color="error" :loading="handlingReview" @click="handleReviewRequest(0)">确认拒绝</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -256,6 +281,8 @@ const extractLoading = ref(false)
 const extractError = ref('')
 const showExtractDialog = ref(false)
 const rejectReason = ref('')
+const rejectDialog = ref(false)
+const handlingReview = ref(false)
 
 const getImageUrl = (url?: string | null) => {
   if (!url) return ''
@@ -269,47 +296,75 @@ const getTaskTypeName = (taskType: string) => ({
   review: 'Review',
 }[taskType] || taskType)
 
-const getFileUrl = (file: any) => {
-  if (!file?.file_url) return ''
-  if (/^https?:\/\//.test(file.file_url)) return file.file_url
-  return `${import.meta.env.VITE_API_URL || ''}${file.file_url}`
-}
-
-const downloadFile = (file: any) => {
-  const url = getFileUrl(file)
-  if (!url) return
+const saveBlob = (data: BlobPart, filename: string, type = 'application/octet-stream') => {
+  const blob = data instanceof Blob ? data : new Blob([data], { type })
+  const objectUrl = window.URL.createObjectURL(blob)
   const link = document.createElement('a')
-  link.href = url
-  link.download = file.file_name
+  link.href = objectUrl
+  link.download = filename
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
+  window.URL.revokeObjectURL(objectUrl)
 }
 
-const downloadImage = (image: any) => {
+const getDownloadFilename = (response: any, fallback: string) => {
+  const disposition = response?.headers?.['content-disposition'] || response?.headers?.['Content-Disposition'] || ''
+  const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (utf8Name) {
+    try {
+      return decodeURIComponent(utf8Name)
+    } catch {
+      return utf8Name
+    }
+  }
+  const asciiName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+  return asciiName || fallback
+}
+
+const getFilenameFromUrl = (url: string, fallback: string) => {
+  const pathname = url.split('?')[0].split('#')[0]
+  const filename = pathname.split('/').filter(Boolean).pop()
+  return filename ? decodeURIComponent(filename) : fallback
+}
+
+const downloadFile = async (file: any) => {
+  const fileId = file?.file_id || file?.id
+  if (!fileId) {
+    snackbar.showMessage('当前文件缺少 ID，无法下载。', 'warning')
+    return
+  }
+  try {
+    const response = await reviewApi.downloadResourceFile(fileId)
+    saveBlob(response.data, getDownloadFilename(response, file.file_name || `resource_${fileId}`), file.file_type)
+  } catch (error: any) {
+    console.error('Failed to download review resource file:', error)
+    snackbar.showMessage(error?.response?.data?.message || '下载文件失败。', 'error')
+  }
+}
+
+const downloadImage = async (image: any) => {
   const url = getImageUrl(image.url)
   if (!url) return
-  const link = document.createElement('a')
-  link.href = url
-  link.download = image.file_name || image.name || `image_${image.id || 'download'}`
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  try {
+    const token = localStorage.getItem('1-token')
+    const response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const blob = await response.blob()
+    saveBlob(blob, image.file_name || image.name || getFilenameFromUrl(url, `image_${image.id || 'download'}`), blob.type || 'application/octet-stream')
+  } catch (error) {
+    console.error('Failed to download review image:', error)
+    snackbar.showMessage('下载图像失败。', 'error')
+  }
 }
 
 const downloadCombinedReport = async () => {
   if (!reviewDetails.value?.task_id) return
   try {
     const response = await reviewApi.downloadTaskReportAdmin(reviewDetails.value.task_id)
-    const blob = new Blob([response.data], { type: 'application/pdf' })
-    const objectUrl = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = objectUrl
-    link.download = `task_${reviewDetails.value.task_id}_report.pdf`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(objectUrl)
+    saveBlob(response.data, getDownloadFilename(response, `task_${reviewDetails.value.task_id}_report.pdf`), 'application/pdf')
   } catch (error) {
     console.error('Failed to download task report:', error)
     snackbar.showMessage('下载综合鉴伪报告失败。', 'error')
@@ -341,6 +396,11 @@ const openExtractDialog = async (file: any) => {
   } finally {
     extractLoading.value = false
   }
+}
+
+const openRejectDialog = () => {
+  rejectReason.value = ''
+  rejectDialog.value = true
 }
 
 const getStateColor = (state: string) => ({
@@ -401,19 +461,28 @@ const openReviewDialog = async (request: ReviewRequest) => {
 
 const handleReviewRequest = async (choice: number) => {
   if (!selectedRequest.value) return
+  if (choice === 0 && !rejectReason.value.trim()) {
+    snackbar.showMessage('请先填写拒绝原因。', 'warning')
+    rejectDialog.value = true
+    return
+  }
+  handlingReview.value = true
   try {
     await reviewApi.handleReviewRequest(selectedRequest.value.id, {
       choice,
-      reason: rejectReason.value,
+      reason: rejectReason.value.trim(),
       request_type: selectedRequest.value.request_type,
     })
     snackbar.showMessage(choice === 1 ? '审核请求已通过。' : '审核请求已拒绝。', 'success')
     showReviewDialog.value = false
+    rejectDialog.value = false
     rejectReason.value = ''
     await fetchRequests()
   } catch (error) {
     console.error('Failed to handle review request:', error)
     snackbar.showMessage('处理审核请求失败。', 'error')
+  } finally {
+    handlingReview.value = false
   }
 }
 

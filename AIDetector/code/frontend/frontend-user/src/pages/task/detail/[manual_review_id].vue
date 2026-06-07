@@ -19,7 +19,7 @@
       </v-alert>
 
       <div class="d-flex mb-4" style="gap:8px">
-        <v-btn color="primary" variant="outlined" prepend-icon="mdi-download" @click="downloadCombinedReport">下载综合鉴伪报告</v-btn>
+        <v-btn color="primary" variant="outlined" prepend-icon="mdi-download" @click="downloadCombinedReport">下载系统检测报告</v-btn>
       </div>
 
       <v-card variant="outlined" class="mb-4">
@@ -97,7 +97,7 @@
                   </v-card-text>
                 </v-card>
                 <div class="ml-4 d-flex" style="gap:8px">
-                  <v-btn color="primary" variant="outlined" prepend-icon="mdi-download" @click="downloadCombinedReport">下载综合鉴伪报告</v-btn>
+                  <v-btn color="primary" variant="outlined" prepend-icon="mdi-download" @click="downloadCombinedReport">下载系统检测报告</v-btn>
                 </div>
               </div>
 
@@ -122,6 +122,14 @@
                       {{ index + 1 }}
                     </v-btn>
                   </div>
+                  <v-alert
+                    :type="reviewCompletion.complete ? 'success' : 'warning'"
+                    variant="tonal"
+                    density="compact"
+                    class="mt-4"
+                  >
+                    {{ reviewCompletion.message }}
+                  </v-alert>
                 </div>
               </div>
             </div>
@@ -562,13 +570,13 @@ const downloadCombinedReport = async () => {
     const objectUrl = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = objectUrl
-    link.download = `manual_review_${manual_review_id.value}_task_report.pdf`
+    link.download = `system_detection_report_${manual_review_id.value}.pdf`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(objectUrl)
   } catch (error) {
-    snackbar.showMessage('下载综合鉴伪报告失败', 'error')
+    snackbar.showMessage('下载系统检测报告失败', 'error')
   }
 }
 
@@ -773,6 +781,8 @@ const checkAnswerCompletion = () => {
     message: '所有图片已完成评分'
   }
 }
+
+const reviewCompletion = computed(() => checkAnswerCompletion())
 
 interface ImageItem {
   img_id: number

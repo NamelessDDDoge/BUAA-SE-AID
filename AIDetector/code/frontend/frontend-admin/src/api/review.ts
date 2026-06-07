@@ -20,6 +20,10 @@ export default {
         })
     },
 
+    downloadResourceFile(fileId: number | string) {
+        return http.get(`/upload/${fileId}/download/`, { responseType: 'blob' })
+    },
+
     downloadTaskReportAdmin(taskId: number) {
         return http.get(`/admin/tasks/${taskId}/report/`, { responseType: 'blob' })
     }
