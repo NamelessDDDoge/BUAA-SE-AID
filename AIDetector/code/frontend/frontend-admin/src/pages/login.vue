@@ -242,12 +242,13 @@
       linear-gradient(135deg, #eef4ff 0%, #f8fbff 46%, #eef2f7 100%);
     gap: 28px;
     align-items: stretch;
+    align-content: center;
     justify-content: stretch;
   }
   
   .feature-section {
-    min-height: calc(100vh - 56px);
-    padding: clamp(34px, 5vw, 72px);
+    max-height: calc(100vh - 56px);
+    padding: clamp(28px, 4vw, 56px);
     display: flex;
     align-items: stretch;
     justify-content: stretch;
@@ -379,12 +380,13 @@
   }
   
   .login-section {
-    min-height: calc(100vh - 56px);
+    max-height: calc(100vh - 56px);
+    overflow-y: auto;
     background: #ffffff;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: clamp(34px, 5vw, 80px);
+    padding: clamp(28px, 4vw, 56px);
     border: 1px solid rgba(23, 32, 51, 0.08);
     border-radius: 28px;
     box-shadow: 0 28px 80px rgba(23, 32, 51, 0.1);
@@ -456,6 +458,26 @@
   
   .captcha-input {
     width: 100%;
+  }
+
+  /* 收紧白框内表单字段的纵向间距 */
+  .login-container .mb-4 {
+    margin-bottom: 4px !important;
+  }
+
+  .login-container .mb-6 {
+    margin-bottom: 8px !important;
+  }
+
+  .login-container .login-tabs.mb-8,
+  .login-container .role-selector.mb-8 {
+    margin-bottom: 12px !important;
+  }
+
+  /* 收起字段下方预留的提示信息空白 */
+  .login-container :deep(.v-input__details) {
+    min-height: 12px;
+    padding-top: 2px;
   }
   
   :deep(.v-field__append-inner) {

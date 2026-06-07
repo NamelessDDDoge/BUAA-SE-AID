@@ -492,7 +492,8 @@ onMounted(async () => {
   min-height: 100vh;
 }
 
-.auth-stage.v-main {
+.auth-stage.v-main,
+.auth-stage .v-main {
   margin-left: 0 !important;
   padding-top: 0 !important;
   padding-left: 0 !important;

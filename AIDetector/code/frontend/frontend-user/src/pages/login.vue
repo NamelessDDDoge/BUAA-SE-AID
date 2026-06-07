@@ -44,7 +44,6 @@
         <div class="login-heading">
           <div class="login-kicker">{{ loginType === 'login' ? 'Sign in' : 'Create account' }}</div>
           <h2>{{ loginType === 'login' ? '欢迎回来' : '创建账号' }}</h2>
-          <p>{{ loginType === 'login' ? '登录后继续处理检测任务。' : '请使用邀请码完成身份绑定。' }}</p>
         </div>
 
         <div class="login-tabs mb-8">
@@ -759,19 +758,20 @@ const registering = ref(false)
   display: grid;
   grid-template-columns: minmax(420px, 0.9fr) minmax(560px, 1.1fr);
   min-height: 100vh;
-  padding: 28px;
+  padding: 12px;
   background:
     radial-gradient(circle at 8% 10%, rgba(14, 116, 144, 0.18), transparent 28rem),
     radial-gradient(circle at 92% 8%, rgba(20, 184, 166, 0.16), transparent 30rem),
     linear-gradient(135deg, #e9f5f1 0%, #f7fbf9 46%, #ecf4ff 100%);
   gap: 28px;
   align-items: stretch;
+  align-content: center;
   justify-content: stretch;
 }
 
 .feature-section {
-  min-height: calc(100vh - 56px);
-  padding: clamp(34px, 5vw, 72px);
+  max-height: calc(100vh - 24px);
+  padding: clamp(28px, 4vw, 56px);
   display: flex;
   align-items: stretch;
   justify-content: stretch;
@@ -903,12 +903,13 @@ const registering = ref(false)
 }
 
 .login-section {
-  min-height: calc(100vh - 56px);
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
   background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(34px, 5vw, 80px);
+  padding: clamp(28px, 4vw, 56px);
   border: 1px solid rgba(21, 34, 56, 0.08);
   border-radius: 28px;
   box-shadow: 0 28px 80px rgba(21, 34, 56, 0.1);
@@ -921,7 +922,7 @@ const registering = ref(false)
 }
 
 .login-heading {
-  margin-bottom: 28px;
+  margin-bottom: 8px;
 }
 
 .login-heading h2 {
@@ -1035,6 +1036,54 @@ const registering = ref(false)
   width: 100%;
 }
 
+/* 收紧白框内表单字段的纵向间距 */
+.login-container .v-text-field.mb-4 {
+  margin-bottom: 0 !important;
+}
+
+/* 按钮（创建组织、注册/登录）保留上下间距 */
+.login-container .v-btn--size-large,
+.login-container .v-btn.mb-4 {
+  margin-top: 10px;
+}
+
+.login-container .v-btn.mb-4 {
+  margin-bottom: 10px !important;
+}
+
+.login-container .mb-6 {
+  margin-bottom: 4px !important;
+}
+
+.login-container .login-tabs.mb-8,
+.login-container .role-selector.mb-8 {
+  margin-bottom: 6px !important;
+}
+
+.login-container .mt-4 {
+  margin-top: 6px !important;
+}
+
+/* 收起字段下方预留的提示信息空白 */
+.login-container :deep(.v-input__details) {
+  min-height: 2px;
+  padding-top: 0;
+}
+
+/* 压缩“我已阅读……协议”勾选框的高度与上下间距 */
+.login-container .v-checkbox {
+  margin-top: -12px;
+}
+
+.login-container :deep(.v-checkbox .v-selection-control) {
+  min-height: 26px;
+}
+
+.login-container :deep(.v-checkbox .v-label) {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
 :deep(.v-field__append-inner) {
   padding-top: 6px;
 }
@@ -1115,8 +1164,8 @@ const registering = ref(false)
 }
 
 :deep(.v-field__input) {
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
 :deep(.v-field__prepend-inner) {
