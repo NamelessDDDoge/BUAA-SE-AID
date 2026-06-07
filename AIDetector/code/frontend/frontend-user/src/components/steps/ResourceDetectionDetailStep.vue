@@ -62,8 +62,8 @@
                 <v-btn
                   color="primary"
                   variant="elevated"
-                  :disabled="!canSubmit"
-                  @click="submitReview"
+                  :disabled="task.status !== 'completed'"
+                  @click="scrollToReviewConfig"
                 >
                   申请人工审核
                 </v-btn>
@@ -249,8 +249,12 @@
           </v-col>
         </v-row>
 
-        <v-card class="mt-6" elevation="2" rounded="lg">
-          <v-card-title class="text-h6">审核配置</v-card-title>
+        <v-card ref="reviewConfigRef" class="mt-6 review-config-card" elevation="2" rounded="lg">
+          <v-card-title class="d-flex align-center flex-wrap ga-3">
+            <span class="text-h6">审核配置</span>
+            <v-chip color="primary" variant="tonal" size="small">审核文件 {{ selectedReviewFileCount }}</v-chip>
+            <v-chip color="teal" variant="tonal" size="small">审核员 {{ selectedReviewers.length }}</v-chip>
+          </v-card-title>
           <v-card-text>
             <v-alert v-if="reviewMode" :type="reviewSummaryAlertType" variant="tonal" class="mb-4">
               <template v-if="reviewNeedsAttention">
@@ -259,19 +263,35 @@
               <template v-else>
                 当前 Review 检测结论为{{ reviewQualificationText }}。选择审核员后仍可提交本任务全部内容进行人工审核。
               </template>
+              <div class="mt-2">{{ reviewSubmitHint }}</div>
             </v-alert>
-            <v-autocomplete
-              v-model="selectedReviewers"
-              :items="reviewerOptions"
-              item-title="username"
-              item-value="id"
-              label="选择审核员"
-              multiple
-              chips
-              closable-chips
-              variant="outlined"
-              hide-details
-            />
+            <v-alert v-else type="info" variant="tonal" class="mb-4">
+              {{ reviewSubmitHint }}
+            </v-alert>
+            <div class="review-submit-row">
+              <v-autocomplete
+                v-model="selectedReviewers"
+                :items="reviewerOptions"
+                item-title="username"
+                item-value="id"
+                label="选择审核员"
+                multiple
+                chips
+                closable-chips
+                variant="outlined"
+                hide-details
+              />
+              <v-btn
+                color="primary"
+                size="large"
+                min-width="150"
+                prepend-icon="mdi-send"
+                :disabled="!canSubmit"
+                @click="submitReview"
+              >
+                提交人工审核
+              </v-btn>
+            </div>
             <v-textarea
               v-model="reviewReason"
               class="mt-4"
@@ -386,6 +406,7 @@ const emit = defineEmits<{
 const selectedFileIds = ref<number[]>([])
 const selectedReviewers = ref<number[]>([])
 const reviewReason = ref('')
+const reviewConfigRef = ref<HTMLElement | { $el?: HTMLElement } | null>(null)
 const previewDialog = ref(false)
 const previewLoading = ref(false)
 const previewTitle = ref('')
@@ -578,6 +599,22 @@ const circleSubText = computed(() => {
 
 const selectedFakeCount = computed(() => fakeFiles.value.filter(f => selectedFileIds.value.includes(f.file_id)).length)
 const selectedNormalCount = computed(() => effectiveNormalFiles.value.filter(f => selectedFileIds.value.includes(f.file_id)).length)
+const selectedReviewFileCount = computed(() => {
+  if (reviewMode.value || isPaper.value) return props.task.resource_files.length
+  return selectedFileIds.value.length
+})
+
+const reviewSubmitHint = computed(() => {
+  if (props.task.status !== 'completed') return '检测完成后才可以申请人工审核。'
+  if (!selectedReviewFileCount.value) {
+    return isPaper.value || reviewMode.value
+      ? '当前任务缺少可提交的原始文件。'
+      : '请先选择需要复核的文件。'
+  }
+  if (!selectedReviewers.value.length) return `将提交 ${selectedReviewFileCount.value} 个文件，请选择至少 1 名审核员。`
+  if (!reviewReason.value.trim()) return `已选择 ${selectedReviewFileCount.value} 个文件、${selectedReviewers.value.length} 名审核员，请填写申请理由。`
+  return `将提交 ${selectedReviewFileCount.value} 个文件给 ${selectedReviewers.value.length} 名审核员。`
+})
 
 const canSubmit = computed(() => {
   if (props.task.status !== 'completed') {
@@ -591,6 +628,12 @@ const canSubmit = computed(() => {
   }
   return selectedReviewers.value.length > 0 && selectedFileIds.value.length > 0 && reviewReason.value.trim().length > 0
 })
+
+const scrollToReviewConfig = () => {
+  const target = reviewConfigRef.value
+  const element = target instanceof HTMLElement ? target : target?.$el
+  element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 const isAllSelected = (files: ResourceFile[]) => {
   if (!files.length) {
@@ -614,6 +657,7 @@ const toggleSelect = (files: ResourceFile[]) => {
 
 const submitReview = () => {
   if (!canSubmit.value) {
+    scrollToReviewConfig()
     return
   }
   const selectedIds = reviewMode.value
@@ -648,21 +692,39 @@ const formatFileSize = (size: number) => {
   return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
-const getFileUrl = (file: ResourceFile) => {
-  if (!file.file_url) return ''
-  if (/^https?:\/\//.test(file.file_url)) return file.file_url
-  return `${import.meta.env.VITE_API_URL || ''}${file.file_url}`
-}
-
-const downloadFile = (file: ResourceFile) => {
-  const url = getFileUrl(file)
-  if (!url) return
+const saveBlob = (data: BlobPart, filename: string, type = 'application/octet-stream') => {
+  const blob = data instanceof Blob ? data : new Blob([data], { type })
+  const objectUrl = window.URL.createObjectURL(blob)
   const link = document.createElement('a')
-  link.href = url
-  link.download = file.file_name
+  link.href = objectUrl
+  link.download = filename
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
+  window.URL.revokeObjectURL(objectUrl)
+}
+
+const getDownloadFilename = (response: any, fallback: string) => {
+  const disposition = response?.headers?.['content-disposition'] || response?.headers?.['Content-Disposition'] || ''
+  const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (utf8Name) {
+    try {
+      return decodeURIComponent(utf8Name)
+    } catch {
+      return utf8Name
+    }
+  }
+  const asciiName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+  return asciiName || fallback
+}
+
+const downloadFile = async (file: ResourceFile) => {
+  try {
+    const response = await uploadApi.downloadResourceFile(file.file_id)
+    saveBlob(response.data, getDownloadFilename(response, file.file_name), file.file_type)
+  } catch (error) {
+    console.error('下载文件失败:', error)
+  }
 }
 
 const previewFile = async (file: ResourceFile) => {
@@ -700,5 +762,22 @@ const previewFile = async (file: ResourceFile) => {
   height: auto;
   min-height: 28px;
   line-height: 1.35;
+}
+
+.review-config-card {
+  scroll-margin-top: 96px;
+}
+
+.review-submit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .review-submit-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

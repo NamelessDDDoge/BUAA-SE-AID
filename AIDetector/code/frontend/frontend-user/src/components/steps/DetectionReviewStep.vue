@@ -45,8 +45,8 @@
                     查看报告
                   </v-btn>
                   <v-btn :color="isDarkMode ? 'green-darken-2' : 'success'" variant="elevated" class="px-8 py-2"
-                    rounded="pill" prepend-icon="mdi-send" elevation="2" @click="submitReview" :disabled="!canSubmit">
-                    提交人工审核
+                    rounded="pill" prepend-icon="mdi-account-check-outline" elevation="2" @click="scrollToReviewConfig">
+                    申请人工审核
                   </v-btn>
                 </div>
               </div>
@@ -76,7 +76,7 @@
                     <v-hover v-for="(img, index) in detectionResult.fakeImages" :key="index"
                       v-slot="{ isHovering, props }">
                       <v-card v-bind="props" class="ma-2 position-relative" width="200" height="200" elevation="2"
-                        rounded="lg" @click="toggleImageSelection(img, 'fake')">
+                        rounded="lg" :class="{ 'selected-image-card': img.selected }" @click="toggleImageSelection(img, 'fake')">
                         <v-img :src="getImageUrl(img.image_url)" cover height="100%">
                           <div class="image-overlay" v-if="isHovering || img.selected">
                             <div class="d-flex flex-column align-center gap-4">
@@ -113,7 +113,7 @@
                     <v-hover v-for="(img, index) in detectionResult.realImages" :key="index"
                       v-slot="{ isHovering, props }">
                       <v-card v-bind="props" class="ma-2 position-relative" width="200" height="200" elevation="2"
-                        rounded="lg" @click="toggleImageSelection(img, 'real')">
+                        rounded="lg" :class="{ 'selected-image-card': img.selected }" @click="toggleImageSelection(img, 'real')">
                         <v-img :src="getImageUrl(img.image_url)" cover height="100%">
                           <div class="image-overlay" v-if="isHovering || img.selected">
                             <div class="d-flex flex-column align-center gap-4">
@@ -131,26 +131,43 @@
               </v-card-text>
             </v-card>
 
-            <!-- 已选择人员区域 -->
-            <v-card class="mt-6" elevation="2" rounded="lg">
-              <v-card-title class="pa-6">
-                <span class="text-h6">已选择审核人员</span>
-                <v-chip class="ml-4" size="small">{{ selectedPeople }}</v-chip>
+            <!-- 人工审核配置区域 -->
+            <v-card ref="reviewConfigRef" class="mt-6 review-config-card" elevation="2" rounded="lg">
+              <v-card-title class="pa-6 d-flex align-center flex-wrap ga-3">
+                <span class="text-h6">人工审核配置</span>
+                <v-chip color="primary" variant="tonal" size="small">已选图片 {{ selectedImageCount }}</v-chip>
+                <v-chip color="teal" variant="tonal" size="small">审核人员 {{ selectedPeople }}</v-chip>
               </v-card-title>
               <v-card-text class="pa-6">
-                <v-autocomplete v-model="selectedPeopleList" :items="filteredPeople" :loading="isSearching"
-                  v-model:search="searchQuery" item-title="username" item-value="id" label="搜索审核人员" multiple chips
-                  closable-chips hide-details variant="outlined" @update:search="searchPeople">
-                  <template v-slot:chip="{ props, item }">
-                    <v-chip v-bind="props" :prepend-avatar="getAvatar(item.raw.avatar)">
-                      {{ item.raw.username }}
-                    </v-chip>
-                  </template>
-                  <template v-slot:item="{ props, item }">
-                    <v-list-item v-bind="props" :prepend-avatar="getAvatar(item.raw.avatar)"
-                      :title="item.raw.username"></v-list-item>
-                  </template>
-                </v-autocomplete>
+                <v-alert type="info" variant="tonal" class="mb-4">
+                  {{ reviewSubmitHint }}
+                </v-alert>
+                <div class="review-submit-row">
+                  <v-autocomplete v-model="selectedPeopleList" :items="filteredPeople" :loading="isSearching"
+                    v-model:search="searchQuery" item-title="username" item-value="id" label="选择审核人员（当前组织）" multiple chips
+                    closable-chips hide-details variant="outlined" @update:search="searchPeople">
+                    <template v-slot:chip="{ props, item }">
+                      <v-chip v-bind="props" :prepend-avatar="getAvatar(item.raw.avatar)">
+                        {{ item.raw.username }}
+                      </v-chip>
+                    </template>
+                    <template v-slot:item="{ props, item }">
+                      <v-list-item v-bind="props" :prepend-avatar="getAvatar(item.raw.avatar)"
+                        :title="item.raw.username"></v-list-item>
+                    </template>
+                  </v-autocomplete>
+                  <v-btn
+                    color="success"
+                    size="large"
+                    min-width="150"
+                    prepend-icon="mdi-send"
+                    :disabled="!canSubmit"
+                    :loading="submittingReview"
+                    @click="submitReview"
+                  >
+                    提交人工审核
+                  </v-btn>
+                </div>
                 <v-textarea
                   v-model="reviewReason"
                   class="mt-4"
@@ -374,6 +391,8 @@ const isSearching = ref(false)
 const allPeople = ref<Person[]>([])
 const selectedPeopleList = ref<SelectId[]>([])
 const reviewReason = ref('')
+const reviewConfigRef = ref<HTMLElement | { $el?: HTMLElement } | null>(null)
+const submittingReview = ref(false)
 
 // 计算是否可以提交
 const canSubmit = computed(() => {
@@ -381,8 +400,30 @@ const canSubmit = computed(() => {
   return hasSelectedImages && selectedPeopleList.value.length > 0 && reviewReason.value.trim().length > 0
 })
 
+const selectedImageCount = computed(() => selectedFakeCount.value + selectedRealCount.value)
+
+const reviewSubmitHint = computed(() => {
+  if (!selectedImageCount.value) return '请先在上方选择需要复核的图片，选中后这里即可提交。'
+  if (!selectedPeopleList.value.length) return `已选择 ${selectedImageCount.value} 张图片，请选择至少 1 名审核人员。`
+  if (!reviewReason.value.trim()) return `已选择 ${selectedImageCount.value} 张图片、${selectedPeopleList.value.length} 名审核人员，请填写申请理由。`
+  return `将提交 ${selectedImageCount.value} 张图片给 ${selectedPeopleList.value.length} 名审核人员。`
+})
+
+const scrollToReviewConfig = () => {
+  const target = reviewConfigRef.value
+  const element = target instanceof HTMLElement ? target : target?.$el
+  element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 // 提交人工审核
 const submitReview = async () => {
+  if (!canSubmit.value) {
+    snackbar.showMessage(reviewSubmitHint.value, 'warning')
+    scrollToReviewConfig()
+    return
+  }
+  if (submittingReview.value) return
+  submittingReview.value = true
   try {
     const getImageId = (img: Image) => Number((img as Image & { img_id?: SelectId; id?: SelectId }).image_id ?? (img as Image & { img_id?: SelectId; id?: SelectId }).img_id ?? (img as Image & { img_id?: SelectId; id?: SelectId }).id)
     const reviewImages = [
@@ -429,6 +470,8 @@ const submitReview = async () => {
       }
     }
     snackbar.showMessage(message, 'error')
+  } finally {
+    submittingReview.value = false
   }
 }
 
@@ -711,6 +754,28 @@ watch(activeTab, () => {
   gap: 16px;
   padding-bottom: 8px;
   min-width: fit-content;
+}
+
+.selected-image-card {
+  outline: 3px solid rgb(var(--v-theme-primary));
+  outline-offset: 3px;
+}
+
+.review-config-card {
+  scroll-margin-top: 96px;
+}
+
+.review-submit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .review-submit-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .v-sheet {
