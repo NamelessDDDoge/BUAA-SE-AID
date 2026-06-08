@@ -1,19 +1,42 @@
 from .llm import detect_text_segment
 
 
+FASTDETECT_PREFLIGHT_TEXT = "This is a short FastDetect billing and availability preflight check."
+SERVICE_UNAVAILABLE_FUSE_THRESHOLD = 2
+
+
 class DetectionBillingUnavailableError(RuntimeError):
     """Raised when AIGC detection billing/quota is unavailable."""
 
 
+def preflight_text_detection(*, api_key=None):
+    """Fail fast before expensive document preprocessing when FastDetect billing is unavailable."""
+    _detect_segment_probability(FASTDETECT_PREFLIGHT_TEXT, api_key=api_key)
+    return True
+
+
 def analyze_text_segments(segments, *, api_key=None, suspicious_threshold=0.5):
     results = []
+    service_error_count = 0
+    fuse_error = None
     for index, segment in enumerate(segments):
-        probability, details = _detect_segment_probability(segment, api_key=api_key)
+        if fuse_error:
+            probability = 0.0
+            details = {"error": fuse_error, "skipped_due_to_service_fuse": True}
+        else:
+            probability, details = _detect_segment_probability(segment, api_key=api_key)
         detection_error = _is_detection_error(details)
         if detection_error:
             ai_verdict, is_ai_confirmed, confidence_level = ("service_unavailable", False, "unknown")
             label = "unavailable"
+            service_error_count += 1
+            if service_error_count >= SERVICE_UNAVAILABLE_FUSE_THRESHOLD and fuse_error is None:
+                fuse_error = (
+                    "AIGC 检测服务连续不可用，已停止继续逐段请求，"
+                    "以避免长时间等待。"
+                )
         else:
+            service_error_count = 0
             ai_verdict, is_ai_confirmed, confidence_level = _classify_ai_verdict(probability)
             label = "suspicious" if probability >= suspicious_threshold else "clean"
         reason = _build_verdict_reason(segment, probability, details, ai_verdict)

@@ -4,9 +4,11 @@
 这里只覆盖辅助函数：_mark_task_failed / _paper_image_detection_enabled / _get_text_override。
 """
 import pytest
+from unittest.mock import patch
 
 from core.services.orchestrators import paper_task_orchestrator as orch
-from core.tests.factories import make_detection_task
+from core.services.capabilities.text_detection_service import DetectionBillingUnavailableError
+from core.tests.factories import make_detection_task, make_file_management
 
 pytestmark = [pytest.mark.unit, pytest.mark.django_db]
 
@@ -120,7 +122,6 @@ def test_run_paper_detection_task_fails_when_no_paper_file():
 
 
 def test_run_paper_detection_task_fails_when_file_missing_on_disk(tmp_path):
-    from core.tests.factories import make_file_management
     task = make_detection_task(task_type="paper")
     f = make_file_management(
         user=task.user,
@@ -132,3 +133,30 @@ def test_run_paper_detection_task_fails_when_file_missing_on_disk(tmp_path):
     assert msg == "Paper file path does not exist"
     task.refresh_from_db()
     assert task.status == "failed"
+
+
+@patch("core.services.orchestrators.paper_task_orchestrator.preprocess_document")
+@patch("core.services.orchestrators.paper_task_orchestrator.preflight_text_detection")
+def test_run_paper_detection_task_preflights_before_document_preprocessing(mock_preflight, mock_preprocess, tmp_path, settings):
+    media_root = tmp_path
+    settings.MEDIA_ROOT = str(media_root)
+    paper_path = media_root / "paper.txt"
+    paper_path.write_text("paper text", encoding="utf-8")
+    task = make_detection_task(task_type="paper")
+    f = make_file_management(
+        user=task.user,
+        resource_type="paper",
+        stored_path="paper.txt",
+        file_name="paper.txt",
+        file_type="text/plain",
+    )
+    task.resource_files.add(f)
+    mock_preflight.side_effect = DetectionBillingUnavailableError("AIGC 检测服务额度/计费不可用")
+
+    msg = orch.run_paper_detection_task(task.id)
+
+    assert "额度/计费不可用" in msg
+    task.refresh_from_db()
+    assert task.status == "failed"
+    mock_preflight.assert_called_once()
+    mock_preprocess.assert_not_called()

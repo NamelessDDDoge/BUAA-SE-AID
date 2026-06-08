@@ -14,7 +14,7 @@ from ..capabilities.llm_analysis_service import (
 )
 from ..capabilities.data_authenticity_service import evaluate_data_authenticity
 from ..capabilities.reference_check_service import evaluate_references
-from ..capabilities.text_detection_service import DetectionBillingUnavailableError, analyze_text_segments
+from ..capabilities.text_detection_service import DetectionBillingUnavailableError, analyze_text_segments, preflight_text_detection
 from ..resources.document_preprocessor import preprocess_document
 from ..resources.document_preprocessor import (
     extract_document_paragraphs,
@@ -47,6 +47,11 @@ def run_paper_detection_task(task_id, api_key=None):
     paper_files = list(detection_task.resource_files.filter(resource_type="paper").order_by("id"))
     if not paper_files:
         return _mark_task_failed(detection_task, "No paper resource file found")
+
+    try:
+        preflight_text_detection(api_key=api_key)
+    except DetectionBillingUnavailableError as exc:
+        return _mark_task_failed(detection_task, str(exc))
 
     paper_items = []
     for file_management in paper_files:

@@ -121,10 +121,28 @@ def test_analyze_text_segments_handles_detection_exception(mock_detect):
 
 
 @patch("core.services.capabilities.text_detection_service.detect_text_segment")
+def test_analyze_text_segments_fuses_after_consecutive_service_errors(mock_detect):
+    mock_detect.side_effect = RuntimeError("backend explode")
+    out = svc.analyze_text_segments(["one", "two", "three", "four"], suspicious_threshold=0.5)
+    assert len(out) == 4
+    assert all(item["label"] == "unavailable" for item in out)
+    assert mock_detect.call_count == svc.SERVICE_UNAVAILABLE_FUSE_THRESHOLD
+    assert out[2]["details"]["skipped_due_to_service_fuse"] is True
+
+
+@patch("core.services.capabilities.text_detection_service.detect_text_segment")
 def test_analyze_text_segments_handles_402_payment(mock_detect):
     mock_detect.side_effect = RuntimeError("server 402 payment required")
     with pytest.raises(svc.DetectionBillingUnavailableError):
         svc.analyze_text_segments(["x"])
+
+
+@patch("core.services.capabilities.text_detection_service.detect_text_segment")
+def test_preflight_text_detection_raises_billing_error(mock_detect):
+    mock_detect.side_effect = RuntimeError("server 402 payment required")
+    with pytest.raises(svc.DetectionBillingUnavailableError):
+        svc.preflight_text_detection()
+    mock_detect.assert_called_once()
 
 
 @patch("core.services.capabilities.text_detection_service.detect_text_segment")

@@ -1,9 +1,16 @@
+import os
+
 import requests
 
 from .runtime_config import get_fastdetect_runtime_config
 
 
-def detect_text_segment(text, *, api_key=None, detector=None, endpoint=None, timeout=30):
+DEFAULT_FASTDETECT_TIMEOUT = int(os.environ.get("FASTDETECT_REQUEST_TIMEOUT", "8") or 8)
+
+
+def detect_text_segment(text, *, api_key=None, detector=None, endpoint=None, timeout=None):
+    if timeout is None:
+        timeout = DEFAULT_FASTDETECT_TIMEOUT
     config = get_fastdetect_runtime_config(api_key=api_key, detector=detector, endpoint=endpoint)
     payload = {
         "detector": config["model"],
