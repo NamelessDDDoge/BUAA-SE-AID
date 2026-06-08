@@ -147,6 +147,12 @@ REPORT_FIELD_LABELS = {
     "row_count": "行数",
     "column_count": "列数",
     "headers": "表头",
+    "rows_preview": "表项预览",
+    "evidence_summary": "证据摘要",
+    "suspicious_cells": "可疑单元格",
+    "summary_source": "摘要来源",
+    "summary_risk_level": "摘要风险等级",
+    "summary_key_points": "摘要依据",
     "authenticity_score": "真实性评分",
     "authenticity_label": "真实性等级",
     "authenticity_reason": "真实性说明",
@@ -965,6 +971,9 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
         [
             {
                 "summary": data_authenticity_results.get("summary") if isinstance(data_authenticity_results, dict) else "-",
+                "summary_source": data_authenticity_results.get("summary_source") if isinstance(data_authenticity_results, dict) else "-",
+                "summary_risk_level": data_authenticity_results.get("summary_risk_level") if isinstance(data_authenticity_results, dict) else "-",
+                "summary_key_points": data_authenticity_results.get("summary_key_points") if isinstance(data_authenticity_results, dict) else [],
                 "table_count": document.get("table_count"),
                 "finding_count": len(data_findings or []),
                 "analyzed_table_count": len(table_results or []),
@@ -1007,15 +1016,19 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
                     "source": item.get("source"),
                     "row_count": item.get("row_count"),
                     "column_count": item.get("column_count"),
+                    "headers": item.get("headers"),
+                    "rows_preview": item.get("rows_preview"),
                     "risk_level": item.get("risk_level"),
                     "reason": item.get("reason"),
+                    "evidence_summary": item.get("evidence_summary"),
+                    "suspicious_cells": item.get("suspicious_cells"),
                 }
                 for item in table_results
             ],
             height=height,
             margin=margin,
             theme=theme,
-            max_lines_overrides={"reason": 4},
+            max_lines_overrides={"reason": 4, "headers": 4, "rows_preview": 6, "evidence_summary": 4, "suspicious_cells": 4},
         )
 
     y = _draw_report_section_title(c, y, title="整篇论文综合评价", height=height, margin=margin, theme=theme, subtitle="综合风险与证据摘要")

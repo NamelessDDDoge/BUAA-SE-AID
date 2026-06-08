@@ -1,4 +1,4 @@
-from .llm import assess_data_authenticity_finding
+from .llm import assess_data_authenticity_finding, assess_table_authenticity, summarize_data_authenticity
 
 
 def evaluate_data_authenticity(paragraph_results, *, tables=None, api_key=None, llm_model_name=None):
@@ -6,11 +6,13 @@ def evaluate_data_authenticity(paragraph_results, *, tables=None, api_key=None, 
     table_results = []
     llm_invoked = False
     llm_error = None
+    analyzed_paragraph_count = 0
     for item in paragraph_results or []:
         paragraph_index = int(item.get("paragraph_index", 0))
         text = (item.get("text") or "").strip()
         if not text:
             continue
+        analyzed_paragraph_count += 1
 
         llm_finding = assess_data_authenticity_finding(
             paragraph_index=paragraph_index,
@@ -62,11 +64,42 @@ def evaluate_data_authenticity(paragraph_results, *, tables=None, api_key=None, 
                     }
                 )
 
+    summary_error = None
+    llm_summary = None
+    has_analyzable_content = analyzed_paragraph_count > 0 or bool(tables)
+    if has_analyzable_content:
+        llm_summary = summarize_data_authenticity(
+            findings=findings,
+            table_results=table_results,
+            analyzed_paragraph_count=analyzed_paragraph_count,
+            table_count=len(tables or []),
+            api_key=api_key,
+            llm_model_name=llm_model_name,
+        )
+    if isinstance(llm_summary, dict) and llm_summary.get("error"):
+        summary_error = str(llm_summary.get("error") or "").strip()
+    elif isinstance(llm_summary, dict) and llm_summary.get("summary"):
+        llm_invoked = True
+        return {
+            "summary": llm_summary["summary"],
+            "summary_source": "llm",
+            "summary_risk_level": llm_summary.get("risk_level", "none"),
+            "summary_key_points": llm_summary.get("key_points", []),
+            "findings": findings,
+            "table_results": table_results,
+            "llm_error": llm_error,
+        }
+
     summary = _build_summary(findings, llm_invoked=llm_invoked, llm_error=llm_error)
     return {
         "summary": summary,
+        "summary_source": "rule_based",
+        "summary_risk_level": _infer_summary_risk_level(findings),
+        "summary_key_points": [],
         "findings": findings,
         "table_results": table_results,
+        "llm_error": llm_error,
+        "summary_error": summary_error,
     }
 
 
@@ -78,11 +111,8 @@ def _evaluate_table_authenticity(table, *, api_key=None, llm_model_name=None):
         return None, False, None
 
     table_index = int(table.get("table_index") or 0)
-    claim_text = f"Table {table_index + 1}: {text[:700]}"
-    llm_finding = assess_data_authenticity_finding(
-        paragraph_index=table_index,
-        claim_text=claim_text,
-        evidence=text[:900],
+    llm_finding = assess_table_authenticity(
+        table=table,
         api_key=api_key,
         llm_model_name=llm_model_name,
     )
@@ -102,10 +132,13 @@ def _evaluate_table_authenticity(table, *, api_key=None, llm_model_name=None):
         "row_count": table.get("row_count"),
         "column_count": table.get("column_count"),
         "headers": table.get("headers") or [],
+        "rows_preview": (table.get("rows") or [])[:5],
         "risk_level": risk_level,
         "reason": llm_finding.get("reason", ""),
-        "claim_text": claim_text[:240],
+        "claim_text": _build_table_claim_text(table),
         "evidence": text[:900],
+        "evidence_summary": llm_finding.get("evidence_summary", ""),
+        "suspicious_cells": llm_finding.get("suspicious_cells", []),
         "analysis_source": "llm",
     }, True, None
 
@@ -130,3 +163,23 @@ def _build_summary(findings, llm_invoked=False, llm_error=None):
         overall = "低风险"
 
     return f"共发现 {len(findings)} 项数据可疑点，综合判定为{overall}。"
+
+
+def _infer_summary_risk_level(findings):
+    levels = {item.get("risk_level") for item in findings or []}
+    if "high" in levels:
+        return "high"
+    if "medium" in levels:
+        return "medium"
+    if "low" in levels:
+        return "low"
+    return "none"
+
+
+def _build_table_claim_text(table):
+    headers = [str(item) for item in (table.get("headers") or []) if str(item).strip()]
+    header_text = " | ".join(headers)
+    prefix = f"Table {int(table.get('table_index') or 0) + 1}"
+    if header_text:
+        return f"{prefix} headers: {header_text}"[:240]
+    return f"{prefix}: {str(table.get('text') or '')[:220]}"

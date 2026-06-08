@@ -5,7 +5,11 @@ import requests
 
 from .runtime_config import get_active_model_config
 from .prompts import (
+    DATA_AUTH_SUMMARY_SYSTEM_PROMPT,
+    DATA_AUTH_SUMMARY_USER_TEMPLATE,
     DATA_AUTH_SYSTEM_PROMPT,
+    DATA_TABLE_AUTH_SYSTEM_PROMPT,
+    DATA_TABLE_AUTH_USER_TEMPLATE,
     DATA_AUTH_USER_TEMPLATE,
     OVERALL_EVALUATION_SYSTEM_PROMPT,
     OVERALL_EVALUATION_USER_TEMPLATE,
@@ -170,6 +174,73 @@ def assess_data_authenticity_finding(*, paragraph_index, claim_text, evidence, a
     return {
         "risk_level": risk_level,
         "reason": reason or "LLM 未返回原因说明。",
+    }
+
+
+def assess_table_authenticity(*, table, api_key=None, llm_model_name=None):
+    table = table if isinstance(table, dict) else {}
+    response_json = _request_structured_json(
+        system_prompt=DATA_TABLE_AUTH_SYSTEM_PROMPT,
+        user_prompt=render_prompt(
+            DATA_TABLE_AUTH_USER_TEMPLATE,
+            table_index=int(table.get("table_index") or 0),
+            source=str(table.get("source") or ""),
+            page_number=table.get("page_number") or "",
+            row_count=int(table.get("row_count") or 0),
+            column_count=int(table.get("column_count") or 0),
+            headers_json=json.dumps(table.get("headers") or [], ensure_ascii=False),
+            rows_json=json.dumps((table.get("rows") or [])[:8], ensure_ascii=False),
+            text_preview=str(table.get("text") or "")[:1200],
+        ),
+        api_key=api_key,
+        llm_model_name=llm_model_name,
+    )
+    if not isinstance(response_json, dict):
+        if isinstance(response_json, str):
+            return {"error": response_json}
+        return None
+
+    risk_level = str(response_json.get("risk_level") or "").strip().lower()
+    reason = str(response_json.get("reason") or "").strip()
+    if risk_level not in {"none", "low", "medium", "high"}:
+        return None
+    return {
+        "risk_level": risk_level,
+        "reason": reason or "LLM 未返回原因说明。",
+        "evidence_summary": str(response_json.get("evidence_summary") or "").strip(),
+        "suspicious_cells": _to_string_list(response_json.get("suspicious_cells")),
+    }
+
+
+def summarize_data_authenticity(*, findings, table_results, analyzed_paragraph_count, table_count, api_key=None, llm_model_name=None):
+    response_json = _request_structured_json(
+        system_prompt=DATA_AUTH_SUMMARY_SYSTEM_PROMPT,
+        user_prompt=render_prompt(
+            DATA_AUTH_SUMMARY_USER_TEMPLATE,
+            analyzed_paragraph_count=int(analyzed_paragraph_count or 0),
+            table_count=int(table_count or 0),
+            analyzed_table_count=len(table_results or []),
+            findings_json=json.dumps((findings or [])[:12], ensure_ascii=False),
+            table_results_json=json.dumps((table_results or [])[:8], ensure_ascii=False),
+        ),
+        api_key=api_key,
+        llm_model_name=llm_model_name,
+    )
+    if not isinstance(response_json, dict):
+        if isinstance(response_json, str):
+            return {"error": response_json}
+        return None
+
+    risk_level = str(response_json.get("risk_level") or "").strip().lower()
+    if risk_level not in {"none", "low", "medium", "high"}:
+        risk_level = "none"
+    summary = str(response_json.get("summary") or "").strip()
+    if not summary:
+        return None
+    return {
+        "risk_level": risk_level,
+        "summary": summary,
+        "key_points": _to_string_list(response_json.get("key_points")),
     }
 
 

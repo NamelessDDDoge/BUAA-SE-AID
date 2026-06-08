@@ -267,17 +267,27 @@ class ResourcePreprocessingTests(TestCase):
         self.assertIn("91.4", tables[0]["text"])
 
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
+    @patch("core.services.capabilities.data_authenticity_service.summarize_data_authenticity")
+    @patch("core.services.capabilities.data_authenticity_service.assess_table_authenticity")
     @patch("core.services.capabilities.data_authenticity_service.assess_data_authenticity_finding")
     @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_paper_detection_keeps_table_analysis_separate_from_aigc_segments(
         self,
         mock_post,
         mock_assess_data,
+        mock_assess_table,
+        mock_summary,
         mock_image_detection,
     ):
         mock_post.return_value.json.return_value = {"data": {"prob": 0.18, "details": {"source": "mock"}}}
         mock_post.return_value.raise_for_status.return_value = None
-        mock_assess_data.return_value = {"risk_level": "low", "reason": "table values are internally consistent"}
+        mock_assess_data.return_value = {"risk_level": "none", "reason": "paragraph has no data claim"}
+        mock_assess_table.return_value = {"risk_level": "low", "reason": "table values are internally consistent"}
+        mock_summary.return_value = {
+            "risk_level": "low",
+            "summary": "LLM summary confirms table-like data was analyzed separately.",
+            "key_points": ["table extracted"],
+        }
         file_record = self.create_table_like_pdf_file("paper-with-table-like-data.pdf")
         task = DetectionTask.objects.create(
             user=self.user,
@@ -298,7 +308,9 @@ class ResourcePreprocessingTests(TestCase):
         paragraph_text = "\n".join(item.get("text", "") for item in task.text_detection_results["paragraph_results"])
         self.assertNotIn("Accuracy", paragraph_text)
         self.assertNotIn("91.4", paragraph_text)
-        self.assertEqual(mock_assess_data.call_count, len(task.text_detection_results["paragraph_results"]) + len(task.text_detection_results["table_results"]))
+        self.assertEqual(mock_assess_data.call_count, len(task.text_detection_results["paragraph_results"]))
+        self.assertEqual(mock_assess_table.call_count, len(task.text_detection_results["table_results"]))
+        self.assertEqual(task.text_detection_results["data_authenticity_results"]["summary_source"], "llm")
         mock_image_detection.assert_not_called()
 
     def test_preprocess_document_removes_null_bytes_from_pdf_text(self):

@@ -83,6 +83,57 @@ DATA_AUTH_USER_TEMPLATE = """
 """.strip()
 
 
+DATA_TABLE_AUTH_SYSTEM_PROMPT = (
+    "你是学术论文表格数据真实性分析助手。请严格基于结构化表头、表项和上下文，"
+    "判断表格中的数值、趋势或结论是否存在明显异常、过度完美、内部矛盾或缺少支撑的问题。"
+    "只输出JSON。"
+)
+
+
+DATA_TABLE_AUTH_USER_TEMPLATE = """
+输入表格：
+- table_index: {table_index}
+- source: {source}
+- page_number: {page_number}
+- row_count: {row_count}
+- column_count: {column_count}
+- headers_json: {headers_json}
+- rows_json: {rows_json}
+- text_preview: {text_preview}
+
+请输出JSON：
+{{
+  "risk_level": "none|low|medium|high",
+  "reason": "string, 不超过120字，说明依据的是哪些表头或表项",
+  "evidence_summary": "string, 不超过160字，概括关键数值/趋势证据",
+  "suspicious_cells": ["string, 可疑单元格或行列说明"]
+}}
+""".strip()
+
+
+DATA_AUTH_SUMMARY_SYSTEM_PROMPT = (
+    "你是学术论文数据真实性分析报告助手。请基于段落数据声明和表格分析结果，"
+    "生成简短、克制、可复核的总体摘要。只输出JSON。"
+)
+
+
+DATA_AUTH_SUMMARY_USER_TEMPLATE = """
+输入：
+- analyzed_paragraph_count: {analyzed_paragraph_count}
+- table_count: {table_count}
+- analyzed_table_count: {analyzed_table_count}
+- findings_json: {findings_json}
+- table_results_json: {table_results_json}
+
+请输出JSON：
+{{
+  "risk_level": "none|low|medium|high",
+  "summary": "string, 不超过160字",
+  "key_points": ["string, string"]
+}}
+""".strip()
+
+
 REVIEW_ANALYSIS_SYSTEM_PROMPT = (
     "你是学术同行评审审查助手。请同时结合论文与Review内容，判断Review是否模板化、是否存在错误，"
     "以及Review与论文的相关度。只输出JSON。"

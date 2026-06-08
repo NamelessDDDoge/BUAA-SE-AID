@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from core.services.capabilities.llm import runtime_config as rc
+from core.services.capabilities.llm import openai_client
 from core.tests.factories import make_llm_model
 
 pytestmark = pytest.mark.unit
@@ -104,3 +105,54 @@ def test_fastdetect_strips_whitespace_from_explicit_args():
     assert out["endpoint"] == "https://x"
     assert out["key"] == "k"
     assert out["model"] == "d"
+
+
+# ---------- structured table data authenticity ----------
+
+@patch("core.services.capabilities.llm.openai_client._request_structured_json")
+def test_assess_table_authenticity_sends_headers_and_rows(mock_request):
+    mock_request.return_value = {
+        "risk_level": "medium",
+        "reason": "Accuracy jump needs verification.",
+        "evidence_summary": "Ours reaches 91.4 accuracy.",
+        "suspicious_cells": ["Ours / Accuracy"],
+    }
+
+    out = openai_client.assess_table_authenticity(
+        table={
+            "table_index": 0,
+            "source": "pdf_inferred",
+            "page_number": 2,
+            "row_count": 3,
+            "column_count": 3,
+            "headers": ["Method", "Accuracy", "F1"],
+            "rows": [["Baseline", "81.2", "79.5"], ["Ours", "91.4", "90.1"]],
+            "text": "Method | Accuracy | F1\nBaseline | 81.2 | 79.5\nOurs | 91.4 | 90.1",
+        }
+    )
+
+    assert out["risk_level"] == "medium"
+    assert out["suspicious_cells"] == ["Ours / Accuracy"]
+    user_prompt = mock_request.call_args.kwargs["user_prompt"]
+    assert 'headers_json: ["Method", "Accuracy", "F1"]' in user_prompt
+    assert 'rows_json: [["Baseline", "81.2", "79.5"], ["Ours", "91.4", "90.1"]]' in user_prompt
+
+
+@patch("core.services.capabilities.llm.openai_client._request_structured_json")
+def test_summarize_data_authenticity_returns_llm_summary(mock_request):
+    mock_request.return_value = {
+        "risk_level": "low",
+        "summary": "未发现明显数据异常，表格结构已纳入分析。",
+        "key_points": ["分析了1个表格"],
+    }
+
+    out = openai_client.summarize_data_authenticity(
+        findings=[],
+        table_results=[{"table_index": 0, "risk_level": "none"}],
+        analyzed_paragraph_count=2,
+        table_count=1,
+    )
+
+    assert out["risk_level"] == "low"
+    assert out["summary"] == "未发现明显数据异常，表格结构已纳入分析。"
+    assert out["key_points"] == ["分析了1个表格"]

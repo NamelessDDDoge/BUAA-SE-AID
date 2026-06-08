@@ -121,11 +121,29 @@
       </v-card-title>
       <v-card-text>
         <v-alert :type="dataAuthenticityAlertType" variant="tonal" class="mb-4">
-          <div class="mb-1"><strong>分析摘要：</strong>{{ dataAuthenticitySummary }}</div>
+          <div class="d-flex align-center flex-wrap ga-2 mb-1">
+            <strong>分析摘要：</strong>
+            <v-chip size="x-small" color="primary" variant="tonal">{{ dataSummarySourceText }}</v-chip>
+          </div>
+          <div class="mb-1">{{ dataAuthenticitySummary }}</div>
           <div class="text-caption">
             已识别表格 {{ documentTableCount }} 个 · 已分析表格 {{ tableResults.length }} 个 · 可疑点 {{ dataFindings.length }} 个
           </div>
         </v-alert>
+
+        <div v-if="dataSummaryKeyPoints.length" class="mb-4">
+          <div class="text-subtitle-2 mb-2">摘要依据</div>
+          <v-chip
+            v-for="(item, idx) in dataSummaryKeyPoints"
+            :key="`data-key-point-${idx}`"
+            size="small"
+            color="teal"
+            variant="tonal"
+            class="mr-2 mb-2"
+          >
+            {{ item }}
+          </v-chip>
+        </div>
 
         <div v-if="dataFindings.length" class="mb-4">
           <div class="text-subtitle-2 mb-2">可疑数据证据</div>
@@ -164,6 +182,40 @@
               <v-list-item-subtitle>
                 {{ tableShapeText(item) }} · {{ item.reason || '暂无说明' }}
               </v-list-item-subtitle>
+              <div v-if="item.evidence_summary" class="text-caption text-medium-emphasis mt-1">
+                证据摘要：{{ item.evidence_summary }}
+              </div>
+              <div v-if="(item.suspicious_cells || []).length" class="mt-2">
+                <v-chip
+                  v-for="(cell, cellIdx) in item.suspicious_cells"
+                  :key="`table-${idx}-cell-${cellIdx}`"
+                  size="x-small"
+                  color="warning"
+                  variant="tonal"
+                  class="mr-1 mb-1"
+                >
+                  {{ cell }}
+                </v-chip>
+              </div>
+              <div v-if="hasTablePreview(item)" class="mt-3 table-preview-wrap">
+                <div class="text-caption font-weight-medium mb-1">已提取表头与表项预览</div>
+                <v-table density="compact" class="table-preview rounded-lg">
+                  <thead v-if="tableHeaders(item).length">
+                    <tr>
+                      <th v-for="(header, headerIdx) in tableHeaders(item)" :key="`table-${idx}-header-${headerIdx}`">
+                        {{ header || `列 ${headerIdx + 1}` }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, rowIdx) in tableRowsPreview(item)" :key="`table-${idx}-row-${rowIdx}`">
+                      <td v-for="(cell, cellIdx) in normalizePreviewRow(row, item)" :key="`table-${idx}-row-${rowIdx}-cell-${cellIdx}`">
+                        {{ cell || '-' }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </v-table>
+              </div>
             </v-list-item>
           </v-list>
         </div>
@@ -198,6 +250,7 @@ const dataAuthenticityResults = computed(() => props.task?.results?.data_authent
 const dataFindings = computed(() => dataAuthenticityResults.value?.findings || [])
 const tableResults = computed(() => props.task?.results?.table_results || dataAuthenticityResults.value?.table_results || [])
 const documentTableCount = computed(() => Number(props.task?.results?.document?.table_count || tableResults.value.length || 0))
+const dataSummaryKeyPoints = computed(() => dataAuthenticityResults.value?.summary_key_points || [])
 
 const showDataAuthenticity = computed(() => {
   return Boolean(dataAuthenticityResults.value)
@@ -219,6 +272,12 @@ const dataAuthenticityAlertType = computed(() => {
   if (dataFindings.value.some((item: any) => item.risk_level === 'high')) return 'error'
   if (dataFindings.value.some((item: any) => item.risk_level === 'medium')) return 'warning'
   return dataFindings.value.length ? 'info' : 'success'
+})
+
+const dataSummarySourceText = computed(() => {
+  if (dataAuthenticityResults.value?.summary_source === 'llm') return 'LLM 生成'
+  if (dataAuthenticityResults.value?.summary_source === 'rule_based') return '规则兜底'
+  return '系统摘要'
 })
 
 const overallRiskType = computed(() => {
@@ -282,9 +341,47 @@ const tableShapeText = (item: any) => {
   return '结构信息不足'
 }
 
+const tableHeaders = (item: any) => {
+  return Array.isArray(item?.headers) ? item.headers.map((cell: any) => String(cell ?? '')) : []
+}
+
+const tableRowsPreview = (item: any) => {
+  if (Array.isArray(item?.rows_preview)) return item.rows_preview.slice(0, 5)
+  if (Array.isArray(item?.rows)) return item.rows.slice(0, 5)
+  return []
+}
+
+const hasTablePreview = (item: any) => {
+  return tableHeaders(item).length > 0 || tableRowsPreview(item).length > 0
+}
+
+const normalizePreviewRow = (row: any, item: any) => {
+  const cells = Array.isArray(row) ? row.map((cell: any) => String(cell ?? '')) : [String(row ?? '')]
+  const columnCount = Math.max(tableHeaders(item).length, cells.length)
+  return cells.concat(Array(Math.max(0, columnCount - cells.length)).fill(''))
+}
+
 const getExplanation = (index: number) => {
   const suspicious = props.task?.results?.suspicious_paragraphs || []
   const match = suspicious.find((s: any) => s.paragraph_index === index)
   return match ? match.explanation : ''
 }
 </script>
+
+<style scoped>
+.table-preview-wrap {
+  overflow-x: auto;
+}
+
+.table-preview {
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  min-width: 520px;
+}
+
+.table-preview :deep(th),
+.table-preview :deep(td) {
+  max-width: 220px;
+  white-space: normal;
+  word-break: break-word;
+}
+</style>

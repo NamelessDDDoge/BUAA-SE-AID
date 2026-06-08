@@ -58,7 +58,9 @@ def test_summary_includes_count_of_findings():
 # ---------- evaluate_data_authenticity ----------
 
 @patch("core.services.capabilities.data_authenticity_service.assess_data_authenticity_finding")
-def test_evaluate_skips_paragraphs_with_blank_text(mock_assess):
+@patch("core.services.capabilities.data_authenticity_service.summarize_data_authenticity")
+def test_evaluate_skips_paragraphs_with_blank_text(mock_summary, mock_assess):
+    mock_summary.return_value = None
     paragraphs = [
         {"paragraph_index": 0, "text": "   "},
         {"paragraph_index": 1, "text": ""},
@@ -69,7 +71,9 @@ def test_evaluate_skips_paragraphs_with_blank_text(mock_assess):
 
 
 @patch("core.services.capabilities.data_authenticity_service.assess_data_authenticity_finding")
-def test_evaluate_records_error_and_continues(mock_assess):
+@patch("core.services.capabilities.data_authenticity_service.summarize_data_authenticity")
+def test_evaluate_records_error_and_continues(mock_summary, mock_assess):
+    mock_summary.return_value = None
     mock_assess.side_effect = [
         {"error": "boom"},
         {"risk_level": "low", "reason": "ok"},
@@ -85,14 +89,18 @@ def test_evaluate_records_error_and_continues(mock_assess):
 
 
 @patch("core.services.capabilities.data_authenticity_service.assess_data_authenticity_finding")
-def test_evaluate_ignores_findings_without_valid_risk_level(mock_assess):
+@patch("core.services.capabilities.data_authenticity_service.summarize_data_authenticity")
+def test_evaluate_ignores_findings_without_valid_risk_level(mock_summary, mock_assess):
+    mock_summary.return_value = None
     mock_assess.return_value = {"risk_level": "unknown", "reason": "?"}
     out = evaluate_data_authenticity([{"paragraph_index": 0, "text": "text"}])
     assert out["findings"] == []
 
 
 @patch("core.services.capabilities.data_authenticity_service.assess_data_authenticity_finding")
-def test_evaluate_keeps_high_risk_findings(mock_assess):
+@patch("core.services.capabilities.data_authenticity_service.summarize_data_authenticity")
+def test_evaluate_keeps_high_risk_findings(mock_summary, mock_assess):
+    mock_summary.return_value = None
     mock_assess.return_value = {"risk_level": "high", "reason": "fabricated"}
     out = evaluate_data_authenticity([{"paragraph_index": 5, "text": "claim text"}])
     assert len(out["findings"]) == 1
@@ -104,7 +112,9 @@ def test_evaluate_keeps_high_risk_findings(mock_assess):
 
 
 @patch("core.services.capabilities.data_authenticity_service.assess_data_authenticity_finding")
-def test_evaluate_returns_summary_with_count(mock_assess):
+@patch("core.services.capabilities.data_authenticity_service.summarize_data_authenticity")
+def test_evaluate_returns_summary_with_count(mock_summary, mock_assess):
+    mock_summary.return_value = None
     mock_assess.return_value = {"risk_level": "medium", "reason": "ok"}
     paragraphs = [{"paragraph_index": i, "text": f"p{i}"} for i in range(3)]
     out = evaluate_data_authenticity(paragraphs)
