@@ -1043,10 +1043,19 @@ def get_users(request):
         users = users.filter(role=role)
     if permission:
         try:
-            permission = int(permission)
-            users = users.filter(permission=permission)
+            # permission 是 4 位模式串（如 "1010"），数字 1 表示该位为筛选条件
+            # 权限以十进制数字串形式存储（如 publisher 默认 1110），按位逐位匹配
+            perm_str = str(int(permission)).zfill(4)
         except ValueError:
             return Response({'error': 'Permission value must be an integer'}, status=400)
+        required_positions = [i for i, c in enumerate(perm_str) if c == '1']
+        if required_positions:
+            matched_ids = [
+                u.id for u in users
+                if u.permission is not None
+                and all(str(u.permission).zfill(4)[i] == '1' for i in required_positions)
+            ]
+            users = users.filter(id__in=matched_ids)
     if start_time:
         users = users.filter(date_joined__gte=start_time)
     if end_time:

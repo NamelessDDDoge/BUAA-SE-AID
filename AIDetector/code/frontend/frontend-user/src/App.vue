@@ -500,7 +500,10 @@ onMounted(async () => {
 }
 
 .route-frame {
-  padding: 18px 22px 22px 12px;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 18px 24px 28px;
 }
 
 .auth-frame {
@@ -516,7 +519,7 @@ onMounted(async () => {
   padding: 0 !important;
 }
 
-.route-frame :is(.workspace-shell, .page-shell, .analytics-container) {
+.route-frame :is(.workspace-shell, .page-shell, .analytics-container, .annual-page, .review-page) {
   width: 100%;
   max-width: none !important;
   margin-left: 0 !important;

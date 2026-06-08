@@ -453,7 +453,10 @@ onMounted(async () => {
 }
 
 .route-frame {
-  padding: 18px 22px 22px 12px;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 18px 24px 28px;
 }
 
 .auth-frame {

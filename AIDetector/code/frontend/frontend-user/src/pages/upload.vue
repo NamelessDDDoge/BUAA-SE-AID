@@ -6,7 +6,7 @@
         <v-card class="page-hero mb-6">
           <v-card-text class="pa-7 pa-md-8">
             <div class="section-eyebrow mb-3">New Detection</div>
-            <h1 class="hero-title mb-3">创建检测任务</h1>
+            <h1 class="hero-title mb-3" style="letter-spacing: 0.12em">创建检测任务</h1>
             <p class="hero-copy mb-0">
               选择检测对象并上传文件，确认内容后提交。
             </p>

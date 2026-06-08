@@ -130,9 +130,6 @@ class MultiImagesMethod:
 
     def llm_method(self, image_path):
         # read image_path and transform to base64
-        # 额度花完了（）
-        # 先不用这个
-        return None
         with open(image_path, "rb") as image_file:
             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
         client = OpenAI(
