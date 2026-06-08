@@ -269,7 +269,10 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(task.status, "completed")
         self.assertGreaterEqual(task.text_detection_results["document"]["table_count"], 1)
         self.assertGreaterEqual(len(task.text_detection_results["table_results"]), 1)
-        self.assertEqual(mock_post.call_count, len(task.text_detection_results["paragraph_results"]))
+        paragraph_text = "\n".join(item.get("text", "") for item in task.text_detection_results["paragraph_results"])
+        self.assertNotIn("Accuracy", paragraph_text)
+        self.assertNotIn("91.4", paragraph_text)
+        self.assertEqual(mock_assess_data.call_count, len(task.text_detection_results["paragraph_results"]) + len(task.text_detection_results["table_results"]))
         mock_image_detection.assert_not_called()
 
     def test_preprocess_document_removes_null_bytes_from_pdf_text(self):

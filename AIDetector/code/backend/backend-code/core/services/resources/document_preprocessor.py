@@ -432,8 +432,9 @@ def _split_pdf_row_into_cells(row_words):
     if not positive_gaps:
         return [{"text": " ".join(word["text"] for word in row_words), "bbox": _merge_bboxes([w["bbox"] for w in row_words])}]
 
-    median_gap = sorted(positive_gaps)[len(positive_gaps) // 2]
-    split_gap = max(10.0, median_gap * 2.4)
+    # Large x-axis gaps usually mean columns in borderless/three-line PDF tables.
+    # Normal prose extracted by PyMuPDF has word gaps around a few points.
+    split_gap = 18.0
     cells = []
     current = [row_words[0]]
     for gap, word in zip(gaps, row_words[1:]):
