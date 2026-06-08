@@ -17,6 +17,7 @@ from core.models import (
 from core.services.capabilities.llm.runtime_config import get_fastdetect_runtime_config
 from core.services.resources.document_preprocessor import (
     extract_document_paragraphs,
+    extract_pdf_tables,
     preprocess_document,
 )
 from core.services.resources.text_sanitizer import sanitize_json_like
@@ -90,6 +91,34 @@ class ResourcePreprocessingTests(TestCase):
             file_size=file_path.stat().st_size,
             file_type="application/pdf",
             resource_type=resource_type,
+            stored_path=f"uploads/{file_name}",
+        )
+
+    def create_table_like_pdf_file(self, file_name):
+        uploads_dir = self.temp_media / "uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        file_path = uploads_dir / file_name
+        pdf = canvas.Canvas(str(file_path))
+        pdf.drawString(72, 760, "This paragraph should remain normal text for AIGC analysis.")
+        rows = [
+            ("Method", "Accuracy", "F1"),
+            ("Baseline", "81.2", "79.5"),
+            ("Ours", "91.4", "90.1"),
+        ]
+        y = 710
+        for row in rows:
+            pdf.drawString(72, y, row[0])
+            pdf.drawString(220, y, row[1])
+            pdf.drawString(330, y, row[2])
+            y -= 18
+        pdf.save()
+        return FileManagement.objects.create(
+            user=self.user,
+            organization=self.organization,
+            file_name=file_name,
+            file_size=file_path.stat().st_size,
+            file_type="application/pdf",
+            resource_type="paper",
             stored_path=f"uploads/{file_name}",
         )
 
@@ -199,6 +228,49 @@ class ResourcePreprocessingTests(TestCase):
         self.assertIn("PDF parsing should work", result["text_content"])
         self.assertGreaterEqual(len(result["segments"]), 1)
         self.assertGreaterEqual(len(result["paragraphs"]), 1)
+
+    def test_extract_pdf_tables_infers_table_like_aligned_text(self):
+        file_record = self.create_table_like_pdf_file("paper-table-like.pdf")
+        file_path = self.temp_media / file_record.stored_path
+
+        tables = extract_pdf_tables(str(file_path))
+
+        self.assertGreaterEqual(len(tables), 1)
+        self.assertEqual(tables[0]["source"], "pdf_inferred")
+        self.assertIn("Accuracy", tables[0]["text"])
+        self.assertIn("91.4", tables[0]["text"])
+
+    @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
+    @patch("core.services.capabilities.data_authenticity_service.assess_data_authenticity_finding")
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
+    def test_run_paper_detection_keeps_table_analysis_separate_from_aigc_segments(
+        self,
+        mock_post,
+        mock_assess_data,
+        mock_image_detection,
+    ):
+        mock_post.return_value.json.return_value = {"data": {"prob": 0.18, "details": {"source": "mock"}}}
+        mock_post.return_value.raise_for_status.return_value = None
+        mock_assess_data.return_value = {"risk_level": "low", "reason": "table values are internally consistent"}
+        file_record = self.create_table_like_pdf_file("paper-with-table-like-data.pdf")
+        task = DetectionTask.objects.create(
+            user=self.user,
+            organization=self.organization,
+            task_type="paper",
+            task_name="Paper With Inferred Table",
+            status="pending",
+        )
+        task.resource_files.add(file_record)
+
+        result = run_paper_detection(task.id)
+
+        task.refresh_from_db()
+        self.assertEqual(result, "Paper detection finished")
+        self.assertEqual(task.status, "completed")
+        self.assertGreaterEqual(task.text_detection_results["document"]["table_count"], 1)
+        self.assertGreaterEqual(len(task.text_detection_results["table_results"]), 1)
+        self.assertEqual(mock_post.call_count, len(task.text_detection_results["paragraph_results"]))
+        mock_image_detection.assert_not_called()
 
     def test_preprocess_document_removes_null_bytes_from_pdf_text(self):
         file_record = self.create_pdf_file("paper-null.pdf", "Null\x00byte should not reach JSON storage.")

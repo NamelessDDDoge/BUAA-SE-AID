@@ -9,6 +9,7 @@ EMPTY_FILE_MESSAGE = "无内容"
 
 
 def preprocess_document(file_path, max_segment_length=1500, overlap_length=100, fallback_segment_length=40000):
+    tables = extract_document_tables(file_path)
     text_content = sanitize_text_content(extract_document_text(file_path))
     paragraphs = extract_document_paragraphs(text_content)
     
@@ -57,6 +58,7 @@ def preprocess_document(file_path, max_segment_length=1500, overlap_length=100, 
         "sections": sections,
         "references": extract_document_references(text_content),
         "segments": segments,
+        "tables": tables,
     }
 
 
@@ -70,10 +72,13 @@ def extract_document_text(file_path):
             with fitz.open(file_path) as document:
                 for page in document:
                     page_height = page.rect.height
+                    table_regions = _get_pdf_table_regions(page)
                     blocks = page.get_text("blocks")
                     for b in blocks:
                         if b[6] == 0:  # text block
                             x0, y0, x1, y1, raw_text, block_no, block_type = b
+                            if _intersects_any_bbox((x0, y0, x1, y1), table_regions):
+                                continue
                             raw_text = raw_text.strip()
                             if not raw_text:
                                 continue
@@ -148,6 +153,8 @@ def extract_document_text(file_path):
             # 因此，直接在 document.element 下执行 XPath，天然就免疫了页眉页脚和通过域代码生成的页码。
             texts = []
             for p in document.element.xpath('//w:p'):
+                if _docx_paragraph_is_inside_table(p):
+                    continue
                 p_text = "".join(t.text for t in p.xpath('.//w:t') if t.text)
                 if p_text.strip():
                     texts.append(p_text.strip())
@@ -160,6 +167,362 @@ def extract_document_text(file_path):
                 return handle.read()
         except Exception:
             return UNREADABLE_FILE_MESSAGE
+
+
+def extract_document_tables(file_path):
+    file_ext = Path(file_path).suffix.lower()
+    try:
+        if file_ext == ".pdf":
+            return extract_pdf_tables(file_path)
+        if file_ext == ".docx":
+            return extract_docx_tables(file_path)
+        if file_ext in {".txt", ".csv", ".tsv"}:
+            return extract_text_tables(file_path)
+    except Exception:
+        return []
+    return []
+
+
+def extract_pdf_tables(file_path):
+    import fitz
+
+    tables = []
+    with fitz.open(file_path) as document:
+        for page_index, page in enumerate(document):
+            native_regions = []
+            for page_table_index, table in enumerate(_find_pdf_tables(page)):
+                rows = _extract_pdf_table_rows(table)
+                if rows:
+                    bbox = getattr(table, "bbox", None)
+                    if bbox and len(bbox) == 4:
+                        native_regions.append(tuple(float(value) for value in bbox))
+                    tables.append(
+                        _build_table_payload(
+                            len(tables),
+                            rows,
+                            source="pdf_native",
+                            page_number=page_index + 1,
+                            page_table_index=page_table_index,
+                        )
+                    )
+            for inferred_index, inferred in enumerate(_infer_pdf_tables_from_words(page, exclude_bboxes=native_regions)):
+                inferred["table_index"] = len(tables)
+                inferred["page_number"] = page_index + 1
+                inferred["page_table_index"] = inferred_index
+                tables.append(inferred)
+    return tables
+
+
+def extract_docx_tables(file_path):
+    import docx
+
+    document = docx.Document(file_path)
+    tables = []
+    for table in document.tables:
+        rows = []
+        for row in table.rows:
+            cells = [_normalize_table_cell(cell.text) for cell in row.cells]
+            if any(cells):
+                rows.append(cells)
+        if rows:
+            tables.append(_build_table_payload(len(tables), rows, source="docx"))
+    return tables
+
+
+def extract_text_tables(file_path):
+    try:
+        raw_text = Path(file_path).read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raw_text = Path(file_path).read_text(encoding="gbk", errors="ignore")
+
+    tables = []
+    current_rows = []
+    for line in raw_text.splitlines():
+        parsed = _parse_text_table_row(line)
+        if parsed:
+            current_rows.append(parsed)
+            continue
+        if len(current_rows) >= 2:
+            tables.append(_build_table_payload(len(tables), current_rows, source="text"))
+        current_rows = []
+
+    if len(current_rows) >= 2:
+        tables.append(_build_table_payload(len(tables), current_rows, source="text"))
+    return tables
+
+
+def _find_pdf_tables(page):
+    finder = getattr(page, "find_tables", None)
+    if not callable(finder):
+        return []
+    try:
+        result = finder()
+    except Exception:
+        return []
+    return list(getattr(result, "tables", None) or [])
+
+
+def _extract_pdf_table_rows(table):
+    extractor = getattr(table, "extract", None)
+    if not callable(extractor):
+        return []
+    try:
+        rows = extractor()
+    except Exception:
+        return []
+    return [
+        [_normalize_table_cell(cell) for cell in row]
+        for row in rows or []
+        if isinstance(row, (list, tuple)) and any(_normalize_table_cell(cell) for cell in row)
+    ]
+
+
+def _build_table_payload(table_index, rows, *, source, page_number=None, page_table_index=None):
+    cleaned_rows = [
+        [_normalize_table_cell(cell) for cell in row]
+        for row in rows
+        if any(_normalize_table_cell(cell) for cell in row)
+    ]
+    column_count = max((len(row) for row in cleaned_rows), default=0)
+    normalized_rows = [row + [""] * (column_count - len(row)) for row in cleaned_rows]
+    payload = {
+        "table_index": table_index,
+        "source": source,
+        "row_count": len(normalized_rows),
+        "column_count": column_count,
+        "headers": normalized_rows[0] if normalized_rows else [],
+        "rows": normalized_rows[1:] if len(normalized_rows) > 1 else [],
+        "text": _format_table_text(normalized_rows),
+    }
+    if page_number is not None:
+        payload["page_number"] = page_number
+    if page_table_index is not None:
+        payload["page_table_index"] = page_table_index
+    return payload
+
+
+def _format_table_text(rows):
+    return "\n".join(" | ".join(_normalize_table_cell(cell) for cell in row) for row in rows)
+
+
+def _normalize_table_cell(value):
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+def _parse_text_table_row(line):
+    stripped = (line or "").strip()
+    if not stripped:
+        return None
+    if "|" in stripped:
+        cells = stripped.strip("|").split("|")
+    elif "\t" in stripped:
+        cells = stripped.split("\t")
+    elif "," in stripped and len(stripped.split(",")) >= 3:
+        cells = stripped.split(",")
+    else:
+        return None
+
+    cells = [_normalize_table_cell(cell) for cell in cells]
+    return cells if sum(1 for cell in cells if cell) >= 2 else None
+
+
+def _get_pdf_table_regions(page):
+    regions = []
+    for table in _find_pdf_tables(page):
+        bbox = getattr(table, "bbox", None)
+        if bbox and len(bbox) == 4:
+            regions.append(tuple(float(value) for value in bbox))
+    for inferred in _infer_pdf_tables_from_words(page):
+        bbox = inferred.get("bbox")
+        if bbox and len(bbox) == 4:
+            regions.append(tuple(float(value) for value in bbox))
+    return regions
+
+
+def _infer_pdf_tables_from_words(page, exclude_bboxes=None):
+    exclude_bboxes = exclude_bboxes or []
+    try:
+        words = page.get_text("words")
+    except Exception:
+        return []
+    if not words:
+        return []
+
+    rows = _group_pdf_words_into_rows(words, exclude_bboxes=exclude_bboxes)
+    candidate_rows = []
+    for row in rows:
+        cells = _split_pdf_row_into_cells(row)
+        if len(cells) < 3:
+            continue
+        row_text = " ".join(cell["text"] for cell in cells)
+        if len(row_text) > 260:
+            continue
+        candidate_rows.append(
+            {
+                "cells": cells,
+                "bbox": _merge_bboxes([cell["bbox"] for cell in cells]),
+                "numeric_density": _numeric_density(row_text),
+            }
+        )
+
+    groups = []
+    current = []
+    for row in candidate_rows:
+        if not current:
+            current = [row]
+            continue
+        prev = current[-1]
+        vertical_gap = row["bbox"][1] - prev["bbox"][3]
+        if vertical_gap <= 18 and _row_columns_are_compatible(prev["cells"], row["cells"]):
+            current.append(row)
+        else:
+            if _looks_like_table_group(current):
+                groups.append(current)
+            current = [row]
+    if _looks_like_table_group(current):
+        groups.append(current)
+
+    inferred_tables = []
+    for group in groups:
+        rows_payload = [[cell["text"] for cell in row["cells"]] for row in group]
+        payload = _build_table_payload(len(inferred_tables), rows_payload, source="pdf_inferred")
+        payload["bbox"] = _merge_bboxes([row["bbox"] for row in group])
+        payload["confidence"] = _estimate_inferred_table_confidence(group)
+        inferred_tables.append(payload)
+    return inferred_tables
+
+
+def _group_pdf_words_into_rows(words, *, exclude_bboxes=None):
+    rows = []
+    for word in sorted(words, key=lambda item: (float(item[1]), float(item[0]))):
+        x0, y0, x1, y1 = (float(word[0]), float(word[1]), float(word[2]), float(word[3]))
+        if _intersects_any_bbox((x0, y0, x1, y1), exclude_bboxes or []):
+            continue
+        text = _normalize_table_cell(word[4] if len(word) > 4 else "")
+        if not text:
+            continue
+
+        placed = False
+        center_y = (y0 + y1) / 2
+        for row in rows:
+            if abs(row["center_y"] - center_y) <= 3.5:
+                row["words"].append({"text": text, "bbox": (x0, y0, x1, y1)})
+                row["center_y"] = (row["center_y"] + center_y) / 2
+                placed = True
+                break
+        if not placed:
+            rows.append({"center_y": center_y, "words": [{"text": text, "bbox": (x0, y0, x1, y1)}]})
+
+    normalized_rows = []
+    for row in rows:
+        row_words = sorted(row["words"], key=lambda item: item["bbox"][0])
+        if row_words:
+            normalized_rows.append(row_words)
+    return normalized_rows
+
+
+def _split_pdf_row_into_cells(row_words):
+    if not row_words:
+        return []
+
+    gaps = []
+    for left, right in zip(row_words, row_words[1:]):
+        gaps.append(max(0.0, right["bbox"][0] - left["bbox"][2]))
+    positive_gaps = [gap for gap in gaps if gap > 0]
+    if not positive_gaps:
+        return [{"text": " ".join(word["text"] for word in row_words), "bbox": _merge_bboxes([w["bbox"] for w in row_words])}]
+
+    median_gap = sorted(positive_gaps)[len(positive_gaps) // 2]
+    split_gap = max(10.0, median_gap * 2.4)
+    cells = []
+    current = [row_words[0]]
+    for gap, word in zip(gaps, row_words[1:]):
+        if gap >= split_gap:
+            cells.append(_build_cell_from_words(current))
+            current = [word]
+        else:
+            current.append(word)
+    cells.append(_build_cell_from_words(current))
+    return [cell for cell in cells if cell["text"]]
+
+
+def _build_cell_from_words(words):
+    return {
+        "text": _normalize_table_cell(" ".join(word["text"] for word in words)),
+        "bbox": _merge_bboxes([word["bbox"] for word in words]),
+    }
+
+
+def _row_columns_are_compatible(left_cells, right_cells):
+    if abs(len(left_cells) - len(right_cells)) > 1:
+        return False
+    pairs = zip(left_cells, right_cells)
+    aligned = sum(1 for left, right in pairs if abs(left["bbox"][0] - right["bbox"][0]) <= 28)
+    return aligned >= min(len(left_cells), len(right_cells), 2)
+
+
+def _looks_like_table_group(rows):
+    if len(rows) < 2:
+        return False
+    column_rich_rows = [row for row in rows if len(row["cells"]) >= 3]
+    if len(column_rich_rows) < 2:
+        return False
+    numeric_rows = [row for row in rows if row["numeric_density"] >= 0.12]
+    repeated_column_count = len({len(row["cells"]) for row in rows}) <= 2
+    return repeated_column_count and (len(numeric_rows) >= 1 or len(rows) >= 3)
+
+
+def _estimate_inferred_table_confidence(rows):
+    if not rows:
+        return 0.0
+    numeric_share = sum(1 for row in rows if row["numeric_density"] >= 0.12) / len(rows)
+    row_bonus = min(0.25, max(0, len(rows) - 2) * 0.05)
+    return round(min(0.95, 0.55 + numeric_share * 0.25 + row_bonus), 2)
+
+
+def _numeric_density(text):
+    stripped = re.sub(r"\s+", "", text or "")
+    if not stripped:
+        return 0.0
+    numeric_chars = sum(1 for char in stripped if char.isdigit() or char in ".%+-")
+    return numeric_chars / len(stripped)
+
+
+def _merge_bboxes(bboxes):
+    boxes = [bbox for bbox in bboxes if bbox and len(bbox) == 4]
+    if not boxes:
+        return (0.0, 0.0, 0.0, 0.0)
+    return (
+        min(float(bbox[0]) for bbox in boxes),
+        min(float(bbox[1]) for bbox in boxes),
+        max(float(bbox[2]) for bbox in boxes),
+        max(float(bbox[3]) for bbox in boxes),
+    )
+
+
+def _intersects_any_bbox(block_bbox, table_bboxes):
+    return any(_bbox_intersection_ratio(block_bbox, table_bbox) > 0.5 for table_bbox in table_bboxes or [])
+
+
+def _bbox_intersection_ratio(a, b):
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    ix0, iy0 = max(ax0, bx0), max(ay0, by0)
+    ix1, iy1 = min(ax1, bx1), min(ay1, by1)
+    if ix1 <= ix0 or iy1 <= iy0:
+        return 0.0
+    intersection = (ix1 - ix0) * (iy1 - iy0)
+    area = max((ax1 - ax0) * (ay1 - ay0), 1.0)
+    return intersection / area
+
+
+def _docx_paragraph_is_inside_table(paragraph_element):
+    current = paragraph_element
+    while current is not None:
+        if str(getattr(current, "tag", "")).endswith("}tbl"):
+            return True
+        current = current.getparent()
+    return False
 
 
 def split_text_into_segments(text_content, max_segment_length=1500, overlap_length=100, fallback_segment_length=40000):

@@ -83,6 +83,7 @@ def run_paper_detection_task(task_id, api_key=None):
 
 def _run_single_paper_detection_item(*, detection_task, file_management, file_path, api_key=None):
     processed_document = preprocess_document(file_path)
+    extracted_tables = processed_document.get("tables") or []
     override_text = _get_text_override(detection_task)
     if override_text:
         sanitized_text = sanitize_text_content(override_text)
@@ -99,6 +100,7 @@ def _run_single_paper_detection_item(*, detection_task, file_management, file_pa
             "sections": sections,
             "references": extract_document_references(sanitized_text),
             "segments": split_text_into_segments(core_text),
+            "tables": extracted_tables,
         }
     else:
         # 对齐未修改覆盖文本时的 paragraph_count，确保它只包含发送给 AI 检测的段落
@@ -127,6 +129,7 @@ def _run_single_paper_detection_item(*, detection_task, file_management, file_pa
     )
     data_authenticity_results = evaluate_data_authenticity(
         paragraph_results,
+        tables=processed_document.get("tables") or [],
         api_key=api_key,
         llm_model_name=detection_task.llm_model_name,
     )
@@ -147,12 +150,14 @@ def _run_single_paper_detection_item(*, detection_task, file_management, file_pa
             "paragraph_count": len(processed_document["paragraphs"]),
             "segment_count": len(processed_document["segments"]),
             "reference_count": len(processed_document["references"]),
+            "table_count": len(processed_document.get("tables") or []),
             "image_detection_enabled": _paper_image_detection_enabled(detection_task),
         },
         "paragraph_results": paragraph_results,
         "confirmed_ai_paragraphs": confirmed_ai_paragraphs,
         "suspicious_paragraphs": explanations,
         "reference_results": reference_results,
+        "table_results": data_authenticity_results.get("table_results", []),
         "data_authenticity_results": data_authenticity_results,
         "overall_evaluation": overall_evaluation,
         "image_results": image_results,
