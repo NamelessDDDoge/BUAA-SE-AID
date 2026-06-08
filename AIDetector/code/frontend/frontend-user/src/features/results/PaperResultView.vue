@@ -252,12 +252,7 @@ const tableResults = computed(() => props.task?.results?.table_results || dataAu
 const documentTableCount = computed(() => Number(props.task?.results?.document?.table_count || tableResults.value.length || 0))
 const dataSummaryKeyPoints = computed(() => dataAuthenticityResults.value?.summary_key_points || [])
 
-const showDataAuthenticity = computed(() => {
-  return Boolean(dataAuthenticityResults.value)
-    || dataFindings.value.length > 0
-    || tableResults.value.length > 0
-    || documentTableCount.value > 0
-})
+const showDataAuthenticity = computed(() => dataAuthenticityResults.value?.enabled === true)
 
 const dataAuthenticitySummary = computed(() => {
   const summary = String(dataAuthenticityResults.value?.summary || '').trim()

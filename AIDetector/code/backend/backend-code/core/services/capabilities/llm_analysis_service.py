@@ -27,7 +27,7 @@ def build_overall_paper_evaluation(
     paragraph_results,
     confirmed_ai_paragraphs,
     reference_results,
-    data_authenticity_results,
+    data_authenticity_results=None,
     api_key=None,
     llm_model_name=None,
 ):
@@ -39,7 +39,13 @@ def build_overall_paper_evaluation(
         for item in (reference_results or [])
         if item.get("authenticity_label") in {"high_risk", "missing"}
     )
-    data_findings = (data_authenticity_results or {}).get("findings") or []
+    data_authenticity_enabled = (
+        isinstance(data_authenticity_results, dict)
+        and data_authenticity_results.get("enabled") is True
+    )
+    data_findings = []
+    if data_authenticity_enabled:
+        data_findings = data_authenticity_results.get("findings") or []
     data_high_risk_count = sum(1 for item in data_findings if item.get("risk_level") == "high")
 
     risk_score = 0
@@ -64,8 +70,9 @@ def build_overall_paper_evaluation(
         "suspicious_paragraphs": suspicious_count,
         "confirmed_ai_paragraphs": confirmed_count,
         "high_risk_references": reference_high_risk_count,
-        "high_risk_data_findings": data_high_risk_count,
     }
+    if data_authenticity_enabled:
+        evidence["high_risk_data_findings"] = data_high_risk_count
 
     llm_summary = summarize_paper_overall(
         evidence=evidence,
@@ -99,7 +106,7 @@ def _risk_level_from_score(risk_score):
     return "low"
 
 
-def _minimum_risk_level_from_evidence(*, confirmed_count, reference_high_risk_count, data_high_risk_count):
+def _minimum_risk_level_from_evidence(*, confirmed_count, reference_high_risk_count, data_high_risk_count=0):
     if confirmed_count >= 3 or data_high_risk_count >= 2:
         return "high"
     if confirmed_count >= 2 and reference_high_risk_count >= 1:
@@ -130,7 +137,7 @@ def _max_risk_level(*levels):
     return max((_normalize_risk_level(level) for level in levels), key=_risk_rank)
 
 
-def _rule_based_conclusion(level, confirmed_count, reference_high_risk_count, data_high_risk_count):
+def _rule_based_conclusion(level, confirmed_count, reference_high_risk_count, data_high_risk_count=0):
     if level == "high":
         return (
             "论文存在高风险证据，建议优先人工复核确认 AI 段落、核验高风险引用，"

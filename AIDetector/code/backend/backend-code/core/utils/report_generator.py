@@ -819,9 +819,13 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
     suspicious_paragraphs = results.get("suspicious_paragraphs", [])
     reference_results = results.get("reference_results", [])
     data_authenticity_results = results.get("data_authenticity_results", {})
-    data_findings = data_authenticity_results.get("findings", []) if isinstance(data_authenticity_results, dict) else []
+    data_authenticity_enabled = (
+        isinstance(data_authenticity_results, dict)
+        and data_authenticity_results.get("enabled") is True
+    )
+    data_findings = data_authenticity_results.get("findings", []) if data_authenticity_enabled else []
     table_results = results.get("table_results", [])
-    if not table_results and isinstance(data_authenticity_results, dict):
+    if not table_results and data_authenticity_enabled:
         table_results = data_authenticity_results.get("table_results", [])
     overall_evaluation = results.get("overall_evaluation", {})
     image_results = results.get("image_results", [])
@@ -964,72 +968,73 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
         theme=theme,
     )
 
-    y = _draw_report_section_title(c, y, title="论文数据真实性分析", height=height, margin=margin, theme=theme, subtitle="表格与数据声明风险检查")
-    y = _draw_report_items(
-        c,
-        y,
-        [
-            {
-                "summary": data_authenticity_results.get("summary") if isinstance(data_authenticity_results, dict) else "-",
-                "summary_source": data_authenticity_results.get("summary_source") if isinstance(data_authenticity_results, dict) else "-",
-                "summary_risk_level": data_authenticity_results.get("summary_risk_level") if isinstance(data_authenticity_results, dict) else "-",
-                "summary_key_points": data_authenticity_results.get("summary_key_points") if isinstance(data_authenticity_results, dict) else [],
-                "table_count": document.get("table_count"),
-                "finding_count": len(data_findings or []),
-                "analyzed_table_count": len(table_results or []),
-            }
-        ],
-        height=height,
-        margin=margin,
-        theme=theme,
-        max_lines_overrides={"summary": 6},
-    )
-    if data_findings:
+    if data_authenticity_enabled:
+        y = _draw_report_section_title(c, y, title="论文数据真实性分析", height=height, margin=margin, theme=theme, subtitle="表格与数据声明风险检查")
         y = _draw_report_items(
             c,
             y,
             [
                 {
-                    "source_type": item.get("source_type"),
-                    "paragraph_index": item.get("paragraph_index"),
-                    "table_index": item.get("table_index"),
-                    "risk_level": item.get("risk_level"),
-                    "reason": item.get("reason"),
-                    "claim_text": item.get("claim_text"),
-                    "evidence": item.get("evidence"),
+                    "summary": data_authenticity_results.get("summary"),
+                    "summary_source": data_authenticity_results.get("summary_source"),
+                    "summary_risk_level": data_authenticity_results.get("summary_risk_level"),
+                    "summary_key_points": data_authenticity_results.get("summary_key_points"),
+                    "table_count": document.get("table_count"),
+                    "finding_count": len(data_findings or []),
+                    "analyzed_table_count": len(table_results or []),
                 }
-                for item in data_findings
             ],
             height=height,
             margin=margin,
             theme=theme,
-            max_lines_overrides={"claim_text": 5, "evidence": 5, "reason": 4},
+            max_lines_overrides={"summary": 6},
         )
-    if table_results:
-        y = _draw_report_items(
-            c,
-            y,
-            [
-                {
-                    "table_index": item.get("table_index"),
-                    "page_number": item.get("page_number"),
-                    "source": item.get("source"),
-                    "row_count": item.get("row_count"),
-                    "column_count": item.get("column_count"),
-                    "headers": item.get("headers"),
-                    "rows_preview": item.get("rows_preview"),
-                    "risk_level": item.get("risk_level"),
-                    "reason": item.get("reason"),
-                    "evidence_summary": item.get("evidence_summary"),
-                    "suspicious_cells": item.get("suspicious_cells"),
-                }
-                for item in table_results
-            ],
-            height=height,
-            margin=margin,
-            theme=theme,
-            max_lines_overrides={"reason": 4, "headers": 4, "rows_preview": 6, "evidence_summary": 4, "suspicious_cells": 4},
-        )
+        if data_findings:
+            y = _draw_report_items(
+                c,
+                y,
+                [
+                    {
+                        "source_type": item.get("source_type"),
+                        "paragraph_index": item.get("paragraph_index"),
+                        "table_index": item.get("table_index"),
+                        "risk_level": item.get("risk_level"),
+                        "reason": item.get("reason"),
+                        "claim_text": item.get("claim_text"),
+                        "evidence": item.get("evidence"),
+                    }
+                    for item in data_findings
+                ],
+                height=height,
+                margin=margin,
+                theme=theme,
+                max_lines_overrides={"claim_text": 5, "evidence": 5, "reason": 4},
+            )
+        if table_results:
+            y = _draw_report_items(
+                c,
+                y,
+                [
+                    {
+                        "table_index": item.get("table_index"),
+                        "page_number": item.get("page_number"),
+                        "source": item.get("source"),
+                        "row_count": item.get("row_count"),
+                        "column_count": item.get("column_count"),
+                        "headers": item.get("headers"),
+                        "rows_preview": item.get("rows_preview"),
+                        "risk_level": item.get("risk_level"),
+                        "reason": item.get("reason"),
+                        "evidence_summary": item.get("evidence_summary"),
+                        "suspicious_cells": item.get("suspicious_cells"),
+                    }
+                    for item in table_results
+                ],
+                height=height,
+                margin=margin,
+                theme=theme,
+                max_lines_overrides={"reason": 4, "headers": 4, "rows_preview": 6, "evidence_summary": 4, "suspicious_cells": 4},
+            )
 
     y = _draw_report_section_title(c, y, title="整篇论文综合评价", height=height, margin=margin, theme=theme, subtitle="综合风险与证据摘要")
     y = _draw_report_items(

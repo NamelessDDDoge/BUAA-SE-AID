@@ -26,37 +26,28 @@ def test_risk_level_from_score_boundaries(score, expected):
 
 def test_evidence_high_when_three_confirmed_ai():
     assert svc._minimum_risk_level_from_evidence(
-        confirmed_count=3, reference_high_risk_count=0, data_high_risk_count=0,
-    ) == "high"
-
-
-def test_evidence_high_when_two_high_data_findings():
-    assert svc._minimum_risk_level_from_evidence(
-        confirmed_count=0, reference_high_risk_count=0, data_high_risk_count=2,
+        confirmed_count=3, reference_high_risk_count=0,
     ) == "high"
 
 
 def test_evidence_high_when_two_confirmed_plus_high_ref():
     assert svc._minimum_risk_level_from_evidence(
-        confirmed_count=2, reference_high_risk_count=1, data_high_risk_count=0,
+        confirmed_count=2, reference_high_risk_count=1,
     ) == "high"
 
 
 def test_evidence_medium_when_only_one_signal():
     assert svc._minimum_risk_level_from_evidence(
-        confirmed_count=1, reference_high_risk_count=0, data_high_risk_count=0,
+        confirmed_count=1, reference_high_risk_count=0,
     ) == "medium"
     assert svc._minimum_risk_level_from_evidence(
-        confirmed_count=0, reference_high_risk_count=1, data_high_risk_count=0,
-    ) == "medium"
-    assert svc._minimum_risk_level_from_evidence(
-        confirmed_count=0, reference_high_risk_count=0, data_high_risk_count=1,
+        confirmed_count=0, reference_high_risk_count=1,
     ) == "medium"
 
 
 def test_evidence_low_when_no_signal():
     assert svc._minimum_risk_level_from_evidence(
-        confirmed_count=0, reference_high_risk_count=0, data_high_risk_count=0,
+        confirmed_count=0, reference_high_risk_count=0,
     ) == "low"
 
 
@@ -103,22 +94,22 @@ def test_max_risk_level_picks_highest():
 # ---------- _rule_based_conclusion ----------
 
 def test_rule_based_conclusion_high():
-    msg = svc._rule_based_conclusion("high", 0, 0, 0)
+    msg = svc._rule_based_conclusion("high", 0, 0)
     assert "高风险" in msg
 
 
 def test_rule_based_conclusion_medium_with_evidence():
-    msg = svc._rule_based_conclusion("medium", confirmed_count=1, reference_high_risk_count=0, data_high_risk_count=0)
+    msg = svc._rule_based_conclusion("medium", confirmed_count=1, reference_high_risk_count=0)
     assert "明确风险证据" in msg
 
 
 def test_rule_based_conclusion_medium_without_evidence():
-    msg = svc._rule_based_conclusion("medium", 0, 0, 0)
+    msg = svc._rule_based_conclusion("medium", 0, 0)
     assert "中等风险" in msg
 
 
 def test_rule_based_conclusion_low():
-    msg = svc._rule_based_conclusion("low", 0, 0, 0)
+    msg = svc._rule_based_conclusion("low", 0, 0)
     assert "整体风险较低" in msg
 
 
@@ -157,11 +148,40 @@ def test_overall_evaluation_low_risk_path(mock_summary):
         paragraph_results=[{"label": "clean"}] * 10,
         confirmed_ai_paragraphs=[],
         reference_results=[],
-        data_authenticity_results={"findings": []},
+        data_authenticity_results={"enabled": False, "findings": []},
     )
     assert out["risk_level"] == "low"
     assert out["summary"] == "low risk"
     assert out["summary_source"] == "llm_prompt"
+
+
+@patch("core.services.capabilities.llm_analysis_service.summarize_paper_overall")
+def test_overall_evaluation_uses_data_risk_only_when_enabled(mock_summary):
+    mock_summary.return_value = {"risk_level": "low", "summary": "low", "key_concerns": [], "suggestions": []}
+
+    disabled = svc.build_overall_paper_evaluation(
+        paragraph_results=[{"label": "clean"}] * 10,
+        confirmed_ai_paragraphs=[],
+        reference_results=[],
+        data_authenticity_results={
+            "enabled": False,
+            "findings": [{"risk_level": "high"}],
+        },
+    )
+    enabled = svc.build_overall_paper_evaluation(
+        paragraph_results=[{"label": "clean"}] * 10,
+        confirmed_ai_paragraphs=[],
+        reference_results=[],
+        data_authenticity_results={
+            "enabled": True,
+            "findings": [{"risk_level": "high"}],
+        },
+    )
+
+    assert "high_risk_data_findings" not in disabled["evidence"]
+    assert disabled["risk_level"] == "low"
+    assert enabled["evidence"]["high_risk_data_findings"] == 1
+    assert enabled["risk_level"] == "medium"
 
 
 @patch("core.services.capabilities.llm_analysis_service.summarize_paper_overall")

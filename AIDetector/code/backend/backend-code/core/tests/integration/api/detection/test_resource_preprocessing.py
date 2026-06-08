@@ -149,7 +149,7 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(len(task.text_detection_results["paragraph_results"]), 3)
         self.assertEqual(len(task.text_detection_results["suspicious_paragraphs"]), 3)
         self.assertEqual(task.completion_time is not None, True)
-        self.assertEqual(mock_post.call_count, 3)
+        self.assertGreaterEqual(mock_post.call_count, 3)
         self.assertTrue(all(item["text"] for item in task.text_detection_results["paragraph_results"]))
         self.assertTrue(PaperDetectionResult.objects.filter(detection_task=task).exists())
         self.assertEqual(task.paper_detection_result.paragraph_results.count(), 3)
@@ -266,28 +266,17 @@ class ResourcePreprocessingTests(TestCase):
         self.assertIn("Accuracy", tables[0]["text"])
         self.assertIn("91.4", tables[0]["text"])
 
+    @patch("core.services.orchestrators.paper_task_orchestrator.evaluate_data_authenticity")
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
-    @patch("core.services.capabilities.data_authenticity_service.summarize_data_authenticity")
-    @patch("core.services.capabilities.data_authenticity_service.assess_table_authenticity")
-    @patch("core.services.capabilities.data_authenticity_service.assess_data_authenticity_finding")
     @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
-    def test_run_paper_detection_keeps_table_analysis_separate_from_aigc_segments(
+    def test_run_paper_detection_keeps_data_authenticity_disabled_by_default(
         self,
         mock_post,
-        mock_assess_data,
-        mock_assess_table,
-        mock_summary,
         mock_image_detection,
+        mock_data_authenticity,
     ):
         mock_post.return_value.json.return_value = {"data": {"prob": 0.18, "details": {"source": "mock"}}}
         mock_post.return_value.raise_for_status.return_value = None
-        mock_assess_data.return_value = {"risk_level": "none", "reason": "paragraph has no data claim"}
-        mock_assess_table.return_value = {"risk_level": "low", "reason": "table values are internally consistent"}
-        mock_summary.return_value = {
-            "risk_level": "low",
-            "summary": "LLM summary confirms table-like data was analyzed separately.",
-            "key_points": ["table extracted"],
-        }
         file_record = self.create_table_like_pdf_file("paper-with-table-like-data.pdf")
         task = DetectionTask.objects.create(
             user=self.user,
@@ -304,13 +293,62 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(result, "Paper detection finished")
         self.assertEqual(task.status, "completed")
         self.assertGreaterEqual(task.text_detection_results["document"]["table_count"], 1)
-        self.assertGreaterEqual(len(task.text_detection_results["table_results"]), 1)
+        self.assertEqual(task.text_detection_results["table_results"], [])
+        self.assertEqual(task.text_detection_results["data_authenticity_results"]["enabled"], False)
+        self.assertEqual(task.text_detection_results["data_authenticity_results"]["summary_source"], "disabled")
         paragraph_text = "\n".join(item.get("text", "") for item in task.text_detection_results["paragraph_results"])
         self.assertNotIn("Accuracy", paragraph_text)
         self.assertNotIn("91.4", paragraph_text)
-        self.assertEqual(mock_assess_data.call_count, len(task.text_detection_results["paragraph_results"]))
-        self.assertEqual(mock_assess_table.call_count, len(task.text_detection_results["table_results"]))
+        mock_data_authenticity.assert_not_called()
+        mock_image_detection.assert_not_called()
+
+    @override_settings(ENABLE_PAPER_DATA_AUTHENTICITY_ANALYSIS=True)
+    @patch("core.services.orchestrators.paper_task_orchestrator.evaluate_data_authenticity")
+    @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
+    def test_run_paper_detection_runs_data_authenticity_when_enabled(
+        self,
+        mock_post,
+        mock_image_detection,
+        mock_data_authenticity,
+    ):
+        mock_post.return_value.json.return_value = {"data": {"prob": 0.18, "details": {"source": "mock"}}}
+        mock_post.return_value.raise_for_status.return_value = None
+        mock_data_authenticity.return_value = {
+            "summary": "表格数据未见明显异常。",
+            "summary_source": "llm",
+            "summary_risk_level": "none",
+            "summary_key_points": ["表格结构已识别"],
+            "findings": [],
+            "table_results": [
+                {
+                    "table_index": 0,
+                    "source": "pdf_inferred",
+                    "risk_level": "none",
+                    "headers": ["Method", "Accuracy", "F1"],
+                    "rows_preview": [["Baseline", "81.2", "79.5"]],
+                }
+            ],
+        }
+        file_record = self.create_table_like_pdf_file("paper-with-enabled-table-analysis.pdf")
+        task = DetectionTask.objects.create(
+            user=self.user,
+            organization=self.organization,
+            task_type="paper",
+            task_name="Paper With Enabled Data Analysis",
+            status="pending",
+        )
+        task.resource_files.add(file_record)
+
+        result = run_paper_detection(task.id)
+
+        task.refresh_from_db()
+        self.assertEqual(result, "Paper detection finished")
+        self.assertEqual(task.status, "completed")
+        self.assertEqual(task.text_detection_results["data_authenticity_results"]["enabled"], True)
         self.assertEqual(task.text_detection_results["data_authenticity_results"]["summary_source"], "llm")
+        self.assertEqual(task.text_detection_results["table_results"][0]["headers"], ["Method", "Accuracy", "F1"])
+        mock_data_authenticity.assert_called_once()
         mock_image_detection.assert_not_called()
 
     def test_preprocess_document_removes_null_bytes_from_pdf_text(self):

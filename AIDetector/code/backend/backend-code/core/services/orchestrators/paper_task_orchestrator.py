@@ -135,7 +135,7 @@ def _run_single_paper_detection_item(*, detection_task, file_management, file_pa
         api_key=api_key,
         llm_model_name=detection_task.llm_model_name,
     )
-    data_authenticity_results = evaluate_data_authenticity(
+    data_authenticity_results = _run_data_authenticity_analysis(
         paragraph_results,
         tables=processed_document.get("tables") or [],
         api_key=api_key,
@@ -235,6 +235,47 @@ def _paper_image_detection_enabled(detection_task):
             for method_name in IMAGE_METHOD_KEYS
         )
     return True
+
+
+def _paper_data_authenticity_enabled():
+    return bool(getattr(settings, "ENABLE_PAPER_DATA_AUTHENTICITY_ANALYSIS", False))
+
+
+def _run_data_authenticity_analysis(paragraph_results, *, tables=None, api_key=None, llm_model_name=None):
+    if not _paper_data_authenticity_enabled():
+        return {
+            "enabled": False,
+            "summary": "论文数据真实性分析已关闭。",
+            "summary_source": "disabled",
+            "summary_risk_level": "none",
+            "summary_key_points": [],
+            "findings": [],
+            "table_results": [],
+        }
+
+    results = evaluate_data_authenticity(
+        paragraph_results,
+        tables=tables or [],
+        api_key=api_key,
+        llm_model_name=llm_model_name,
+    )
+    if not isinstance(results, dict):
+        results = {
+            "summary": "论文数据真实性分析未返回有效结果。",
+            "findings": [],
+            "table_results": [],
+        }
+    return {
+        "enabled": True,
+        "summary": results.get("summary") or "暂无数据真实性分析摘要。",
+        "summary_source": results.get("summary_source") or "rule_based",
+        "summary_risk_level": results.get("summary_risk_level") or "none",
+        "summary_key_points": results.get("summary_key_points") or [],
+        "findings": results.get("findings") or [],
+        "table_results": results.get("table_results") or [],
+        "llm_error": results.get("llm_error"),
+        "summary_error": results.get("summary_error"),
+    }
 
 
 def _mark_task_failed(detection_task, message):

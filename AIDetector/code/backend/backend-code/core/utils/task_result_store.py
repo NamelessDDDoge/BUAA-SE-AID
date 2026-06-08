@@ -228,7 +228,7 @@ def get_paper_task_results_payload(task):
             "suspicious_paragraphs": suspicious_paragraphs,
             "reference_results": reference_results,
             "table_results": raw_payload.get("table_results") or [],
-            "data_authenticity_results": raw_payload.get("data_authenticity_results") or {"summary": "-", "findings": []},
+            "data_authenticity_results": raw_payload.get("data_authenticity_results"),
             "overall_evaluation": raw_payload.get("overall_evaluation") or {},
             "image_results": image_results,
             "items": raw_payload.get("items") or [],
