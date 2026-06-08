@@ -1,6 +1,10 @@
 from .llm import detect_text_segment
 
 
+class DetectionBillingUnavailableError(RuntimeError):
+    """Raised when AIGC detection billing/quota is unavailable."""
+
+
 def analyze_text_segments(segments, *, api_key=None, suspicious_threshold=0.5):
     results = []
     for index, segment in enumerate(segments):
@@ -42,6 +46,10 @@ def _detect_segment_probability(segment, *, api_key=None):
         probability = float(payload.get("prob", 0) or 0)
         details = payload.get("details", {})
     except Exception as exc:
+        if _is_billing_unavailable_error(str(exc)):
+            raise DetectionBillingUnavailableError(
+                "AIGC 检测服务额度/计费不可用，请检查 FastDetect API Key 的余额、额度或计费状态。"
+            ) from exc
         probability = 0.0
         details = {"error": str(exc)}
     return probability, details
@@ -83,7 +91,7 @@ def _is_detection_error(details):
 
 def _build_service_error_reason(error_text):
     normalized = (error_text or "").lower()
-    if "402" in normalized or "payment required" in normalized:
+    if _is_billing_unavailable_error(normalized):
         return "AIGC 检测服务返回 402（额度/计费不可用），本段无法完成概率检测。"
     if "401" in normalized or "unauthorized" in normalized:
         return "AIGC 检测服务鉴权失败（401），请检查 API Key。"
@@ -92,3 +100,8 @@ def _build_service_error_reason(error_text):
     if "timeout" in normalized:
         return "AIGC 检测服务请求超时，本段结果不可用。"
     return f"检测服务异常，本段结果不可用：{error_text}"
+
+
+def _is_billing_unavailable_error(error_text):
+    normalized = (error_text or "").lower()
+    return "402" in normalized or "payment required" in normalized

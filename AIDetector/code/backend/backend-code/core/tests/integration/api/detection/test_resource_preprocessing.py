@@ -219,6 +219,32 @@ class ResourcePreprocessingTests(TestCase):
         self.assertEqual(task.text_detection_results["document"]["file_name"], "paper-a.txt")
         mock_image_detection.assert_not_called()
 
+    @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
+    @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
+    def test_run_paper_detection_stops_on_fastdetect_402_billing_error(self, mock_post, mock_image_detection):
+        mock_post.side_effect = RuntimeError("server 402 payment required")
+        file_record = self.create_text_file(
+            "paper-billing.txt",
+            "First paragraph should trigger billing failure.\n\nSecond paragraph should not be called.",
+        )
+        task = DetectionTask.objects.create(
+            user=self.user,
+            organization=self.organization,
+            task_type="paper",
+            task_name="Paper Billing Failure",
+            status="pending",
+        )
+        task.resource_files.add(file_record)
+
+        result = run_paper_detection(task.id)
+
+        task.refresh_from_db()
+        self.assertIn("额度/计费不可用", result)
+        self.assertEqual(task.status, "failed")
+        self.assertIn("额度/计费不可用", task.error_message)
+        self.assertEqual(mock_post.call_count, 1)
+        mock_image_detection.assert_not_called()
+
     def test_preprocess_document_extracts_text_from_pdf_when_pymupdf_is_available(self):
         file_record = self.create_pdf_file("paper.pdf", "PDF parsing should work for task creation and execution.")
         file_path = self.temp_media / file_record.stored_path

@@ -123,9 +123,8 @@ def test_analyze_text_segments_handles_detection_exception(mock_detect):
 @patch("core.services.capabilities.text_detection_service.detect_text_segment")
 def test_analyze_text_segments_handles_402_payment(mock_detect):
     mock_detect.side_effect = RuntimeError("server 402 payment required")
-    out = svc.analyze_text_segments(["x"])
-    assert out[0]["label"] == "unavailable"
-    assert "402" in out[0]["forgery_reason"]
+    with pytest.raises(svc.DetectionBillingUnavailableError):
+        svc.analyze_text_segments(["x"])
 
 
 @patch("core.services.capabilities.text_detection_service.detect_text_segment")

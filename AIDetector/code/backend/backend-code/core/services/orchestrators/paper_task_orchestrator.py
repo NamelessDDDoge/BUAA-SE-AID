@@ -14,7 +14,7 @@ from ..capabilities.llm_analysis_service import (
 )
 from ..capabilities.data_authenticity_service import evaluate_data_authenticity
 from ..capabilities.reference_check_service import evaluate_references
-from ..capabilities.text_detection_service import analyze_text_segments
+from ..capabilities.text_detection_service import DetectionBillingUnavailableError, analyze_text_segments
 from ..resources.document_preprocessor import preprocess_document
 from ..resources.document_preprocessor import (
     extract_document_paragraphs,
@@ -54,14 +54,17 @@ def run_paper_detection_task(task_id, api_key=None):
         if not os.path.exists(file_path):
             return _mark_task_failed(detection_task, "Paper file path does not exist")
 
-        paper_items.append(
-            _run_single_paper_detection_item(
-                detection_task=detection_task,
-                file_management=file_management,
-                file_path=file_path,
-                api_key=api_key,
+        try:
+            paper_items.append(
+                _run_single_paper_detection_item(
+                    detection_task=detection_task,
+                    file_management=file_management,
+                    file_path=file_path,
+                    api_key=api_key,
+                )
             )
-        )
+        except DetectionBillingUnavailableError as exc:
+            return _mark_task_failed(detection_task, str(exc))
 
     primary_item = paper_items[0]
     aggregated_payload = _build_multi_paper_payload(primary_item, paper_items)
