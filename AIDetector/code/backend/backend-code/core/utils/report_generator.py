@@ -136,6 +136,17 @@ REPORT_FIELD_LABELS = {
     "reference_index": "参考编号",
     "exists": "是否存在",
     "is_relevant": "是否相关",
+    "source_type": "证据类型",
+    "table_index": "表格编号",
+    "source": "来源",
+    "risk_level": "风险等级",
+    "claim_text": "数据声明",
+    "table_count": "识别表格数",
+    "finding_count": "可疑点数",
+    "analyzed_table_count": "已分析表格数",
+    "row_count": "行数",
+    "column_count": "列数",
+    "headers": "表头",
     "authenticity_score": "真实性评分",
     "authenticity_label": "真实性等级",
     "authenticity_reason": "真实性说明",
@@ -802,6 +813,10 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
     suspicious_paragraphs = results.get("suspicious_paragraphs", [])
     reference_results = results.get("reference_results", [])
     data_authenticity_results = results.get("data_authenticity_results", {})
+    data_findings = data_authenticity_results.get("findings", []) if isinstance(data_authenticity_results, dict) else []
+    table_results = results.get("table_results", [])
+    if not table_results and isinstance(data_authenticity_results, dict):
+        table_results = data_authenticity_results.get("table_results", [])
     overall_evaluation = results.get("overall_evaluation", {})
     image_results = results.get("image_results", [])
     paper_file = task.resource_files.filter(resource_type="paper").first()
@@ -942,6 +957,66 @@ def generate_paper_detection_task_report(task: DetectionTask) -> str:
         margin=margin,
         theme=theme,
     )
+
+    y = _draw_report_section_title(c, y, title="论文数据真实性分析", height=height, margin=margin, theme=theme, subtitle="表格与数据声明风险检查")
+    y = _draw_report_items(
+        c,
+        y,
+        [
+            {
+                "summary": data_authenticity_results.get("summary") if isinstance(data_authenticity_results, dict) else "-",
+                "table_count": document.get("table_count"),
+                "finding_count": len(data_findings or []),
+                "analyzed_table_count": len(table_results or []),
+            }
+        ],
+        height=height,
+        margin=margin,
+        theme=theme,
+        max_lines_overrides={"summary": 6},
+    )
+    if data_findings:
+        y = _draw_report_items(
+            c,
+            y,
+            [
+                {
+                    "source_type": item.get("source_type"),
+                    "paragraph_index": item.get("paragraph_index"),
+                    "table_index": item.get("table_index"),
+                    "risk_level": item.get("risk_level"),
+                    "reason": item.get("reason"),
+                    "claim_text": item.get("claim_text"),
+                    "evidence": item.get("evidence"),
+                }
+                for item in data_findings
+            ],
+            height=height,
+            margin=margin,
+            theme=theme,
+            max_lines_overrides={"claim_text": 5, "evidence": 5, "reason": 4},
+        )
+    if table_results:
+        y = _draw_report_items(
+            c,
+            y,
+            [
+                {
+                    "table_index": item.get("table_index"),
+                    "page_number": item.get("page_number"),
+                    "source": item.get("source"),
+                    "row_count": item.get("row_count"),
+                    "column_count": item.get("column_count"),
+                    "risk_level": item.get("risk_level"),
+                    "reason": item.get("reason"),
+                }
+                for item in table_results
+            ],
+            height=height,
+            margin=margin,
+            theme=theme,
+            max_lines_overrides={"reason": 4},
+        )
 
     y = _draw_report_section_title(c, y, title="整篇论文综合评价", height=height, margin=margin, theme=theme, subtitle="综合风险与证据摘要")
     y = _draw_report_items(

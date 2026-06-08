@@ -114,6 +114,66 @@
       </v-card-text>
     </v-card>
 
+    <v-card v-if="showDataAuthenticity" elevation="2" rounded="lg">
+      <v-card-title class="d-flex align-center ga-2">
+        <v-icon color="teal">mdi-table-search</v-icon>
+        <span class="text-h6">论文数据真实性分析</span>
+      </v-card-title>
+      <v-card-text>
+        <v-alert :type="dataAuthenticityAlertType" variant="tonal" class="mb-4">
+          <div class="mb-1"><strong>分析摘要：</strong>{{ dataAuthenticitySummary }}</div>
+          <div class="text-caption">
+            已识别表格 {{ documentTableCount }} 个 · 已分析表格 {{ tableResults.length }} 个 · 可疑点 {{ dataFindings.length }} 个
+          </div>
+        </v-alert>
+
+        <div v-if="dataFindings.length" class="mb-4">
+          <div class="text-subtitle-2 mb-2">可疑数据证据</div>
+          <v-list lines="three">
+            <v-list-item v-for="(item, idx) in dataFindings" :key="`data-finding-${idx}`" class="mb-2">
+              <v-list-item-title class="d-flex align-center flex-wrap ga-2">
+                <v-chip size="x-small" :color="dataRiskColor(item.risk_level)">
+                  {{ riskLevelText(item.risk_level) }}
+                </v-chip>
+                <span>{{ findingSourceText(item) }}</span>
+              </v-list-item-title>
+              <v-list-item-subtitle style="white-space: pre-wrap;">
+                {{ item.claim_text || item.evidence || '暂无证据文本' }}
+              </v-list-item-subtitle>
+              <div class="text-caption text-medium-emphasis mt-1">{{ item.reason || '暂无说明' }}</div>
+            </v-list-item>
+          </v-list>
+        </div>
+
+        <div v-if="tableResults.length">
+          <div class="text-subtitle-2 mb-2">表格分析结果</div>
+          <v-list lines="two">
+            <v-list-item v-for="(item, idx) in tableResults" :key="`table-result-${idx}`" class="mb-2">
+              <v-list-item-title class="d-flex align-center flex-wrap ga-2">
+                <span>表格 {{ Number(item.table_index ?? idx) + 1 }}</span>
+                <v-chip size="x-small" :color="dataRiskColor(item.risk_level)">
+                  {{ riskLevelText(item.risk_level) }}
+                </v-chip>
+                <v-chip v-if="item.page_number" size="x-small" color="primary" variant="tonal">
+                  第 {{ item.page_number }} 页
+                </v-chip>
+                <v-chip v-if="item.source" size="x-small" color="grey" variant="tonal">
+                  {{ tableSourceText(item.source) }}
+                </v-chip>
+              </v-list-item-title>
+              <v-list-item-subtitle>
+                {{ tableShapeText(item) }} · {{ item.reason || '暂无说明' }}
+              </v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+        </div>
+
+        <v-alert v-else-if="!dataFindings.length" type="info" variant="tonal" density="compact">
+          暂无可展示的表格级结果；如果摘要显示未能调用 LLM，请检查模型配置或额度状态。
+        </v-alert>
+      </v-card-text>
+    </v-card>
+
   </div>
 </template>
 
@@ -134,6 +194,32 @@ const emit = defineEmits<{
 const overallEvaluation = computed(() => props.task?.results?.overall_evaluation || null)
 const confirmedParagraphs = computed(() => props.task?.results?.confirmed_ai_paragraphs || [])
 const referenceResults = computed(() => props.task?.results?.reference_results || [])
+const dataAuthenticityResults = computed(() => props.task?.results?.data_authenticity_results || null)
+const dataFindings = computed(() => dataAuthenticityResults.value?.findings || [])
+const tableResults = computed(() => props.task?.results?.table_results || dataAuthenticityResults.value?.table_results || [])
+const documentTableCount = computed(() => Number(props.task?.results?.document?.table_count || tableResults.value.length || 0))
+
+const showDataAuthenticity = computed(() => {
+  return Boolean(dataAuthenticityResults.value)
+    || dataFindings.value.length > 0
+    || tableResults.value.length > 0
+    || documentTableCount.value > 0
+})
+
+const dataAuthenticitySummary = computed(() => {
+  const summary = String(dataAuthenticityResults.value?.summary || '').trim()
+  if (summary && summary !== '-') return summary
+  if (documentTableCount.value > 0) return '已识别论文中的表格/数据内容，暂无明确风险摘要。'
+  return '暂无数据真实性分析结果。'
+})
+
+const dataAuthenticityAlertType = computed(() => {
+  const summary = dataAuthenticitySummary.value
+  if (summary.includes('失败') || summary.includes('未能')) return 'warning'
+  if (dataFindings.value.some((item: any) => item.risk_level === 'high')) return 'error'
+  if (dataFindings.value.some((item: any) => item.risk_level === 'medium')) return 'warning'
+  return dataFindings.value.length ? 'info' : 'success'
+})
 
 const overallRiskType = computed(() => {
   const level = String(overallEvaluation.value?.risk_level || '').toLowerCase()
@@ -155,6 +241,45 @@ const referenceLabelColor = (label?: string) => {
   if (label === 'uncertain') return 'warning'
   if (label === 'likely_authentic') return 'success'
   return 'grey'
+}
+
+const dataRiskColor = (level?: string) => {
+  if (level === 'high') return 'error'
+  if (level === 'medium') return 'warning'
+  if (level === 'low') return 'info'
+  if (level === 'none') return 'success'
+  return 'grey'
+}
+
+const riskLevelText = (level?: string) => {
+  if (level === 'high') return '高风险'
+  if (level === 'medium') return '中风险'
+  if (level === 'low') return '低风险'
+  if (level === 'none') return '未见风险'
+  return '未知'
+}
+
+const findingSourceText = (item: any) => {
+  if (item?.source_type === 'table') return `表格 ${Number(item.table_index ?? 0) + 1}`
+  if (item?.source_type === 'paragraph') return `第 ${Number(item.paragraph_index ?? 0) + 1} 段`
+  return '数据证据'
+}
+
+const tableSourceText = (source?: string) => {
+  if (source === 'pdf_native') return 'PDF 原生表格'
+  if (source === 'pdf_inferred') return 'PDF 推断表格'
+  if (source === 'docx') return 'Word 表格'
+  if (source === 'text') return '文本表格'
+  return source || '未知来源'
+}
+
+const tableShapeText = (item: any) => {
+  const rows = Number(item?.row_count || 0)
+  const columns = Number(item?.column_count || 0)
+  if (rows && columns) return `${rows} 行 × ${columns} 列`
+  if (rows) return `${rows} 行`
+  if (columns) return `${columns} 列`
+  return '结构信息不足'
 }
 
 const getExplanation = (index: number) => {
