@@ -78,6 +78,7 @@ urlpatterns = [
     path("tasks/<int:task_id>/fake_results/", list_fake_task_results, name="fake-results"),
     path("tasks/<int:task_id>/normal_results/", list_normal_task_results, name="normal-results"),
     path("detection-task-delete/<int:task_id>/", DetectionTaskDeleteView.as_view(), name="delete-detection-task"),
+    path("detection-task-retry/<int:task_id>/", detection_task_retry, name="retry-detection-task"),
     path("detection-history/clear/", DetectionHistoryClearView.as_view(), name="clear-detection-history"),
 
     # 新增: 人工审查相关的URL

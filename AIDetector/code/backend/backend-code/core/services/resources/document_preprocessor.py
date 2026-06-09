@@ -88,7 +88,13 @@ def extract_document_text(file_path):
                             is_footer = y0 > page_height * 0.92  # 整个文本块位于页面底部 8% 区域
                             # 针对纯数字页码，稍微放宽一点区域到上下 12%
                             is_page_num = raw_text.isdigit() and (y1 < page_height * 0.12 or y0 > page_height * 0.88)
-                            
+                            # 剔除页边行号（窄栏纯数字，如论文左侧的行号标注）
+                            # raw_text 可能为多行（"216\n217"），需逐行判定
+                            if (x1 - x0) < 50:
+                                raw_lines_stripped = [ln.strip() for ln in raw_text.split('\n') if ln.strip()]
+                                if raw_lines_stripped and all(ln.isdigit() for ln in raw_lines_stripped):
+                                    continue
+
                             if is_header or is_footer or is_page_num:
                                 continue
                                 
@@ -685,11 +691,11 @@ def parse_document_sections(text_content):
         p_lower = paragraph.lower().strip()
         # 移除前导的数字和特殊符号，如 "1. " 或 "10 " 或 "IV."
         p_clean = re.sub(r'^[\dIVXLCDMivxlcdm]+[\.\s]*', '', p_lower).strip()
-        
+
         # 匹配标题的严格正则：要求整个段落非常短（通常是标题的特征）
         # 并且完全匹配这些关键字（忽略大小写和前导数字后）
         is_heading = len(p_clean) < 50
-        
+
         if is_heading and p_clean in {"abstract", "摘要"}:
             current_section = "abstract"
             continue
@@ -700,35 +706,142 @@ def parse_document_sections(text_content):
         elif is_heading and p_clean in {"acknowledgements", "acknowledgments", "致谢", "致谢辞"}:
             current_section = "acknowledgements"
             continue
-        elif is_heading and p_clean in {"references", "bibliography", "参考文献", "参考书目"}:
+        elif is_heading and (
+            p_clean in {"references", "bibliography", "reference", "reference list",
+                        "references and notes", "literature cited", "works cited",
+                        "参考文献", "参考书目"}
+            # 宽松匹配："references" 等大写标题在段落中可能被合并了前后缀
+            or p_clean.replace(" ", "").startswith("reference")
+        ):
             current_section = "references"
             continue
-            
+
+        # 如果在参考文献区块内，遇到下一个明显的大标题（全大写、较短），切回 body
+        if current_section == "references" and _looks_like_supplementary_heading(paragraph):
+            current_section = "body"
+            sections[current_section].append(paragraph)
+            continue
+
         sections[current_section].append(paragraph)
         
     return {k: "\n".join(v) for k, v in sections.items()}
 
 
 def extract_document_references(text_content):
+    """从文本中提取参考文献列表。
+
+    策略：
+    1. 通过段落标题（References / 参考文献等）定位参考文献区块
+    2. 将区块内的段落解析为单条参考文献
+    3. 若以上方法失败，用正则扫描全文查找参考文献区域
+
+    Returns:
+        list[str]: 每条参考文献的文本
+    """
     sections = parse_document_sections(text_content)
     if sections["references"].strip():
         raw_refs = [p.strip() for p in sections["references"].split("\n") if p.strip()]
         merged_refs = []
         for ref in raw_refs:
-            # 判断是否像是一个新参考文献的开头，比如 "[1]", "1.", "(1)"
-            if re.match(r'^(\[\d+\]|\(\d+\)|\d+\.)', ref) or not merged_refs:
+            # 判断是否像是一个新参考文献的开头：有编号 或 前一行已经完整
+            if re.match(r'^(\[\d+\]|\(\d+\)|\d+\.)', ref):
+                # 编号开头（[1], 1., (1)）— 新参考文献
+                merged_refs.append(ref)
+            elif not merged_refs:
+                merged_refs.append(ref)
+            elif ref[0].islower():
+                # 小写字母开头 — 很可能是上一行的续行
+                merged_refs[-1] += " " + ref
+            elif ref[0].isupper() and len(ref) > 30 and merged_refs[-1].rstrip().endswith(('.', '】')):
+                # 大写开头、长度>30、上条以句号结尾 — 新参考文献（无编号格式）
                 merged_refs.append(ref)
             else:
+                # 不确定时作为续行（保持保守合并）
                 merged_refs[-1] += " " + ref
+        # 过滤掉明显的非参考文献项
+        merged_refs = [r for r in merged_refs if len(r) > 10 or r[0].isdigit()]
         return merged_refs
 
-    # Fallback heuristic
+    # --- Fallback: 正则扫描全文查找参考文献区域 ---
+    refs = _find_references_by_regex(text_content)
+    if refs:
+        return refs
+
+    # Last resort: heuristic paragraph filter
     paragraphs = extract_document_paragraphs(text_content)
     return [
         paragraph
         for paragraph in paragraphs
         if paragraph.startswith("[") or paragraph[:2].isdigit() or "doi" in paragraph.lower()
     ]
+
+
+def _find_references_by_regex(text_content):
+    """用正则扫描全文，定位 References 标题后的所有参考文献条目。"""
+    # 匹配参考文献标题行（独立行）
+    heading_patterns = [
+        r'^REFERENCES\s*$',
+        r'^References\s*$',
+        r'^references\s*$',
+        r'^References\s+and\s+Notes\s*$',
+        r'^Reference\s+List\s*$',
+        r'^Works\s+Cited\s*$',
+        r'^Literature\s+Cited\s*$',
+        r'^BIBLIOGRAPHY\s*$',
+        r'^Bibliography\s*$',
+        r'^参考文献\s*$',
+        r'^参考书目\s*$',
+    ]
+
+    lines = text_content.split('\n')
+    ref_start = None
+    ref_end = None
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        for pat in heading_patterns:
+            if re.match(pat, stripped):
+                ref_start = i + 1  # 标题之后开始
+                break
+        if ref_start is not None:
+            break
+
+    if ref_start is None:
+        return []
+
+    # 参考文献结束：下一个一级标题(全大写/数字开头) 或 文件末尾
+    for i in range(ref_start, len(lines)):
+        stripped = lines[i].strip()
+        # 检测下一标题：全大写且较短（非文献条目）
+        if i > ref_start and stripped and len(stripped) < 60:
+            if re.match(r'^[A-Z][A-Z\s\-]{2,}$', stripped) and 'et al' not in stripped.lower() and 'pp' not in stripped.lower():
+                # 排除参考文献中常见的大写缩写
+                if not re.match(r'^[A-Z]{2,5}\s+\d', stripped):
+                    ref_end = i
+                    break
+            # 数字编号标题如 "A"、"B"、"C.1"
+            if re.match(r'^[A-Z]\s', stripped) or re.match(r'^[A-Z]\.\d', stripped):
+                ref_end = i
+                break
+
+    if ref_end is None:
+        ref_end = len(lines)
+
+    ref_lines = lines[ref_start:ref_end]
+    # 按空行分组，每组一条参考文献
+    refs = []
+    current = []
+    for line in ref_lines:
+        if line.strip():
+            current.append(line.strip())
+        else:
+            if current:
+                refs.append(" ".join(current))
+                current = []
+    if current:
+        refs.append(" ".join(current))
+
+    return [r for r in refs if len(r) > 10]
 
 
 
@@ -773,6 +886,9 @@ def _should_start_new_paragraph(previous_line, current_line):
         return True
     if _looks_like_heading(current_line):
         return True
+    # 如果上一行本身就是标题（如 REFERENCES），当前行必须另起一段
+    if _looks_like_heading(previous_line):
+        return True
     if _looks_like_list_item(current_line) and not _looks_like_sentence_continuation(previous_line, current_line):
         return True
     if re.search(r'[。！？!?；;:：.]["”’)\]]*$', previous_line) and _looks_like_sentence_start(current_line):
@@ -801,28 +917,17 @@ def _looks_like_heading(line):
         "abstract",
         "introduction",
         "background",
-        "method",
-        "methods",
-        "experiment",
-        "experiments",
+        "method", "methods",
+        "experiment", "experiments",
         "results",
         "discussion",
-        "conclusion",
-        "acknowledgements",
-        "acknowledgments",
-        "references",
-        "bibliography",
-        "摘要",
-        "引言",
-        "导言",
-        "绪论",
-        "方法",
-        "实验",
-        "结果",
-        "结论",
-        "致谢",
-        "参考文献",
-        "参考书目",
+        "conclusion", "conclusions",
+        "acknowledgements", "acknowledgments",
+        "references", "bibliography", "reference",
+        "reference list", "references and notes",
+        "literature cited", "works cited",
+        "摘要", "引言", "导言", "绪论", "方法", "实验", "结果", "结论",
+        "致谢", "参考文献", "参考书目",
     }:
         return True
     if len(stripped) > 60:
@@ -830,6 +935,27 @@ def _looks_like_heading(line):
     if re.search(r'[。！？!?；;:：,，]', stripped):
         return False
     return bool(re.match(r'^[A-Z][A-Z0-9\s\-]{2,}$', stripped))
+
+
+def _looks_like_supplementary_heading(line):
+    """检测参考文献区块之后的下一个标题（附录、补充材料等），用于退出 references section。"""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    lower = stripped.lower()
+    if lower in {"supplementary material", "supplementary materials",
+                  "appendix", "appendices",
+                  "acknowledgements", "acknowledgments",
+                  "acknowledgement", "acknowledgment",
+                  "补充材料", "附录", "致谢"}:
+        return True
+    # 全大写、较短、含字母 → 大概率是章节标题
+    if len(stripped) < 60 and re.match(r'^[A-Z][A-Z\s\-]{2,}$', stripped):
+        return True
+    # 单个大写字母后跟可选的 ".数字"（如 "A", "B", "A.1", "C.1"）
+    if re.match(r'^[A-Z](?:\.\d+)?\s*$', stripped):
+        return True
+    return False
 
 
 def _looks_like_sentence_start(line):

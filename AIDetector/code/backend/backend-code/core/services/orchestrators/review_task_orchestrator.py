@@ -19,6 +19,74 @@ from ..resources.document_preprocessor import (
 )
 from ..resources.text_sanitizer import sanitize_text_content
 
+# ---------------------------------------------------------------------------
+# Progress weight constants (sum = 100)
+# ---------------------------------------------------------------------------
+_STEP_WEIGHTS = {
+    "preprocess": 10,
+    "analysis": 40,
+    "relevance": 20,
+    "merge": 10,
+    "qualification": 10,
+    "save": 10,
+}
+
+_STEP_ORDER = [
+    "preprocess",
+    "analysis",
+    "relevance",
+    "merge",
+    "qualification",
+    "save",
+]
+
+_STEP_LABELS = {
+    "preprocess": "预处理论文与 Review 文档 ...",
+    "analysis": "Review 内容分析 ...",
+    "relevance": "计算内容相关性 ...",
+    "merge": "合并分析结果 ...",
+    "qualification": "生成鉴定结论 ...",
+    "save": "保存检测结果 ...",
+}
+
+
+def _save_progress(detection_task, step_name):
+    completed_idx = _STEP_ORDER.index(step_name)
+    pct = sum(_STEP_WEIGHTS[s] for s in _STEP_ORDER[: completed_idx + 1])
+    pct = min(max(pct, 0), 100)
+    now = timezone.now().isoformat()
+    # 读取已有 checkpoint，保留 step_started_at
+    existing_cp = detection_task.checkpoint_data or {}
+    step_started = existing_cp.get("step_started_at") or {}
+    if step_name not in step_started:
+        step_started[step_name] = now
+    DetectionTask.objects.filter(pk=detection_task.pk).update(
+        progress_percentage=pct,
+        checkpoint_data={
+            "step": step_name,
+            "completed_steps": _STEP_ORDER[: completed_idx + 1],
+            "step_started_at": step_started,
+            "updated_at": now,
+        },
+    )
+    detection_task.refresh_from_db(fields=["progress_percentage", "checkpoint_data"])
+
+
+def _save_checkpoint_partial(detection_task, partial_data):
+    cp = detection_task.checkpoint_data or {}
+    partial = cp.get("partial") or {}
+    partial.update(partial_data)
+    cp["partial"] = partial
+    DetectionTask.objects.filter(pk=detection_task.pk).update(checkpoint_data=cp)
+    detection_task.refresh_from_db(fields=["checkpoint_data"])
+
+
+def _should_skip_step(checkpoint, step_name):
+    if not checkpoint:
+        return False
+    completed = checkpoint.get("completed_steps") or []
+    return step_name in completed
+
 
 def build_resource_review_placeholder(*, user, task_id, reviewers, reason="", selected_file_ids=None):
     selected_file_ids = selected_file_ids or []
@@ -89,11 +157,28 @@ def build_resource_review_placeholder(*, user, task_id, reviewers, reason="", se
     return payload
 
 
-def run_review_detection_task(task_id, api_key=None):
+def run_review_detection_task(task_id, api_key=None, resume=False):
     detection_task = DetectionTask.objects.get(id=task_id)
-    detection_task.status = "in_progress"
-    detection_task.error_message = ""
-    detection_task.save(update_fields=["status", "error_message"])
+
+    if not resume:
+        detection_task.status = "in_progress"
+        detection_task.error_message = ""
+        detection_task.progress_percentage = 0
+        now_iso = timezone.now().isoformat()
+        detection_task.checkpoint_data = {"started_at": now_iso, "updated_at": now_iso, "step_started_at": {}}
+        detection_task.save(
+            update_fields=["status", "error_message", "progress_percentage", "checkpoint_data"]
+        )
+    else:
+        now_iso = timezone.now().isoformat()
+        cp = detection_task.checkpoint_data or {}
+        cp.setdefault("step_started_at", {})
+        cp["resumed_at"] = now_iso
+        cp["updated_at"] = now_iso
+        detection_task.checkpoint_data = cp
+        detection_task.save(update_fields=["checkpoint_data"])
+
+    checkpoint = detection_task.checkpoint_data
 
     review_pairs = _build_review_file_pairs(detection_task)
     if not review_pairs:
@@ -117,94 +202,129 @@ def run_review_detection_task(task_id, api_key=None):
                 paper_path=paper_path,
                 review_path=review_path,
                 api_key=api_key,
+                checkpoint=checkpoint,
             )
         )
 
-    primary_item = review_items[0]
-    aggregated_payload = _build_multi_review_payload(primary_item, review_items)
+    if _should_skip_step(checkpoint, "save"):
+        pass
+    else:
+        primary_item = review_items[0]
+        aggregated_payload = _build_multi_review_payload(primary_item, review_items)
 
-    detection_task.text_detection_results = store_review_task_results(
-        detection_task=detection_task,
-        paper_file=primary_item["paper_file"],
-        review_file=primary_item["review_file"],
-        results_payload=aggregated_payload,
-    )
-    detection_task.status = "completed"
-    detection_task.completion_time = timezone.now()
-    detection_task.error_message = ""
-    detection_task.save(
-        update_fields=["text_detection_results", "status", "completion_time", "error_message"]
-    )
-    generate_task_report(detection_task)
+        detection_task.text_detection_results = store_review_task_results(
+            detection_task=detection_task,
+            paper_file=primary_item["paper_file"],
+            review_file=primary_item["review_file"],
+            results_payload=aggregated_payload,
+        )
+        detection_task.status = "completed"
+        detection_task.completion_time = timezone.now()
+        detection_task.error_message = ""
+        detection_task.progress_percentage = 100
+        detection_task.checkpoint_data = {"step": "save", "completed_steps": _STEP_ORDER}
+        detection_task.save(
+            update_fields=[
+                "text_detection_results", "status", "completion_time",
+                "error_message", "progress_percentage", "checkpoint_data",
+            ]
+        )
+        generate_task_report(detection_task)
     return "Review detection finished"
 
 
-def _run_single_review_detection_item(*, detection_task, paper_file, review_file, paper_path, review_path, api_key=None):
-    paper_document = preprocess_document(paper_path)
-    review_document = preprocess_document(review_path)
-    paper_override_text = _get_text_override(detection_task, "paper_text_override")
-    review_override_text = _get_text_override(detection_task, "review_text_override")
-    legacy_review_override_text = _get_text_override(detection_task, "text_override")
+def _run_single_review_detection_item(*, detection_task, paper_file, review_file, paper_path, review_path, api_key=None, checkpoint=None):
+    # --- Step 1: 预处理论文与 Review 文档 ---------------------------------------
+    if _should_skip_step(checkpoint, "preprocess"):
+        paper_document = (checkpoint.get("partial") or {}).get("paper_document")
+        review_document = (checkpoint.get("partial") or {}).get("review_document")
+        if not paper_document or not review_document:
+            paper_document, review_document = _do_review_preprocess(
+                detection_task, paper_path, review_path,
+            )
+    else:
+        _save_progress(detection_task, "preprocess")
+        paper_document, review_document = _do_review_preprocess(
+            detection_task, paper_path, review_path,
+        )
+        _save_checkpoint_partial(detection_task, {
+            "paper_document": {"segments_count": len(paper_document.get("segments", []))},
+            "review_document": {"segments_count": len(review_document.get("segments", []))},
+        })
 
-    if paper_override_text:
-        paper_document = _build_document_from_text(sanitize_text_content(paper_override_text))
-    if review_override_text:
-        review_document = _build_document_from_text(sanitize_text_content(review_override_text))
-    elif legacy_review_override_text:
-        review_document = _build_document_from_text(sanitize_text_content(legacy_review_override_text))
+    # --- Step 2: Review 分析 -------------------------------------------------
+    if _should_skip_step(checkpoint, "analysis"):
+        analysis_results = (checkpoint.get("partial") or {}).get("analysis_results")
+    else:
+        _save_progress(detection_task, "analysis")
+        analysis_results = evaluate_review_analysis(
+            paper_document=paper_document,
+            review_document=review_document,
+            api_key=api_key,
+            llm_model_name=detection_task.llm_model_name,
+        )
+        _save_checkpoint_partial(detection_task, {"analysis_results": analysis_results})
 
-    analysis_results = evaluate_review_analysis(
-        paper_document=paper_document,
-        review_document=review_document,
-        api_key=api_key,
-        llm_model_name=detection_task.llm_model_name,
-    )
-    local_relevance_results = analyze_review_relevance(
-        review_segments=review_document.get("paragraphs") or [],
-        paper_segments=paper_document.get("paragraphs") or [],
-    )
-    analysis_results["paragraph_results"] = _merge_review_analysis_with_relevance(
-        analysis_results.get("paragraph_results", []),
-        local_relevance_results,
-    )
-    if analysis_results.get("overall", {}).get("qualification_label") != "unavailable":
-        overall = analysis_results.get("overall") or {}
-        analysis_results["overall"] = {
-            **overall,
-            **build_review_qualification(overall, analysis_results.get("paragraph_results", [])),
+    # --- Step 3: 相关性分析 ---------------------------------------------------
+    if _should_skip_step(checkpoint, "relevance"):
+        local_relevance_results = (checkpoint.get("partial") or {}).get("local_relevance_results")
+    else:
+        _save_progress(detection_task, "relevance")
+        local_relevance_results = analyze_review_relevance(
+            review_segments=review_document.get("paragraphs") or [],
+            paper_segments=paper_document.get("paragraphs") or [],
+        )
+        _save_checkpoint_partial(detection_task, {"local_relevance_results": local_relevance_results})
+
+    # --- Step 4: 合并结果 -----------------------------------------------------
+    if _should_skip_step(checkpoint, "merge"):
+        paragraph_results = (checkpoint.get("partial") or {}).get("review_paragraph_results") or []
+        suspicious_paragraphs = (checkpoint.get("partial") or {}).get("review_suspicious_paragraphs") or []
+        analysis_results = (checkpoint.get("partial") or {}).get("analysis_results") or analysis_results
+    else:
+        _save_progress(detection_task, "merge")
+        analysis_results["paragraph_results"] = _merge_review_analysis_with_relevance(
+            analysis_results.get("paragraph_results", []),
+            local_relevance_results,
+        )
+
+        if analysis_results.get("overall", {}).get("qualification_label") != "unavailable":
+            overall = analysis_results.get("overall") or {}
+            analysis_results["overall"] = {
+                **overall,
+                **build_review_qualification(overall, analysis_results.get("paragraph_results", [])),
+            }
+        paragraph_results = []
+        analysis_map = {
+            item.get("review_paragraph_index"): item
+            for item in analysis_results.get("paragraph_results", [])
+            if item.get("review_paragraph_index") is not None
         }
-    paragraph_results = []
-    analysis_map = {
-        item.get("review_paragraph_index"): item
-        for item in analysis_results.get("paragraph_results", [])
-        if item.get("review_paragraph_index") is not None
-    }
-    for index, paragraph in enumerate(review_document.get("paragraphs") or []):
-        analysis_item = analysis_map.get(index, {})
-        template_level = analysis_item.get("template_like_level", "low")
-        wrongness_level = analysis_item.get("wrongness_level", "low")
-        relevance_score = _coerce_optional_float(analysis_item.get("relevance_score"))
-        relevance_level = analysis_item.get("relevance_level", "")
-        if analysis_results.get("overall", {}).get("qualification_label") == "unavailable":
-            probability = 0.0
-            label = "unavailable"
-        else:
-            probability = _build_review_paragraph_risk(
-                template_level=template_level,
-                wrongness_level=wrongness_level,
-                relevance_level=relevance_level,
-                relevance_score=relevance_score,
-            )
-            label = (
-                "suspicious"
-                if template_level == "high"
-                or wrongness_level == "high"
-                or _normalize_relevance_level(relevance_level) == "low"
-                or (relevance_score is not None and relevance_score < 0.45)
-                else "clean"
-            )
-        paragraph_results.append(
-            {
+        for index, paragraph in enumerate(review_document.get("paragraphs") or []):
+            analysis_item = analysis_map.get(index, {})
+            template_level = analysis_item.get("template_like_level", "low")
+            wrongness_level = analysis_item.get("wrongness_level", "low")
+            relevance_score = _coerce_optional_float(analysis_item.get("relevance_score"))
+            relevance_level = analysis_item.get("relevance_level", "")
+            if analysis_results.get("overall", {}).get("qualification_label") == "unavailable":
+                probability = 0.0
+                label = "unavailable"
+            else:
+                probability = _build_review_paragraph_risk(
+                    template_level=template_level,
+                    wrongness_level=wrongness_level,
+                    relevance_level=relevance_level,
+                    relevance_score=relevance_score,
+                )
+                label = (
+                    "suspicious"
+                    if template_level == "high"
+                    or wrongness_level == "high"
+                    or _normalize_relevance_level(relevance_level) == "low"
+                    or (relevance_score is not None and relevance_score < 0.45)
+                    else "clean"
+                )
+            paragraph_results.append({
                 "paragraph_index": index,
                 "text": paragraph,
                 "probability": probability,
@@ -216,18 +336,28 @@ def _run_single_review_detection_item(*, detection_task, paper_file, review_file
                     "relevance_score": relevance_score,
                     "relevance_level": relevance_level,
                 },
-            }
-        )
+            })
 
-    suspicious_paragraphs = [
-        {
-            "paragraph_index": item["paragraph_index"],
-            "probability": item["probability"],
-            "explanation": item.get("details", {}).get("explanation") or item.get("text", ""),
-        }
-        for item in paragraph_results
-        if item.get("label") == "suspicious"
-    ]
+        suspicious_paragraphs = [
+            {
+                "paragraph_index": item["paragraph_index"],
+                "probability": item["probability"],
+                "explanation": item.get("details", {}).get("explanation") or item.get("text", ""),
+            }
+            for item in paragraph_results
+            if item.get("label") == "suspicious"
+        ]
+        _save_checkpoint_partial(detection_task, {
+            "review_paragraph_results": paragraph_results,
+            "review_suspicious_paragraphs": suspicious_paragraphs,
+            "analysis_results": analysis_results,
+        })
+
+    # --- Step 5: 鉴定结论 -----------------------------------------------------
+    if _should_skip_step(checkpoint, "qualification"):
+        pass  # already merged above
+    else:
+        _save_progress(detection_task, "qualification")
 
     return {
         "paper_file": paper_file,
@@ -247,6 +377,22 @@ def _run_single_review_detection_item(*, detection_task, paper_file, review_file
         "review_analysis_results": analysis_results,
         "relevance_results": analysis_results.get("paragraph_results", []),
     }
+
+
+def _do_review_preprocess(detection_task, paper_path, review_path):
+    paper_document = preprocess_document(paper_path)
+    review_document = preprocess_document(review_path)
+    paper_override_text = _get_text_override(detection_task, "paper_text_override")
+    review_override_text = _get_text_override(detection_task, "review_text_override")
+    legacy_review_override_text = _get_text_override(detection_task, "text_override")
+
+    if paper_override_text:
+        paper_document = _build_document_from_text(sanitize_text_content(paper_override_text))
+    if review_override_text:
+        review_document = _build_document_from_text(sanitize_text_content(review_override_text))
+    elif legacy_review_override_text:
+        review_document = _build_document_from_text(sanitize_text_content(legacy_review_override_text))
+    return paper_document, review_document
 
 
 def _mark_review_task_failed(detection_task, message):
@@ -301,7 +447,7 @@ def _build_document_from_text(text_content):
     core_text = sections.get("abstract", "") + "\n\n" + sections.get("body", "")
     if not core_text.strip():
         core_text = text_content
-        
+
     return {
         "text_content": text_content,
         "paragraphs": extract_document_paragraphs(text_content),
@@ -384,28 +530,26 @@ def _merge_review_analysis_with_relevance(analysis_results, relevance_results):
     for review_index in sorted(set(analysis_map.keys()) | set(relevance_map.keys())):
         analysis_item = analysis_map.get(review_index) or {}
         relevance_item = relevance_map.get(review_index) or {}
-        merged_results.append(
-            {
-                **relevance_item,
-                **analysis_item,
-                "review_paragraph_index": review_index,
-                "review_text": analysis_item.get("review_text") or relevance_item.get("review_text"),
-                "paper_paragraph_index": relevance_item.get("paper_paragraph_index"),
-                "paper_text": relevance_item.get("paper_text", ""),
-                "relevance_score": (
-                    analysis_item.get("relevance_score")
-                    if analysis_item.get("relevance_score") is not None
-                    else relevance_item.get("relevance_score")
-                ),
-                "relevance_level": (
-                    analysis_item.get("relevance_level")
-                    or _relevance_level_from_label(relevance_item.get("label"))
-                ),
-                "local_relevance_score": relevance_item.get("relevance_score"),
-                "local_relevance_label": relevance_item.get("label"),
-                "local_relevance_explanation": relevance_item.get("explanation"),
-            }
-        )
+        merged_results.append({
+            **relevance_item,
+            **analysis_item,
+            "review_paragraph_index": review_index,
+            "review_text": analysis_item.get("review_text") or relevance_item.get("review_text"),
+            "paper_paragraph_index": relevance_item.get("paper_paragraph_index"),
+            "paper_text": relevance_item.get("paper_text", ""),
+            "relevance_score": (
+                analysis_item.get("relevance_score")
+                if analysis_item.get("relevance_score") is not None
+                else relevance_item.get("relevance_score")
+            ),
+            "relevance_level": (
+                analysis_item.get("relevance_level")
+                or _relevance_level_from_label(relevance_item.get("label"))
+            ),
+            "local_relevance_score": relevance_item.get("relevance_score"),
+            "local_relevance_label": relevance_item.get("label"),
+            "local_relevance_explanation": relevance_item.get("explanation"),
+        })
     return merged_results
 
 

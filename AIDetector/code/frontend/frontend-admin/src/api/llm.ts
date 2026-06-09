@@ -11,6 +11,11 @@ export interface LLMModel {
   has_api_key?: boolean
   is_active: boolean
   description: string
+  health_status?: 'unknown' | 'available' | 'exhausted' | 'invalid' | 'error'
+  health_detail?: string
+  health_checked_at?: string
+  credit_used?: number | null
+  credit_total?: number | null
   created_at: string
   updated_at: string
 }

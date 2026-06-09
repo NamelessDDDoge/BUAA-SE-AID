@@ -60,6 +60,10 @@ def _fake_image_detection_result() -> MagicMock:
 
 
 @patch(
+    "core.services.orchestrators.paper_task_orchestrator.batch_detect_text_segments",
+    side_effect=lambda segments, **kw: [FAKE_FASTDETECT_HIT for _ in segments],
+)
+@patch(
     "core.services.capabilities.text_detection_service.detect_text_segment",
     return_value=FAKE_FASTDETECT_HIT,
 )
@@ -68,7 +72,7 @@ def _fake_image_detection_result() -> MagicMock:
     side_effect=lambda *a, **kw: run_resource_detection_task_async(*a, **kw),
 )
 @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda f: f())
-def test_paper_and_image_tasks_are_independent(mock_on_commit, mock_starter, mock_detect, tmp_path):
+def test_paper_and_image_tasks_are_independent(mock_on_commit, mock_starter, mock_detect, mock_batch, tmp_path):
     """
     Create a paper task and an image task for the same user.
     Verify:

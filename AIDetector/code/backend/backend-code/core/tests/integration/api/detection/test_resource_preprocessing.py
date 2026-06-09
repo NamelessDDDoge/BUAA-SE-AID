@@ -1,3 +1,4 @@
+import os
 import shutil
 from pathlib import Path
 from unittest.mock import patch
@@ -26,6 +27,7 @@ from core.tasks import run_paper_detection, run_review_detection
 
 
 @override_settings(ENABLE_FANYI=False)
+@patch.dict(os.environ, {"FASTDETECT_API_KEY": "test-key-000"}, clear=False)
 class ResourcePreprocessingTests(TestCase):
     def setUp(self):
         temp_root = Path.home() / ".codex" / "memories" / "buaa-se-aid-resource-preprocess-tests"
@@ -125,6 +127,8 @@ class ResourcePreprocessingTests(TestCase):
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
     @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_paper_detection_splits_text_into_500_char_segments(self, mock_post, mock_image_detection):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"data": {"prob": 0.65, "details": {"source": "mock"}}}
         mock_post.return_value.raise_for_status.return_value = None
         file_record = self.create_text_file(
@@ -158,6 +162,7 @@ class ResourcePreprocessingTests(TestCase):
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
     @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_paper_detection_skips_image_detection_when_extract_images_disabled(self, mock_post, mock_image_detection):
+        mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"data": {"prob": 0.42, "details": {"source": "mock"}}}
         mock_post.return_value.raise_for_status.return_value = None
         file_record = self.create_text_file("paper.pdf", "Paragraph one.\nParagraph two.")
@@ -194,6 +199,7 @@ class ResourcePreprocessingTests(TestCase):
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
     @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_paper_detection_aggregates_multiple_paper_files_into_items(self, mock_post, mock_image_detection):
+        mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"data": {"prob": 0.2, "details": {"source": "mock"}}}
         mock_post.return_value.raise_for_status.return_value = None
         file_record_1 = self.create_text_file("paper-a.txt", "Paper A paragraph.")
@@ -404,6 +410,7 @@ class ResourcePreprocessingTests(TestCase):
     @patch("core.services.orchestrators.paper_task_orchestrator.run_image_detection_task")
     @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_paper_detection_handles_missing_decodable_text(self, mock_post, mock_image_detection):
+        mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"data": {"prob": 0.1, "details": {}}}
         mock_post.return_value.raise_for_status.return_value = None
         uploads_dir = self.temp_media / "uploads"
@@ -447,6 +454,7 @@ class ResourcePreprocessingTests(TestCase):
         mock_assess_reference_authenticity,
         mock_image_detection,
     ):
+        mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"data": {"prob": 0.18, "details": {"source": "mock"}}}
         mock_post.return_value.raise_for_status.return_value = None
         mock_assess_reference_authenticity.return_value = {
@@ -535,6 +543,7 @@ class ResourcePreprocessingTests(TestCase):
 
     @patch("core.services.capabilities.llm.fastdetect_client.requests.post")
     def test_run_review_detection_aggregates_multiple_review_pairs_into_items(self, mock_post):
+        mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {"data": {"prob": 0.34, "details": {"source": "mock"}}}
         mock_post.return_value.raise_for_status.return_value = None
         paper_file_1 = self.create_review_file(

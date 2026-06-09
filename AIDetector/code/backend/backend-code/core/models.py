@@ -316,6 +316,10 @@ class DetectionTask(models.Model):
     method_switches = models.JSONField(null=True, blank=True)  # 子任务开关映射 {"ela": true, "exif": false, ...}，传入后覆盖 Config.py 默认值
     text_detection_results = models.JSONField(null=True, blank=True)  # 用于存储文本检测分段结果
 
+    # 进度与断点续检
+    progress_percentage = models.IntegerField(default=0, help_text="检测进度百分比 0-100")
+    checkpoint_data = models.JSONField(null=True, blank=True, help_text="断点数据，用于失败后恢复检测")
+
     def __str__(self):
         return f"Task {self.id} - {self.user.username}"
 
@@ -738,7 +742,15 @@ class LLMModel(models.Model):
         ('fastdetect', 'FastDetect'),
     )
 
-    model_name = models.CharField(max_length=255, unique=True, help_text="模型实名(如 deepseek-chat)")
+    HEALTH_STATUS_CHOICES = (
+        ('unknown', 'Unknown'),
+        ('available', 'Available'),
+        ('exhausted', 'Exhausted'),
+        ('invalid', 'Invalid'),
+        ('error', 'Error'),
+    )
+
+    model_name = models.CharField(max_length=255, db_index=True, help_text="模型实名(如 deepseek-chat)。允许重复：同一检测器可配多把 key 做 fallback。")
     display_name = models.CharField(max_length=255, help_text="展示给用户看的名称(如 DeepSeek V3)")
     provider = models.CharField(max_length=100, default='openai_compat', help_text="平台供应商标识")
     model_type = models.CharField(
@@ -752,6 +764,17 @@ class LLMModel(models.Model):
     api_key = models.CharField(max_length=500, null=True, blank=True, help_text="API Key")
     is_active = models.BooleanField(default=True, help_text="是否对用户开放可用")
     description = models.TextField(null=True, blank=True, help_text="模型特点描述")
+    # ── 健康状态 ──────────────────────────────────────────────────────────
+    health_status = models.CharField(
+        max_length=20,
+        choices=HEALTH_STATUS_CHOICES,
+        default='unknown',
+        help_text="针对 fastdetect 模型的健康探测状态",
+    )
+    health_detail = models.TextField(null=True, blank=True, help_text="健康探测返回的详情消息")
+    health_checked_at = models.DateTimeField(null=True, blank=True, help_text="上次健康探测时间")
+    credit_used = models.FloatField(null=True, blank=True, help_text="fastdetect 额度已用量")
+    credit_total = models.FloatField(null=True, blank=True, help_text="fastdetect 额度总量")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

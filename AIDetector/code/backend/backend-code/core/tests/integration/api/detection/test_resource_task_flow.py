@@ -1,4 +1,5 @@
-﻿import shutil
+﻿import os
+import shutil
 from pathlib import Path
 from unittest.mock import patch
 
@@ -47,6 +48,8 @@ def fake_detection_payload():
 
 
 class MockFastDetectResponse:
+    status_code = 200
+
     def raise_for_status(self):
         return None
 
@@ -55,6 +58,7 @@ class MockFastDetectResponse:
 
 
 @override_settings(ENABLE_FANYI=False)
+@patch.dict(os.environ, {"FASTDETECT_API_KEY": "test-key-000"}, clear=False)
 class ResourceTaskFlowTests(TestCase):
     def setUp(self):
         temp_root = Path.home() / ".codex" / "memories" / "buaa-se-aid-resource-task-tests"

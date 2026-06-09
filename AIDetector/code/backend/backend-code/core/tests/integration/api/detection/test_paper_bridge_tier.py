@@ -54,6 +54,7 @@ def _write_paper(media_root: str, rel="papers/bridge_test.txt") -> str:
     return rel
 
 
+@patch.dict(os.environ, {"FASTDETECT_API_KEY": "test-key-000"})
 @patch(
     "core.views.views_dectection.start_resource_detection_task_thread",
     side_effect=lambda *a, **kw: run_resource_detection_task_async(*a, **kw),
@@ -126,6 +127,7 @@ def test_paper_bridge_tier_fastdetect_http_mock(mock_on_commit, mock_post, mock_
         )
 
 
+@patch.dict(os.environ, {"FASTDETECT_API_KEY": "test-key-000"})
 @patch(
     "core.views.views_dectection.start_resource_detection_task_thread",
     side_effect=lambda *a, **kw: run_resource_detection_task_async(*a, **kw),

@@ -693,6 +693,7 @@ def get_user_tasks(request):
             'upload_time': timezone.localtime(task.upload_time).strftime('%Y-%m-%d %H:%M:%S'),
             'status': task.status,
             'result_summary': build_task_result_summary(task),
+            'progress_percentage': task.progress_percentage,
             'error_message': task.error_message,
             'completion_time': timezone.localtime(task.completion_time).strftime('%Y-%m-%d %H:%M:%S') if task.completion_time else None,
             'resource_file_ids': list(task.resource_files.values_list('id', flat=True))
@@ -824,3 +825,51 @@ class DetectionHistoryClearView(APIView):
         with transaction.atomic():
             _clear_all_detection_history_for_user(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def detection_task_retry(request, task_id):
+    """
+    重试失败任务。
+    - 有 checkpoint_data → 触发 resume 逻辑，跳过已完步骤
+    - 无 checkpoint_data → 全新启动
+    """
+    try:
+        task = DetectionTask.objects.get(pk=task_id)
+    except DetectionTask.DoesNotExist:
+        return Response({"detail": "检测任务不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.user != task.user and not request.user.is_staff:
+        return Response({"detail": "无权限"}, status=status.HTTP_403_FORBIDDEN)
+
+    if task.status == "completed":
+        return Response({"detail": "任务已完成，无需重试"}, status=status.HTTP_400_BAD_REQUEST)
+    if task.status in ("pending", "in_progress"):
+        return Response({"detail": "任务正在执行中"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # task.status == "failed"
+    has_checkpoint = bool(task.checkpoint_data)
+
+    if has_checkpoint:
+        # 保留 checkpoint_data → 后续 _mark_resource_task_started 识别为 resume
+        task.status = "in_progress"
+        task.error_message = ""
+        task.save(update_fields=["status", "error_message"])
+    else:
+        # 无 checkpoint，全新启动
+        task.status = "pending"
+        task.error_message = ""
+        task.progress_percentage = 0
+        task.checkpoint_data = None
+        task.save(update_fields=["status", "error_message", "progress_percentage", "checkpoint_data"])
+
+    # 触发异步执行
+    api_key = request.data.get("api_key") or None
+    start_resource_detection_task_thread(task.task_type, task.id, api_key)
+
+    return Response({
+        "detail": "任务重试已触发",
+        "task_id": task.id,
+        "resume": has_checkpoint,
+    })

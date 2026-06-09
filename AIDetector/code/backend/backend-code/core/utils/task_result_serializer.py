@@ -15,7 +15,8 @@ def build_task_result_summary(task):
     if task.status == "pending":
         return "排队中"
     if task.status == "in_progress":
-        return "检测进行中"
+        pct = task.progress_percentage or 0
+        return f"检测进行中 {pct}%"
     if task.status != "completed":
         return "任务未完成"
 
@@ -176,6 +177,41 @@ def build_detection_task_status_payload(task):
     resource_files = list(task.resource_files.all().order_by("id"))
     results = build_task_results(task)
 
+    # 进度步骤标签映射
+    _step_labels = {
+        "preprocess": "预处理文档 ...",
+        "text_analysis": "AI 文本检测分析 ...",
+        "post_text": "完成剩余分析步骤 ...",
+        "explanations": "生成可疑段落解释 ...",
+        "references": "验证参考文献真实性 ...",
+        "authenticity": "评估数据真实性 ...",
+        "overall": "生成综合评价 ...",
+        "image_detection": "检测论文内图像 ...",
+        "save": "保存检测结果 ...",
+        "analysis": "Review 内容分析 ...",
+        "relevance": "计算内容相关性 ...",
+        "merge": "合并分析结果 ...",
+        "qualification": "生成鉴定结论 ...",
+    }
+
+    checkpoint_data = task.checkpoint_data or {}
+    current_step = checkpoint_data.get("step", "")
+
+    # 构建 checkpoint 摘要信息
+    step_started_at = checkpoint_data.get("step_started_at") or {}
+    completed_steps = checkpoint_data.get("completed_steps") or []
+    checkpoint_info = {
+        "has_checkpoint": bool(task.checkpoint_data),
+        "can_resume": task.status == "failed" and bool(task.checkpoint_data),
+        "completed_steps": completed_steps,
+        "current_step": current_step,
+    }
+    if task.status in ("in_progress", "failed") and checkpoint_data:
+        checkpoint_info["started_at"] = checkpoint_data.get("started_at")
+        checkpoint_info["updated_at"] = checkpoint_data.get("updated_at")
+        checkpoint_info["resumed_at"] = checkpoint_data.get("resumed_at")
+        checkpoint_info["step_started_at"] = step_started_at
+
     payload = {
         "task_id": task.id,
         "task_name": task.task_name,
@@ -187,6 +223,10 @@ def build_detection_task_status_payload(task):
         "error_message": task.error_message,
         "is_running": task.status in {"pending", "in_progress"},
         "progress": build_task_progress(task),
+        "progress_percentage": task.progress_percentage,
+        "progress_step": current_step,
+        "progress_step_label": _step_labels.get(current_step, ""),
+        "checkpoint_info": checkpoint_info,
         "resource_files": [serialize_resource_file(file_record) for file_record in resource_files],
         "report_file_url": task.report_file.url if task.report_file else None,
         "results": results,

@@ -112,6 +112,19 @@
                 </v-chip>
               </template>
 
+              <template #item.health_status="{ item }">
+                <v-chip
+                  v-if="item.model_type === 'fastdetect'"
+                  size="small"
+                  :color="healthChipColor(item.health_status)"
+                  variant="tonal"
+                  class="aid-chip"
+                >
+                  {{ healthStatusText(item.health_status) }}
+                </v-chip>
+                <span v-else class="text-body-2 subtle-text">—</span>
+              </template>
+
               <template #item.is_active="{ item }">
                 <v-switch
                   v-model="item.is_active"
@@ -287,6 +300,7 @@ const headers = [
   { title: '服务来源', key: 'provider' },
   { title: '服务地址', key: 'endpoint' },
   { title: '密钥状态', key: 'has_api_key' },
+  { title: '健康状态', key: 'health_status' },
   { title: '启用', key: 'is_active' },
   { title: '操作', key: 'actions', sortable: false, align: 'end' },
 ] as const
@@ -307,10 +321,12 @@ const filteredModels = computed(() => {
 
 const stats = computed(() => {
   const active = models.value.filter((item) => item.is_active)
+  const hasHealthyKey = (item: LLMModel) =>
+    item.model_type === 'fastdetect' && item.health_status === 'available'
   return {
     total: models.value.length,
     active: active.length,
-    fastdetectReady: active.some((item) => item.model_type === 'fastdetect' && item.has_api_key),
+    fastdetectReady: active.some(hasHealthyKey),
     chatReady: active.some((item) => item.model_type === 'chat' && item.has_api_key),
   }
 })
@@ -354,6 +370,21 @@ function defaultForm(): Partial<LLMModel> {
 function modelTypeText(value?: string) {
   if (value === 'fastdetect') return 'FastDetect'
   return '对话模型'
+}
+
+function healthChipColor(status?: string) {
+  if (status === 'available') return 'success'
+  if (status === 'exhausted') return 'warning'
+  if (status === 'invalid' || status === 'error') return 'error'
+  return 'grey'
+}
+
+function healthStatusText(status?: string) {
+  if (status === 'available') return '可用'
+  if (status === 'exhausted') return '额度耗尽'
+  if (status === 'invalid') return '密钥无效'
+  if (status === 'error') return '异常'
+  return '未知'
 }
 
 async function fetchModels() {

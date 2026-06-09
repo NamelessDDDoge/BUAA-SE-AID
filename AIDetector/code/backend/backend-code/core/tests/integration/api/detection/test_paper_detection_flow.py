@@ -232,6 +232,10 @@ def tmp_media(tmp_path):
 
 
 @patch(
+    "core.services.orchestrators.paper_task_orchestrator.batch_detect_text_segments",
+    side_effect=lambda segments, **kw: [FAKE_FASTDETECT_HIT for _ in segments],
+)
+@patch(
     "core.services.capabilities.text_detection_service.detect_text_segment",
     return_value=FAKE_FASTDETECT_HIT,
 )
@@ -240,7 +244,7 @@ def tmp_media(tmp_path):
     side_effect=lambda *a, **kw: run_resource_detection_task_async(*a, **kw),
 )
 @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda f: f())
-def test_paper_detection_complete_chain(mock_on_commit, mock_starter, mock_detect, tmp_media):
+def test_paper_detection_complete_chain(mock_on_commit, mock_starter, mock_detect, mock_batch, tmp_media):
     """
     Full happy-path: create → sync execution → poll → results.
 
@@ -313,6 +317,10 @@ def test_paper_detection_complete_chain(mock_on_commit, mock_starter, mock_detec
 
 
 @patch(
+    "core.services.orchestrators.paper_task_orchestrator.batch_detect_text_segments",
+    side_effect=lambda segments, **kw: [FAKE_FASTDETECT_HIT for _ in segments],
+)
+@patch(
     "core.services.capabilities.text_detection_service.detect_text_segment",
     return_value=FAKE_FASTDETECT_HIT,
 )
@@ -321,7 +329,7 @@ def test_paper_detection_complete_chain(mock_on_commit, mock_starter, mock_detec
     side_effect=lambda *a, **kw: run_resource_detection_task_async(*a, **kw),
 )
 @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda f: f())
-def test_paper_results_endpoint_requires_ownership(mock_on_commit, mock_starter, mock_detect, tmp_media):
+def test_paper_results_endpoint_requires_ownership(mock_on_commit, mock_starter, mock_detect, mock_batch, tmp_media):
     """
     GET /api/paper-results/<task_id>/ must return 404 for a task belonging to another user.
     """
@@ -400,6 +408,13 @@ def _write_paper(tmp_media, rel="papers/err_test.txt"):
 
 
 @patch(
+    "core.services.orchestrators.paper_task_orchestrator.batch_detect_text_segments",
+    side_effect=lambda segments, **kw: [
+        {"data": {"prob": 0, "details": {"error": "FastDetect unreachable"}}}
+        for _ in segments
+    ],
+)
+@patch(
     "core.services.capabilities.text_detection_service.detect_text_segment",
     side_effect=ConnectionError("FastDetect unreachable"),
 )
@@ -408,7 +423,7 @@ def _write_paper(tmp_media, rel="papers/err_test.txt"):
     side_effect=lambda *a, **kw: run_resource_detection_task_async(*a, **kw),
 )
 @patch("core.views.views_dectection.transaction.on_commit", side_effect=lambda f: f())
-def test_paper_detection_service_unavailable_task_still_completes(mock_on_commit, mock_starter, mock_detect, tmp_path):
+def test_paper_detection_service_unavailable_task_still_completes(mock_on_commit, mock_starter, mock_detect, mock_batch, tmp_path):
     """
     When detect_text_segment raises, _detect_segment_probability catches it
     and returns probability=0.0 with an error detail. The task should still

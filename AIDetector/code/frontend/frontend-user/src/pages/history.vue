@@ -52,7 +52,25 @@
         </template>
 
         <template #item.result_summary="{ item }">
+          <template v-if="item.status === 'in_progress' || item.status === 'pending'">
+            <div class="d-flex align-center ga-2" style="min-width: 180px">
+              <v-progress-linear
+                :model-value="item.progress_percentage || (item.status === 'pending' ? 0 : 0)"
+                height="8"
+                :color="item.status === 'pending' ? 'warning' : 'primary'"
+                rounded
+                class="flex-grow-1"
+              />
+              <span class="text-caption text-medium-emphasis" style="white-space: nowrap">
+                {{ item.progress_percentage || 0 }}%
+              </span>
+            </div>
+            <div class="text-caption text-medium-emphasis mt-1">
+              {{ item.status === 'pending' ? '排队中 ...' : item.result_summary }}
+            </div>
+          </template>
           <v-chip
+            v-else
             size="small"
             :color="summaryColor(item)"
             variant="tonal"
@@ -140,6 +158,20 @@
             <v-list-item title="任务类型" :subtitle="taskTypeLabel(currentTask.task_type)" />
             <v-list-item title="提交时间" :subtitle="formatDateTime(currentTask.upload_time)" />
             <v-list-item title="完成时间" :subtitle="formatDateTime(currentTask.completion_time) || '-'" />
+            <v-list-item v-if="currentTask.status === 'in_progress' || currentTask.status === 'pending'" title="检测进度">
+              <template #subtitle>
+                <div class="d-flex align-center ga-2 mt-1">
+                  <v-progress-linear
+                    :model-value="currentTask.progress_percentage || 0"
+                    height="8"
+                    color="primary"
+                    rounded
+                    class="flex-grow-1"
+                  />
+                  <span class="text-caption font-weight-bold">{{ currentTask.progress_percentage || 0 }}%</span>
+                </div>
+              </template>
+            </v-list-item>
             <v-list-item title="任务状态" :subtitle="statusLabel(currentTask.status)" />
             <v-list-item title="结果摘要">
               <template #subtitle>
@@ -209,6 +241,7 @@ interface Task {
   completion_time: string | null
   status: 'pending' | 'in_progress' | 'completed' | 'failed'
   result_summary: string
+  progress_percentage?: number
   error_message?: string | null
 }
 

@@ -23,10 +23,18 @@ class LLMModelSerializer(serializers.ModelSerializer):
             'has_api_key',
             'is_active',
             'description',
+            'health_status',
+            'health_detail',
+            'health_checked_at',
+            'credit_used',
+            'credit_total',
             'created_at',
             'updated_at',
         )
-        read_only_fields = ('has_api_key', 'created_at', 'updated_at')
+        read_only_fields = (
+            'has_api_key', 'health_status', 'health_detail', 'health_checked_at',
+            'credit_used', 'credit_total', 'created_at', 'updated_at',
+        )
         extra_kwargs = {
             'api_key': {'write_only': True, 'required': False, 'allow_blank': True, 'allow_null': True},
         }

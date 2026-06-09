@@ -1000,6 +1000,7 @@ def get_all_user_tasks(request):
             "organization": task.organization.name if task.organization else None,
             "username": task.user.username,
             "result_summary": build_task_result_summary(task),
+            "progress_percentage": task.progress_percentage,
         } for task in page_obj.object_list
     ]
 

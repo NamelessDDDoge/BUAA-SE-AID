@@ -119,6 +119,7 @@ def create_resource_detection_task(
         llm_model_name=llm_model_name,
         method_switches=normalized_switches,
         text_detection_results=initial_text_results,
+        progress_percentage=0,
     )
     detection_task.resource_files.add(*file_list)
 
@@ -206,10 +207,9 @@ def _has_text_overrides(*, text_override=None, paper_text_override=None, review_
 def run_resource_detection_task_async(task_type, task_id, api_key=None):
     close_old_connections()
     try:
-        if not _mark_resource_task_started(task_id):
-            return
+        resume = _mark_resource_task_started(task_id)
         task_runner = _get_resource_task_runner(task_type)
-        task_runner(task_id, api_key=api_key)
+        task_runner(task_id, api_key=api_key, resume=resume)
     except Exception as exc:
         detection_task = DetectionTask.objects.filter(pk=task_id).first()
         if detection_task is not None:
@@ -222,10 +222,37 @@ def run_resource_detection_task_async(task_type, task_id, api_key=None):
 
 
 def _mark_resource_task_started(task_id):
-    return DetectionTask.objects.filter(pk=task_id, status="pending").update(
-        status="in_progress",
-        error_message="",
-    ) == 1
+    """
+    将任务标记为 in_progress.
+    返回 True 表示需要恢复执行（存在 checkpoint 数据），
+    返回 False 表示全新启动。
+    """
+    task = DetectionTask.objects.filter(pk=task_id).only(
+        "status", "checkpoint_data", "progress_percentage"
+    ).first()
+    if not task:
+        return False
+
+    # 全新任务：pending → in_progress，重置进度
+    if task.status == "pending":
+        DetectionTask.objects.filter(pk=task_id).update(
+            status="in_progress",
+            error_message="",
+            progress_percentage=0,
+            checkpoint_data=None,
+        )
+        return False
+
+    # 失败或被中断但有 checkpoint → 恢复执行
+    if task.status in ("failed", "in_progress") and task.checkpoint_data:
+        DetectionTask.objects.filter(pk=task_id).update(
+            status="in_progress",
+            error_message="",
+        )
+        return True
+
+    # 其他情况（已完成等）不处理
+    return False
 
 
 def start_resource_detection_task_thread(task_type, task_id, api_key=None):
